@@ -3,7 +3,8 @@ import { z } from "zod";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeSymbol } from "@/lib/elliott.functions";
-import { fetchCandles, type Candle } from "@/lib/twelvedata.functions";
+import { fetchOhlcv } from "@/lib/marketData.functions";
+import type { Candle } from "@/lib/twelvedata.functions";
 import { detectSetup } from "@/lib/detection/engine";
 import type { TradeSetup } from "@/lib/detection/types";
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
@@ -49,7 +50,7 @@ function ChartPage() {
   const { symbol } = Route.useParams();
   const { tf } = Route.useSearch();
   const decoded = decodeURIComponent(symbol);
-  const fetch = useServerFn(fetchCandles);
+  const fetch = useServerFn(fetchOhlcv);
   const analyze = useServerFn(analyzeSymbol);
 
   const [candles, setCandles] = useState<Candle[]>([]);
