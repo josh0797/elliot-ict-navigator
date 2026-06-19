@@ -1,79 +1,53 @@
-## Goal
+## Adaptación a este proyecto
 
-Permitirte subir tu CSV histórico (`elliott_dataset.csv` y futuros), entrenar un modelo de probabilidad de éxito por setup, guardarlo versionado en `model_versions`, y que el scanner use ese modelo para mejorar el score de las alertas.
+Tu plan describe un backend Python/FastAPI. Este proyecto es **TanStack Start + TypeScript + Lovable Cloud**. Reproduciré la **separación conceptual** que pides, pero en TS bajo `src/lib/detection/` (los motores ya viven ahí). No tocaré Supabase, el modelo logreg JS, ni los endpoints existentes (`scan-and-alert`, `evaluate-results`, `training.functions.ts`).
 
-## Dataset analizado
-
-3.309 filas. Etiquetas útiles `win` (608) y `loss` (906) → ~1.514 muestras de entrenamiento. El resto (`pending`, `no_symbol_or_data`) se descarta.
-
-Columnas que usaremos como features:
-- Categóricas: `instrument` (normalizado a `EUR/USD` etc.), `timeframe` (normalizado a minúsculas), `direction`, `pattern`, `wave_degree`, `wave_current` (bucketizado: motriz 1/3/5, correctivo 2/4, ABC, WXY, subondas).
-- Numéricas derivadas: `rr_ratio`, `sl_pips`, distancia Fib (presencia de `fib_618`, `fib_382`, `fib_786`), `has_alternative`.
-- Target: `result == 'win'` → 1, `result == 'loss'` → 0.
-
-## UX (página nueva)
-
-Nueva ruta protegida **`/training`** (solo rol `admin`) con:
-1. Tarjeta de **Upload CSV**: drag & drop, valida cabeceras, muestra preview (rows, win/loss ratio).
-2. Botón **Entrenar modelo** → llama server function, muestra progreso, devuelve accuracy de validación y nº de features.
-3. Lista de **versiones** desde `model_versions` (versión, accuracy, trained_on, fecha) con botón "Activar" para marcar la versión usada en el scanner.
-4. Panel **Importancia de features** (top 15 coeficientes) tras entrenar.
-
-Acceso al menú lateral: enlace "Training" visible solo si `has_role(uid,'admin')`. Para tu cuenta, el primer admin se asigna desde una migración seed (`INSERT user_roles ... 'admin'` con tu `user_id`).
-
-## Backend
-
-### Tabla
-Reusamos `model_versions` (ya existe). Añadimos columna `is_active boolean default false` y un índice único parcial para tener una sola versión activa. Añadimos `feature_names text[]` y `metrics jsonb` (accuracy, precision, recall, sample sizes, confusion matrix).
-
-### Server functions (`src/lib/training.functions.ts`, admin-gated con `requireSupabaseAuth` + check `has_role`)
-- `uploadDataset({ csv: string })` → parsea, valida, devuelve resumen (counts, columnas faltantes).
-- `trainModel({ csv: string })` →
-  1. Parse CSV (sin libs nativas, parser puro JS).
-  2. Normaliza y construye matriz X/y.
-  3. Split 80/20 estratificado.
-  4. Entrena **regresión logística** con gradiente descendente + L2 (implementación pura JS — el Worker runtime no soporta sklearn ni binarios nativos, ver `server-runtime`).
-  5. Calcula accuracy/precision/recall en validación.
-  6. Inserta nueva fila en `model_versions` con `version = max+1`, `weights_b64` (Float64Array → base64), `model_topology` (jsonb con feature spec y normalizers), `metrics`, marca `is_active = true` y desactiva las anteriores.
-- `setActiveModel({ version })` → admin.
-- `listModelVersions()` → admin.
-
-### Scoring
-Helper `scoreSetup(features)` en `src/lib/detection/model.ts` que, al ejecutar el scanner (`/api/public/hooks/scan-and-alert`), carga la versión activa del modelo (cache en memoria por invocación), calcula la probabilidad y la combina con el score heurístico actual (ej. `score = 0.5*heuristic + 0.5*model_prob`). Sigue funcionando si no hay modelo activo (fallback al heurístico).
-
-## Seguridad
-
-- Toda la ruta `/training` y todas las server functions exigen rol `admin` (RLS de `model_versions` ya restringido a admin, lo extendemos a INSERT/UPDATE/DELETE).
-- CSV se procesa en memoria, no se almacena el dataset crudo.
-- Límite de tamaño: 5 MB por upload.
-
-## Detalles técnicos
+### Mapeo de estructura
 
 ```text
-training.functions.ts
-  ├─ parseCsv(text) -> rows[]
-  ├─ buildFeatures(rows) -> { X: number[][], y: number[], spec }
-  ├─ trainLogisticRegression(X, y, {lr, epochs, l2}) -> { w, b }
-  ├─ evaluate(model, Xval, yval) -> metrics
-  └─ persistModel(spec, weights, metrics)  // supabaseAdmin (cargado dentro del handler)
-
-detection/model.ts
-  ├─ loadActiveModel()  // cache por proceso
-  └─ scoreSetup(setupFeatures) -> number  // 0..1
+backend/services/indicators/atr.py       → src/lib/detection/indicators/atr.ts
+backend/services/structure/pivots.py     → src/lib/detection/structure/pivots.ts
+backend/services/structure/swings.py     → src/lib/detection/structure/swings.ts
+backend/services/structure/market_*.py   → src/lib/detection/structure/market-structure.ts
+backend/services/elliott/*.py            → src/lib/detection/elliott/{types,candidates,rules,scoring,engine}.ts
+backend/services/ict/*.py                → src/lib/detection/ict/{fvg,order-blocks,liquidity,bos-choch,killzones,premium-discount,engine}.ts
+backend/services/confluence/*.py         → src/lib/detection/confluence/{scoring,setup-builder}.ts
+backend/services/schemas/analysis.py     → src/lib/detection/schemas/analysis.ts
+backend/tests/*                          → src/lib/detection/__tests__/* (vitest)
 ```
 
-Persistencia de pesos: `Float64Array` → `Buffer.from(...).toString('base64')` en `weights_b64`. Topology guarda `{ featureNames, categoricalEncodings, numericMeans, numericStds, intercept }`.
+Los archivos legacy actuales (`elliott.ts`, `ict.ts`, `zigzag.ts`, `engine.ts`) se mantienen y se marcan `@deprecated` hasta que la nueva pipeline tenga tests verdes. Solo entonces re-cableo `engine.ts` para delegar a los nuevos módulos, preservando el contrato `TradeSetup` (añadiendo campos nuevos compatibles).
 
-## Cambios de archivos
+### Fase 0 — Auditoría (esta entrega)
 
-- nuevo `src/routes/_authenticated/training.tsx` (+ enlace en sidebar condicional)
-- nuevo `src/lib/training.functions.ts`
-- nuevo `src/lib/csv.ts` (parser)
-- nuevo `src/lib/ml/logreg.ts`
-- nuevo `src/lib/detection/model.ts` + integración en `src/routes/api/public/hooks/scan-and-alert.ts`
-- migración SQL: añade `is_active`, `feature_names`, `metrics` a `model_versions`; políticas RLS INSERT/UPDATE para admin; seed opcional de admin (te preguntaré tu email/uid en build mode si quieres asignarlo automáticamente).
+Entrega documentos sin tocar lógica:
+- `docs/elliott-ict-current-audit.md` — clasificación funcionalidad por funcionalidad (Implementada / Parcial / Heurística / Duplicada / Ausente / Inconsistente) revisando `elliott.ts`, `ict.ts`, `zigzag.ts`, `engine.ts`, `model.ts`, `chart.$symbol.tsx`, `dashboard.tsx`, panels.
+- `docs/elliott-ict-target-contract.md` — contrato objetivo de `Candle`, `Pivot`, `Swing`, `ElliottCount`, `ICTContext`, `Confluence`, `Setup`, y nuevos campos compatibles añadidos a `TradeSetup`.
 
-## Fuera de alcance (siguiente iteración)
+### Fase 1 — Infraestructura común (esta entrega)
 
-- Re-entrenamiento automático semanal con datos en vivo de `setups`+`trade_results` (ya cubierto por la arquitectura, lo dejamos para después de validar el flujo manual).
-- Modelos no lineales (RandomForest/GBM) — requieren un servicio externo; el plan los descarta deliberadamente para no añadir Railway/Render.
+- **`schemas/analysis.ts`** — tipos canónicos (`Candle`, `Pivot` con `strength`/`atrDistance`/`confirmed`, `Swing`).
+- **`indicators/atr.ts`** — `trueRange()` y `atr14()` con RMA de Wilder (no media simple).
+- **`structure/pivots.ts`** — detección por fractales L/R configurable, umbral mínimo en múltiplos de ATR, alternancia H/L forzada, deduplicación de pivotes consecutivos del mismo tipo (conservar extremo), confirmación sin look-ahead, marca `confirmed` vs `provisional` para el último pivote sin barras a la derecha.
+- **`structure/swings.ts`** — agregación a `MINOR` / `MAJOR` por magnitud ATR.
+- **`structure/market-structure.ts`** — helpers HH/HL/LH/LL reusables.
+- **Validación de velas** — `validateCandles()` con advertencias explícitas (high/low coherentes, timestamps ascendentes sin duplicados, precios finitos > 0).
+- **Tests vitest** — ATR contra valores conocidos, pivotes en serie sintética, no-repaint con velas truncadas.
+
+### Fase 2 — Elliott Engine (esta entrega)
+
+- **`elliott/types.ts`** — `WaveLabel`, `WavePattern` (`IMPULSE`, `LEADING_DIAGONAL`, `ENDING_DIAGONAL`, `ZIGZAG`, `FLAT`, `SIMPLE_CORRECTION`, `UNKNOWN_CORRECTION`), `CountState` (`NO_COUNT`/`DEVELOPING`/`VALID`/`INVALIDATED`/`COMPLETED`).
+- **`elliott/candidates.ts`** — genera múltiples secuencias candidatas (no solo los últimos 9 pivotes alternados), bullish + bearish, permite ciclos incompletos, devuelve principal + alternativos.
+- **`elliott/rules.ts`** — Reglas 1-3 hard (W2 no supera origen W1; W3 nunca la más corta entre 1/3/5; W4 no solapa W1 salvo diagonal). Reglas 4-5 soft (alternancia W2/W4 y proporcionalidad Fibonacci) suman score, no invalidan.
+- **`elliott/scoring.ts`** — puntúa por ratios Fib (W2: 0.382/0.5/0.618/0.786; W3: 1.0/1.618/2.618; W4: 0.236/0.382/0.5; W5: 0.618/1.0/1.618), alternancia, claridad.
+- **`elliott/engine.ts`** — orquesta: pivotes → candidatos → reglas → score → devuelve `{ primary, alternatives[], state }`.
+- **A-B-C correctivo** — detección de A/B/C tras impulso 0-5 (válido o en desarrollo), valida dirección alternada, B como retroceso, ratio A/C; clasifica en `ZIGZAG` / `FLAT` / `SIMPLE_CORRECTION` / `UNKNOWN_CORRECTION` (sin pretender detectar correctivos complejos en v1).
+- **Tests vitest** — Reglas 1/2/3 con counts sintéticos válidos e invalidados; truncamiento; diagonal con solapamiento permitido; A-B-C bullish y bearish.
+
+### Lo que **NO** entra en esta tanda
+
+Fases ≥3 (ICT engine canónico, confluencias, setup builder, render del gráfico, exposición al modelo ML) las abro en mensajes posteriores tras aprobación de Fase 2. Tampoco re-cableo `engine.ts` ni la UI todavía: la pipeline nueva queda probada en aislamiento.
+
+### Riesgo
+
+El cambio es aditivo y los módulos viejos siguen sirviendo `detectSetup()` mientras tanto. Si quieres, en lugar de mantener ambos, marco un commit posterior para borrar `zigzag.ts`/`elliott.ts`/`ict.ts` viejos cuando la pipeline nueva esté integrada.
