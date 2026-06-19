@@ -12,12 +12,17 @@ import type { IctContext } from "@/lib/detection/ict/types";
 import { TradingChart, type LayerToggles, type PivotTooltip } from "@/components/chart/TradingChart";
 import { LayerControls } from "@/components/chart/LayerControls";
 import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
+import { SymbolPicker } from "@/components/chart/SymbolPicker";
+import { HISTORY_PRESETS } from "@/lib/symbols";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 
-const Search = z.object({ tf: z.string().default("1h") });
+const Search = z.object({
+  tf: z.string().default("1h"),
+  bars: z.coerce.number().int().min(50).max(2000).default(500),
+});
 
 export const Route = createFileRoute("/_authenticated/chart/$symbol")({
   validateSearch: (s) => Search.parse(s),
@@ -48,7 +53,7 @@ function loadLayers(): LayerToggles {
 
 function ChartPage() {
   const { symbol } = Route.useParams();
-  const { tf } = Route.useSearch();
+  const { tf, bars } = Route.useSearch();
   const decoded = decodeURIComponent(symbol);
   const fetch = useServerFn(fetchOhlcv);
   const analyze = useServerFn(analyzeSymbol);
@@ -60,6 +65,7 @@ function ChartPage() {
   const [tooltip, setTooltip] = useState<PivotTooltip | null>(null);
   const [loading, setLoading] = useState(true);
   const [interval, setInterval] = useState(tf);
+  const [outputsize, setOutputsize] = useState(bars);
   const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
 
   useEffect(() => {
@@ -70,8 +76,8 @@ function ChartPage() {
   async function load() {
     setLoading(true);
     const [res, ana] = await Promise.all([
-      fetch({ data: { symbol: decoded, interval, outputsize: 500 } }),
-      analyze({ data: { symbol: decoded, interval, outputsize: 500 } }),
+      fetch({ data: { symbol: decoded, interval, outputsize } }),
+      analyze({ data: { symbol: decoded, interval, outputsize } }),
     ]);
     if (res.candles.length) {
       setCandles(res.candles);
@@ -87,7 +93,7 @@ function ChartPage() {
     const id = window.setInterval(load, 60_000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [decoded, interval]);
+  }, [decoded, interval, outputsize]);
 
   const dirColor = setup?.direction === "long" ? "text-success" : "text-destructive";
 
@@ -110,7 +116,7 @@ function ChartPage() {
               <ArrowLeft className="h-4 w-4 mr-1" /> Back
             </Link>
           </Button>
-          <h1 className="text-xl font-mono font-bold">{decoded}</h1>
+          <SymbolPicker symbol={decoded} tf={interval} bars={outputsize} />
           <Badge variant="outline" className="font-mono">{interval}</Badge>
           {elliott && elliott.status !== "NO_COUNT" && (
             <Badge variant="outline" className={`font-mono ${elliott.bias === "BULLISH" ? "text-success" : elliott.bias === "BEARISH" ? "text-destructive" : ""}`}>
@@ -127,6 +133,18 @@ function ChartPage() {
                 className={`px-3 py-1.5 font-mono ${interval === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
               >
                 {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex rounded-md border border-border bg-card overflow-hidden text-xs">
+            {HISTORY_PRESETS.map((h) => (
+              <button
+                key={h.value}
+                onClick={() => setOutputsize(h.value)}
+                title={h.label}
+                className={`px-2.5 py-1.5 font-mono ${outputsize === h.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {h.value}
               </button>
             ))}
           </div>
