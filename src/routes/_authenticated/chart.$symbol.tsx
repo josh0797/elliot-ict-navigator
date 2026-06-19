@@ -1,11 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { fetchCandles } from "@/lib/twelvedata.functions";
+import { analyzeSymbol } from "@/lib/elliott.functions";
+import { fetchCandles, type Candle } from "@/lib/twelvedata.functions";
 import { detectSetup } from "@/lib/detection/engine";
-import type { Candle, TradeSetup } from "@/lib/detection/types";
-import { createChart, CandlestickSeries, LineSeries, createSeriesMarkers, type IChartApi, type ISeriesApi } from "lightweight-charts";
+import type { TradeSetup } from "@/lib/detection/types";
+import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
+import type { IctContext } from "@/lib/detection/ict/types";
+import { TradingChart, type LayerToggles, type PivotTooltip } from "@/components/chart/TradingChart";
+import { LayerControls } from "@/components/chart/LayerControls";
+import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,60 +26,58 @@ export const Route = createFileRoute("/_authenticated/chart/$symbol")({
   component: ChartPage,
 });
 
+const DEFAULT_LAYERS: LayerToggles = {
+  elliottLines: true,
+  elliottLabels: true,
+  alternativeCount: false,
+  invalidation: true,
+  fibonacciElliott: false,
+};
+
+function loadLayers(): LayerToggles {
+  if (typeof window === "undefined") return DEFAULT_LAYERS;
+  try {
+    const raw = window.localStorage.getItem("chart-layers");
+    if (!raw) return DEFAULT_LAYERS;
+    return { ...DEFAULT_LAYERS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_LAYERS;
+  }
+}
+
 function ChartPage() {
   const { symbol } = Route.useParams();
   const { tf } = Route.useSearch();
   const decoded = decodeURIComponent(symbol);
   const fetch = useServerFn(fetchCandles);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const overlaysRef = useRef<Array<ISeriesApi<"Line">>>([]);
+  const analyze = useServerFn(analyzeSymbol);
 
   const [candles, setCandles] = useState<Candle[]>([]);
   const [setup, setSetup] = useState<TradeSetup | null>(null);
+  const [elliott, setElliott] = useState<ElliottResultDTO | null>(null);
+  const [ict, setIct] = useState<IctContext | null>(null);
+  const [tooltip, setTooltip] = useState<PivotTooltip | null>(null);
   const [loading, setLoading] = useState(true);
   const [interval, setInterval] = useState(tf);
+  const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
 
-  // Initialise chart once
   useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = createChart(containerRef.current, {
-      autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#cbd5e1" },
-      grid: {
-        vertLines: { color: "rgba(148,163,184,0.08)" },
-        horzLines: { color: "rgba(148,163,184,0.08)" },
-      },
-      rightPriceScale: { borderColor: "rgba(148,163,184,0.2)" },
-      timeScale: { borderColor: "rgba(148,163,184,0.2)", timeVisible: true, secondsVisible: false },
-      crosshair: { mode: 1 },
-    });
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
-    });
-    chartRef.current = chart;
-    seriesRef.current = series;
-    return () => {
-      chart.remove();
-      chartRef.current = null;
-      seriesRef.current = null;
-    };
-  }, []);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("chart-layers", JSON.stringify(layers));
+  }, [layers]);
 
   async function load() {
     setLoading(true);
-    const res = await fetch({ data: { symbol: decoded, interval, outputsize: 500 } });
+    const [res, ana] = await Promise.all([
+      fetch({ data: { symbol: decoded, interval, outputsize: 500 } }),
+      analyze({ data: { symbol: decoded, interval, outputsize: 500 } }),
+    ]);
     if (res.candles.length) {
       setCandles(res.candles);
       setSetup(detectSetup(decoded, interval, res.candles));
     }
+    setElliott(ana.elliott);
+    setIct(ana.ict);
     setLoading(false);
   }
 
@@ -84,58 +87,6 @@ function ChartPage() {
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decoded, interval]);
-
-  // Push data + overlays to the chart whenever data changes
-  useEffect(() => {
-    const series = seriesRef.current;
-    const chart = chartRef.current;
-    if (!series || !chart || candles.length === 0) return;
-    series.setData(
-      candles.map((c) => ({
-        time: c.time as unknown as import("lightweight-charts").UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    );
-    // remove previous overlays
-    for (const s of overlaysRef.current) chart.removeSeries(s);
-    overlaysRef.current = [];
-
-    if (setup) {
-      // Elliott zigzag line
-      const zz = chart.addSeries(LineSeries, { color: "#facc15", lineWidth: 2 });
-      zz.setData(
-        setup.wave.pivots.map((p) => ({
-          time: p.time as unknown as import("lightweight-charts").UTCTimestamp,
-          value: p.price,
-        })),
-      );
-      // Label markers
-      createSeriesMarkers(
-        zz as unknown as Parameters<typeof createSeriesMarkers>[0],
-        setup.wave.pivots.map((p, i) => ({
-          time: p.time as unknown as import("lightweight-charts").UTCTimestamp,
-          position: p.type === "H" ? "aboveBar" : "belowBar",
-          color: "#facc15",
-          shape: "circle",
-          text: setup.wave.labels[i] ?? "",
-        })) as Parameters<typeof createSeriesMarkers>[1],
-      );
-      overlaysRef.current.push(zz);
-
-      // Horizontal lines for Entry / SL / TP
-      const addLine = (price: number, color: string, title: string) => {
-        series.createPriceLine({ price, color, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title });
-      };
-      addLine(setup.entry, "#38bdf8", "ENTRY");
-      addLine(setup.sl, "#ef4444", "SL");
-      addLine(setup.tp1, "#22c55e", "TP1");
-      addLine(setup.tp2, "#22c55e", "TP2");
-    }
-    chart.timeScale().fitContent();
-  }, [candles, setup]);
 
   const dirColor = setup?.direction === "long" ? "text-success" : "text-destructive";
 
@@ -160,9 +111,9 @@ function ChartPage() {
           </Button>
           <h1 className="text-xl font-mono font-bold">{decoded}</h1>
           <Badge variant="outline" className="font-mono">{interval}</Badge>
-          {setup && (
-            <Badge variant="outline" className={`font-mono ${dirColor}`}>
-              {setup.direction.toUpperCase()} · {Math.round(setup.score * 100)}%
+          {elliott && elliott.status !== "NO_COUNT" && (
+            <Badge variant="outline" className={`font-mono ${elliott.bias === "BULLISH" ? "text-success" : elliott.bias === "BEARISH" ? "text-destructive" : ""}`}>
+              {elliott.bias} · W{elliott.currentWave ?? "?"} · {elliott.confidence}
             </Badge>
           )}
         </div>
@@ -186,12 +137,36 @@ function ChartPage() {
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-4">
         <Card className="border-border/60">
-          <CardContent className="p-2">
-            <div ref={containerRef} className="h-[520px] w-full" />
+          <CardContent className="p-2 relative">
+            <TradingChart
+              candles={candles}
+              elliott={elliott}
+              ict={ict}
+              layers={layers}
+              onPivotHover={setTooltip}
+            />
+            {tooltip && (
+              <div
+                className="pointer-events-none absolute z-10 rounded border border-border bg-popover/95 px-2 py-1 text-xs font-mono shadow"
+                style={{ left: tooltip.x + 12, top: tooltip.y + 12 }}
+              >
+                <div className="font-bold">
+                  Wave {tooltip.label}{" "}
+                  <span className={tooltip.confirmed ? "text-success" : "text-muted-foreground"}>
+                    ({tooltip.confirmed ? "confirmed" : "provisional"})
+                  </span>
+                </div>
+                <div className="text-muted-foreground">{tooltip.type}</div>
+                <div>price: {px(tooltip.price)}</div>
+                <div>time: {new Date(tooltip.time).toUTCString()}</div>
+              </div>
+            )}
           </CardContent>
         </Card>
         <Card className="border-border/60">
           <CardContent className="p-4 space-y-4">
+            <LayerControls layers={layers} onChange={setLayers} />
+            <InvalidationLegend elliott={elliott} />
             <div>
               <div className="text-xs uppercase tracking-widest text-muted-foreground">Setup</div>
               {setup ? (
@@ -222,14 +197,17 @@ function ChartPage() {
                 <p className="mt-2 text-sm text-foreground/90 leading-relaxed">{setup.rationale}</p>
               </div>
             )}
-            {setup && (
+            {ict && (
               <div>
                 <div className="text-xs uppercase tracking-widest text-muted-foreground">ICT context</div>
                 <ul className="mt-2 text-xs text-muted-foreground space-y-1">
-                  <li>Order Blocks: {setup.ict.orderBlocks.length}</li>
-                  <li>Fair Value Gaps: {setup.ict.fvgs.length}</li>
-                  <li>Liquidity Sweeps: {setup.ict.sweeps.length}</li>
-                  <li>Structure events: {setup.ict.structure.length}</li>
+                  <li>Bias: <span className="text-foreground">{ict.bias}</span></li>
+                  <li>Order Blocks: {ict.orderBlocks.length} ({ict.orderBlocks.filter((o) => !o.mitigated).length} fresh)</li>
+                  <li>Fair Value Gaps: {ict.fvgs.length} ({ict.fvgs.filter((f) => !f.mitigated).length} fresh)</li>
+                  <li>Liquidity Sweeps: {ict.sweeps.length}</li>
+                  <li>Structure events: {ict.structure.length}</li>
+                  <li>Killzone: {ict.killzone?.name ?? "—"}</li>
+                  <li>PD Array: {ict.pdArray ? `${ict.pdArray.zone} (${(ict.pdArray.position * 100).toFixed(0)}%)` : "—"}</li>
                 </ul>
               </div>
             )}
