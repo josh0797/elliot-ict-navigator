@@ -9,6 +9,8 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
   type IPriceLine,
+  type MouseEventParams,
+  type Time,
 } from "lightweight-charts";
 import type { Candle } from "@/lib/twelvedata.functions";
 import type { ElliottResultDTO, ElliottWaveDTO } from "@/lib/detection/elliott/types";
@@ -232,8 +234,8 @@ export function TradingChart({
     // Crosshair tooltip — track nearest pivot.
     if (!onPivotHover) return;
     const waves = elliott?.waves ?? [];
-    const handler = (param: { point?: { x: number; y: number }; time?: UTCTimestamp }) => {
-      if (!param.point || !param.time || waves.length === 0) {
+    const handler = (param: MouseEventParams<Time>) => {
+      if (!param.point || param.time === undefined || waves.length === 0) {
         onPivotHover(null);
         return;
       }
