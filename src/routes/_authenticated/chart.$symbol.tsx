@@ -233,7 +233,32 @@ function ChartPage() {
                     </li>
                   ))}
                   <li>Fair Value Gaps: {ict.fvgs.length} ({ict.fvgs.filter((f) => !f.mitigated).length} fresh)</li>
+                  <li>
+                    Liquidity: {ict.liquidity.length} (
+                    {ict.liquidity.filter((l) => l.state === "ACTIVE").length} active,{" "}
+                    {ict.liquidity.filter((l) => l.state === "SWEPT").length} swept)
+                  </li>
+                  {ict.liquidity
+                    .filter((l) => l.state === "ACTIVE")
+                    .sort((a, b) => b.strength - a.strength)
+                    .slice(0, 3)
+                    .map((l) => (
+                      <li key={l.id} className="pl-2">
+                        <span className={l.side === "BSL" ? "text-success" : "text-destructive"}>{l.kind}</span>{" "}
+                        {px(l.price)} · S{l.strength}
+                      </li>
+                    ))}
                   <li>Liquidity Sweeps: {ict.sweeps.length}</li>
+                  {ict.sweeps.slice(-3).reverse().map((s) => (
+                    <li key={s.id} className="pl-2">
+                      <span className={s.type === "sell_side" ? "text-success" : "text-destructive"}>
+                        {s.type === "buy_side" ? "BSL raid" : "SSL raid"}
+                      </span>{" "}
+                      @ {px(s.price)} · Q{s.quality}
+                      {s.closeBack ? " · hunt" : ""}
+                      {s.displacementAfter ? " · displaced" : ""}
+                    </li>
+                  ))}
                   <li>Structure events: {ict.structure.length}</li>
                   <li>Killzone: {ict.killzone?.name ?? "—"}</li>
                   <li>PD Array: {ict.pdArray ? `${ict.pdArray.zone} (${(ict.pdArray.position * 100).toFixed(0)}%)` : "—"}</li>
