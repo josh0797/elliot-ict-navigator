@@ -336,9 +336,9 @@ export const trainModel = createServerFn({ method: "POST" })
       trained_on: Xtrain.length + Xval.length,
       accuracy: metrics.accuracy,
       weights_b64,
-      model_topology: spec as unknown as Record<string, unknown>,
+      model_topology: spec as unknown as never,
       feature_names: spec.featureNames,
-      metrics: metrics as unknown as Record<string, unknown>,
+      metrics: metrics as unknown as never,
       is_active: true,
     });
     if (insErr) throw new Error(insErr.message);
