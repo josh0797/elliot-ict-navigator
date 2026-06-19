@@ -47,3 +47,56 @@ export interface ElliottAnalysis {
   primary: ElliottCountV2 | null;
   alternatives: ElliottCountV2[];
 }
+
+// ─── DTO (Phase 3 contract) ──────────────────────────────────────────────────
+
+export type ElliottStatus = "VALID" | "DEVELOPING" | "INVALIDATED" | "NO_COUNT" | "COMPLETED";
+export type Bias = "BULLISH" | "BEARISH" | "NEUTRAL";
+export type RuleStatus = "PASS" | "FAIL" | "PENDING";
+
+export type ElliottRuleCode =
+  | "W2_ORIGIN"
+  | "W3_NOT_SHORTEST"
+  | "W4_OVERLAP"
+  | "W2_RETRACE"
+  | "W3_EXTENSION"
+  | "W4_ALTERNATION"
+  | "W5_PROJECTION";
+
+export interface ElliottRuleResult {
+  code: ElliottRuleCode;
+  status: RuleStatus;
+  message: string;
+}
+
+export interface ElliottWaveDTO {
+  label: WaveLabel;
+  index: number;
+  time: string; // ISO-8601
+  price: number;
+  type: "HIGH" | "LOW";
+  confirmed: boolean;
+}
+
+export interface ConfidenceBreakdown {
+  mandatoryRules: number;   // 0..25
+  alternation: number;      // 0..20
+  fibonacci: number;        // 0..20
+  pivotClarity: number;     // 0..15
+  timeDuration: number;     // 0..10
+  marketStructure: number;  // 0..10
+}
+
+export interface ElliottResultDTO {
+  status: ElliottStatus;
+  bias: Bias;
+  pattern: WavePattern;
+  currentWave: WaveLabel | null;
+  completion: number;       // 0..1
+  confidence: number;       // 0..100
+  invalidationLevel: number | null;
+  rules: ElliottRuleResult[];
+  waves: ElliottWaveDTO[];
+  alternatives: ElliottResultDTO[];
+  breakdown?: ConfidenceBreakdown;
+}
