@@ -9,38 +9,154 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
+import { Route as AuthenticatedChartSymbolRouteImport } from './routes/_authenticated/chart.$symbol'
+import { Route as ApiPublicHooksScanAndAlertRouteImport } from './routes/api/public/hooks/scan-and-alert'
+import { Route as ApiPublicHooksEvaluateResultsRouteImport } from './routes/api/public/hooks/evaluate-results'
 
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAlertsRoute = AuthenticatedAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedChartSymbolRoute =
+  AuthenticatedChartSymbolRouteImport.update({
+    id: '/chart/$symbol',
+    path: '/chart/$symbol',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const ApiPublicHooksScanAndAlertRoute =
+  ApiPublicHooksScanAndAlertRouteImport.update({
+    id: '/api/public/hooks/scan-and-alert',
+    path: '/api/public/hooks/scan-and-alert',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksEvaluateResultsRoute =
+  ApiPublicHooksEvaluateResultsRouteImport.update({
+    id: '/api/public/hooks/evaluate-results',
+    path: '/api/public/hooks/evaluate-results',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/alerts': typeof AuthenticatedAlertsRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
+  '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/alerts': typeof AuthenticatedAlertsRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
+  '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/_authenticated/alerts': typeof AuthenticatedAlertsRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
+  '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/alerts'
+    | '/dashboard'
+    | '/settings'
+    | '/chart/$symbol'
+    | '/api/public/hooks/evaluate-results'
+    | '/api/public/hooks/scan-and-alert'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/alerts'
+    | '/dashboard'
+    | '/settings'
+    | '/chart/$symbol'
+    | '/api/public/hooks/evaluate-results'
+    | '/api/public/hooks/scan-and-alert'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/_authenticated/alerts'
+    | '/_authenticated/dashboard'
+    | '/_authenticated/settings'
+    | '/_authenticated/chart/$symbol'
+    | '/api/public/hooks/evaluate-results'
+    | '/api/public/hooks/scan-and-alert'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
+  ApiPublicHooksEvaluateResultsRoute: typeof ApiPublicHooksEvaluateResultsRoute
+  ApiPublicHooksScanAndAlertRoute: typeof ApiPublicHooksScanAndAlertRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +164,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/alerts': {
+      id: '/_authenticated/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AuthenticatedAlertsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/chart/$symbol': {
+      id: '/_authenticated/chart/$symbol'
+      path: '/chart/$symbol'
+      fullPath: '/chart/$symbol'
+      preLoaderRoute: typeof AuthenticatedChartSymbolRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/public/hooks/scan-and-alert': {
+      id: '/api/public/hooks/scan-and-alert'
+      path: '/api/public/hooks/scan-and-alert'
+      fullPath: '/api/public/hooks/scan-and-alert'
+      preLoaderRoute: typeof ApiPublicHooksScanAndAlertRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/evaluate-results': {
+      id: '/api/public/hooks/evaluate-results'
+      path: '/api/public/hooks/evaluate-results'
+      fullPath: '/api/public/hooks/evaluate-results'
+      preLoaderRoute: typeof ApiPublicHooksEvaluateResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedChartSymbolRoute: typeof AuthenticatedChartSymbolRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAlertsRoute: AuthenticatedAlertsRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedChartSymbolRoute: AuthenticatedChartSymbolRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
+  ApiPublicHooksEvaluateResultsRoute: ApiPublicHooksEvaluateResultsRoute,
+  ApiPublicHooksScanAndAlertRoute: ApiPublicHooksScanAndAlertRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
