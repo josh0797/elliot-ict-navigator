@@ -35,7 +35,13 @@ test("OB Phase 5: emits bullish OB with displacement + BOS + FVG", () => {
 
   const fvgs = detectFVGs(candles);
   const bos: StructureEvent[] = [
-    { id: "bos-22-l", type: "BOS", direction: "long", price: 100.5, time: candles[22].time, index: 22 },
+    {
+      id: "bos-22-l", type: "BOS", direction: "long",
+      price: 100.5, time: candles[22].time, index: 22,
+      state: "CONFIRMED", brokenPivotId: "p-22-h",
+      breakIndex: 22, breakPrice: candles[22].close,
+      closeBeyondAtr: 2, displacement: true,
+    },
   ];
   const obs = detectOrderBlocks(candles, fvgs, bos);
   assert.equal(obs.length, 1, "should emit exactly one OB");
@@ -60,7 +66,13 @@ test("OB lifecycle: invalidates when close pierces opposite side", () => {
 
   const fvgs = detectFVGs(candles);
   const bos: StructureEvent[] = [
-    { id: "bos-22-l", type: "BOS", direction: "long", price: 100.5, time: candles[22].time, index: 22 },
+    {
+      id: "bos-22-l", type: "BOS", direction: "long",
+      price: 100.5, time: candles[22].time, index: 22,
+      state: "CONFIRMED", brokenPivotId: "p-22-h",
+      breakIndex: 22, breakPrice: candles[22].close,
+      closeBeyondAtr: 2, displacement: true,
+    },
   ];
   const obs = detectOrderBlocks(candles, fvgs, bos);
   assert.equal(obs.length, 1);
