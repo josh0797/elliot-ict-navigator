@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import { detectLiquidity } from "../liquidity";
 import { detectSweeps } from "../sweeps";
 import type { CandleV2, PivotV2 } from "../../schemas/analysis";
@@ -11,8 +12,7 @@ function piv(index: number, time: number, price: number, type: "HIGH" | "LOW"): 
   return { id: `p-${index}`, index, time, price, type, strength: "MAJOR", atrDistance: 1, confirmed: true };
 }
 
-describe("Phase 6 — Liquidity", () => {
-  it("clusters equal highs into a single BSL level", () => {
+test("Phase 6 — clusters equal highs into a single BSL level", () => {
     const t0 = 1_700_000_000;
     const step = 3600;
     const candles: CandleV2[] = Array.from({ length: 40 }, (_, i) => c(i, t0 + i * step, 100, 101, 99, 100));
@@ -23,29 +23,29 @@ describe("Phase 6 — Liquidity", () => {
     ];
     const levels = detectLiquidity(pivots, candles);
     const eqh = levels.find((l) => l.kind === "EQH");
-    expect(eqh).toBeDefined();
-    expect(eqh!.touches).toBe(3);
-    expect(eqh!.side).toBe("BSL");
-    expect(eqh!.state).toBe("ACTIVE");
-  });
+    assert.ok(eqh);
+    assert.equal(eqh!.touches, 3);
+    assert.equal(eqh!.side, "BSL");
+    assert.equal(eqh!.state, "ACTIVE");
+});
 
-  it("marks a level SWEPT then MITIGATED when price returns", () => {
+test("Phase 6 — marks a level SWEPT when wick exceeds it", () => {
     const t0 = 1_700_000_000;
     const step = 3600;
     const candles: CandleV2[] = [];
     for (let i = 0; i < 20; i++) candles.push(c(i, t0 + i * step, 100, 100.5, 99.5, 100));
-    candles.push(c(20, t0 + 20 * step, 110, 110, 110, 110)); // pivot high
+    candles.push(c(20, t0 + 20 * step, 110, 110, 110, 110));
     for (let i = 21; i < 30; i++) candles.push(c(i, t0 + i * step, 105, 106, 104, 105));
-    candles.push(c(30, t0 + 30 * step, 109, 112, 108, 108)); // wick sweeps 110, close back below
-    for (let i = 31; i < 40; i++) candles.push(c(i, t0 + i * step, 107, 111, 105, 108)); // mitigation: trades back through 110
+    candles.push(c(30, t0 + 30 * step, 109, 112, 108, 108));
+    for (let i = 31; i < 40; i++) candles.push(c(i, t0 + i * step, 107, 111, 105, 108));
     const pivots = [piv(20, candles[20].time, 110, "HIGH")];
     const levels = detectLiquidity(pivots, candles);
     const swing = levels.find((l) => l.kind === "SWING_HIGH" && l.price === 110);
-    expect(swing).toBeDefined();
-    expect(swing!.state === "SWEPT" || swing!.state === "MITIGATED").toBe(true);
-  });
+    assert.ok(swing);
+    assert.ok(swing!.state === "SWEPT" || swing!.state === "MITIGATED");
+});
 
-  it("detectSweeps records stop-hunt with closeBack and links to target level", () => {
+test("Phase 6 — detectSweeps records stop-hunt with closeBack and target link", () => {
     const t0 = 1_700_000_000;
     const step = 3600;
     const candles: CandleV2[] = [];
@@ -57,10 +57,9 @@ describe("Phase 6 — Liquidity", () => {
     const levels = detectLiquidity(pivots, candles);
     const sweeps = detectSweeps(candles, levels, []);
     const sw = sweeps.find((s) => s.type === "buy_side");
-    expect(sw).toBeDefined();
-    expect(sw!.wickBeyond).toBe(true);
-    expect(sw!.closeBack).toBe(true);
-    expect(sw!.targetLiquidityId.startsWith("liq-")).toBe(true);
-    expect(sw!.quality).toBeGreaterThan(50);
-  });
+    assert.ok(sw);
+    assert.equal(sw!.wickBeyond, true);
+    assert.equal(sw!.closeBack, true);
+    assert.ok(sw!.targetLiquidityId.startsWith("liq-"));
+    assert.ok(sw!.quality > 50);
 });
