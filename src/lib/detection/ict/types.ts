@@ -1,6 +1,7 @@
 import type { Bias } from "../elliott/types";
 
 export interface FVG {
+  id: string;
   type: "bullish" | "bearish";
   top: number;
   bottom: number;
@@ -10,13 +11,30 @@ export interface FVG {
   mitigated: boolean;
 }
 
+export type OBState = "FRESH" | "TOUCHED" | "MITIGATED" | "INVALIDATED" | "BREAKER";
+export type OBRangePolicy = "FULL_CANDLE" | "BODY" | "OPEN_TO_LOW" | "OPEN_TO_HIGH";
+
 export interface OrderBlock {
-  type: "bullish" | "bearish";
+  id: string;
+  type: "BULLISH" | "BEARISH";
   top: number;
   bottom: number;
-  index: number;
-  time: number;
-  mitigated: boolean;
+  originIndex: number;
+  originTime: number;
+  state: OBState;
+  touchCount: number;
+  /** 0..100 — how far into the OB price has reached. */
+  mitigationPercent: number;
+  displacementConfirmed: boolean;
+  bosConfirmed: boolean;
+  fvgAssociated: boolean;
+  /** undefined when provider gives no volume — never penalises quality. */
+  volumeConfirmation: boolean;
+  bosRef: string | null;
+  fvgRef: string | null;
+  /** 0..100 composite score. */
+  quality: number;
+  rangePolicy: OBRangePolicy;
 }
 
 export interface LiquidityLevel {
@@ -35,6 +53,7 @@ export interface LiquiditySweep {
 }
 
 export interface StructureEvent {
+  id: string;
   type: "BOS" | "CHoCH";
   direction: "long" | "short";
   price: number;
