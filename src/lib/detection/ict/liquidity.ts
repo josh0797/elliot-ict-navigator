@@ -1,31 +1,224 @@
-import type { PivotV2 } from "../schemas/analysis";
-import type { LiquidityLevel } from "./types";
+import type { CandleV2, PivotV2 } from "../schemas/analysis";
+import type { LiquidityKind, LiquidityLevel, LiquiditySide } from "./types";
 
-export function detectLiquidity(pivots: ReadonlyArray<PivotV2>, lastPrice: number, tol = 0.0015): LiquidityLevel[] {
+/**
+ * Phase 6 canonical liquidity detection.
+ *
+ * Levels enumerated:
+ *  - SWING_HIGH / SWING_LOW         (every confirmed pivot)
+ *  - EQH / EQL                      (two or more pivots clustered within `tol`)
+ *  - PDH / PDL                      (previous UTC day extremes)
+ *  - ASIA_HIGH / ASIA_LOW           (00:00–07:00 UTC of current day)
+ *  - SESSION_HIGH / SESSION_LOW     (current UTC day extremes so far)
+ *
+ * State machine (per level):
+ *   ACTIVE     — price has not crossed beyond the level since creation.
+ *   SWEPT      — a candle's wick exceeded the level (raid).
+ *   MITIGATED  — after the sweep, price has retraced through the level (close on the
+ *                opposite side of the sweep), i.e. the liquidity is consumed.
+ */
+
+const DEFAULT_EQ_TOL = 0.0015; // 15 bps cluster tolerance
+
+function strengthOf(touches: number, recencyBars: number, totalBars: number): number {
+  const touchScore = Math.min(50, touches * 15);
+  const recency = Math.max(0, 1 - recencyBars / Math.max(1, totalBars));
+  return Math.round(touchScore + recency * 50);
+}
+
+function utcDayKey(t: number): string {
+  const d = new Date(t * 1000);
+  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+}
+
+function isAsiaSession(t: number): boolean {
+  const h = new Date(t * 1000).getUTCHours();
+  return h >= 0 && h < 7;
+}
+
+function applyStateMachine(
+  level: LiquidityLevel,
+  candles: ReadonlyArray<CandleV2>,
+  fromIndex: number,
+): void {
+  for (let k = fromIndex + 1; k < candles.length; k++) {
+    const c = candles[k];
+    if (level.state === "ACTIVE") {
+      const sweptHigh = level.side === "BSL" && c.high > level.price;
+      const sweptLow = level.side === "SSL" && c.low < level.price;
+      if (sweptHigh || sweptLow) {
+        level.state = "SWEPT";
+        level.sweptAtIndex = k;
+        level.sweptAtTime = c.time;
+      }
+    } else if (level.state === "SWEPT") {
+      const consumedHigh = level.side === "BSL" && c.close < level.price;
+      const consumedLow = level.side === "SSL" && c.close > level.price;
+      if (consumedHigh || consumedLow) level.state = "MITIGATED";
+    }
+  }
+}
+
+function pushLevel(
+  out: LiquidityLevel[],
+  base: Omit<LiquidityLevel, "state" | "sweptAtIndex" | "sweptAtTime" | "strength"> & { strength: number },
+  candles: ReadonlyArray<CandleV2>,
+  fromIndex: number,
+): void {
+  const lvl: LiquidityLevel = {
+    ...base,
+    state: "ACTIVE",
+    sweptAtIndex: null,
+    sweptAtTime: null,
+  };
+  applyStateMachine(lvl, candles, fromIndex);
+  out.push(lvl);
+}
+
+export interface DetectLiquidityOptions {
+  /** Cluster tolerance for equal highs/lows (relative). */
+  eqTolerance?: number;
+  /** Emit individual swing-high / swing-low levels (defaults to true). */
+  emitSwings?: boolean;
+}
+
+export function detectLiquidity(
+  pivots: ReadonlyArray<PivotV2>,
+  candles: ReadonlyArray<CandleV2>,
+  opts: DetectLiquidityOptions = {},
+): LiquidityLevel[] {
+  const tol = opts.eqTolerance ?? DEFAULT_EQ_TOL;
+  const emitSwings = opts.emitSwings ?? true;
+  const out: LiquidityLevel[] = [];
+  if (candles.length === 0) return out;
+  const totalBars = candles.length;
+
   const highs = pivots.filter((p) => p.type === "HIGH");
   const lows = pivots.filter((p) => p.type === "LOW");
-  const out: LiquidityLevel[] = [];
-  const cluster = (xs: PivotV2[], kind: "BSL" | "SSL") => {
+
+  // --- Equal highs / equal lows clusters ---
+  const cluster = (xs: PivotV2[], side: LiquiditySide, kind: LiquidityKind) => {
     const used = new Set<number>();
     for (let i = 0; i < xs.length; i++) {
       if (used.has(i)) continue;
       const ref = xs[i];
-      let touches = 1;
-      let last = ref;
+      const members: PivotV2[] = [ref];
       for (let j = i + 1; j < xs.length; j++) {
+        if (used.has(j)) continue;
         if (Math.abs(xs[j].price - ref.price) / ref.price <= tol) {
-          touches++;
+          members.push(xs[j]);
           used.add(j);
-          last = xs[j];
         }
       }
-      if (touches >= 2) {
-        const swept = kind === "BSL" ? lastPrice > ref.price : lastPrice < ref.price;
-        out.push({ type: kind, price: ref.price, time: last.time, touches, swept });
+      if (members.length >= 2) {
+        used.add(i);
+        const last = members[members.length - 1];
+        const price = members.reduce((s, m) => s + m.price, 0) / members.length;
+        pushLevel(out, {
+          id: `liq-${kind}-${ref.index}`,
+          side, kind,
+          price,
+          time: last.time,
+          originIndices: members.map((m) => m.index),
+          touches: members.length,
+          strength: strengthOf(members.length, totalBars - last.index, totalBars),
+        }, candles, last.index);
       }
     }
   };
-  cluster(highs, "BSL");
-  cluster(lows, "SSL");
+  cluster(highs, "BSL", "EQH");
+  cluster(lows, "SSL", "EQL");
+
+  // --- Individual swing highs / lows (only confirmed pivots, not already in cluster) ---
+  if (emitSwings) {
+    const clusteredIdx = new Set(out.flatMap((l) => l.originIndices));
+    for (const p of pivots) {
+      if (!p.confirmed) continue;
+      if (clusteredIdx.has(p.index)) continue;
+      const side: LiquiditySide = p.type === "HIGH" ? "BSL" : "SSL";
+      const kind: LiquidityKind = p.type === "HIGH" ? "SWING_HIGH" : "SWING_LOW";
+      pushLevel(out, {
+        id: `liq-${kind}-${p.index}`,
+        side, kind,
+        price: p.price,
+        time: p.time,
+        originIndices: [p.index],
+        touches: 1,
+        strength: strengthOf(1, totalBars - p.index, totalBars),
+      }, candles, p.index);
+    }
+  }
+
+  // --- Session / day extremes ---
+  const last = candles[candles.length - 1];
+  const lastDayKey = utcDayKey(last.time);
+  const dayBuckets = new Map<string, { hi: CandleV2; lo: CandleV2 }>();
+  for (const c of candles) {
+    const key = utcDayKey(c.time);
+    const b = dayBuckets.get(key);
+    if (!b) dayBuckets.set(key, { hi: c, lo: c });
+    else {
+      if (c.high > b.hi.high) b.hi = c;
+      if (c.low < b.lo.low) b.lo = c;
+    }
+  }
+  const days = Array.from(dayBuckets.entries()).sort((a, b) => a[1].hi.time - b[1].hi.time);
+  const lastDayIdx = days.findIndex(([k]) => k === lastDayKey);
+  if (lastDayIdx > 0) {
+    const [, prev] = days[lastDayIdx - 1];
+    pushLevel(out, {
+      id: `liq-PDH-${prev.hi.index}`,
+      side: "BSL", kind: "PDH",
+      price: prev.hi.high, time: prev.hi.time,
+      originIndices: [prev.hi.index], touches: 1,
+      strength: strengthOf(2, totalBars - prev.hi.index, totalBars),
+    }, candles, prev.hi.index);
+    pushLevel(out, {
+      id: `liq-PDL-${prev.lo.index}`,
+      side: "SSL", kind: "PDL",
+      price: prev.lo.low, time: prev.lo.time,
+      originIndices: [prev.lo.index], touches: 1,
+      strength: strengthOf(2, totalBars - prev.lo.index, totalBars),
+    }, candles, prev.lo.index);
+  }
+  if (lastDayIdx >= 0) {
+    const [, cur] = days[lastDayIdx];
+    pushLevel(out, {
+      id: `liq-SH-${cur.hi.index}`,
+      side: "BSL", kind: "SESSION_HIGH",
+      price: cur.hi.high, time: cur.hi.time,
+      originIndices: [cur.hi.index], touches: 1,
+      strength: strengthOf(1, totalBars - cur.hi.index, totalBars),
+    }, candles, cur.hi.index);
+    pushLevel(out, {
+      id: `liq-SL-${cur.lo.index}`,
+      side: "SSL", kind: "SESSION_LOW",
+      price: cur.lo.low, time: cur.lo.time,
+      originIndices: [cur.lo.index], touches: 1,
+      strength: strengthOf(1, totalBars - cur.lo.index, totalBars),
+    }, candles, cur.lo.index);
+  }
+
+  // --- Asia session of the last UTC day ---
+  const asiaCandles = candles.filter((c) => utcDayKey(c.time) === lastDayKey && isAsiaSession(c.time));
+  if (asiaCandles.length > 0) {
+    let aHi = asiaCandles[0], aLo = asiaCandles[0];
+    for (const c of asiaCandles) { if (c.high > aHi.high) aHi = c; if (c.low < aLo.low) aLo = c; }
+    pushLevel(out, {
+      id: `liq-AH-${aHi.index}`,
+      side: "BSL", kind: "ASIA_HIGH",
+      price: aHi.high, time: aHi.time,
+      originIndices: [aHi.index], touches: 1,
+      strength: strengthOf(2, totalBars - aHi.index, totalBars),
+    }, candles, aHi.index);
+    pushLevel(out, {
+      id: `liq-AL-${aLo.index}`,
+      side: "SSL", kind: "ASIA_LOW",
+      price: aLo.low, time: aLo.time,
+      originIndices: [aLo.index], touches: 1,
+      strength: strengthOf(2, totalBars - aLo.index, totalBars),
+    }, candles, aLo.index);
+  }
+
   return out;
 }
