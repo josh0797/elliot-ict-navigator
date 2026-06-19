@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { detectSetup } from "@/lib/detection/engine";
 import type { Candle } from "@/lib/detection/types";
+import { scoreSetupML } from "@/lib/detection/model";
 
 const PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "XAU/USD"];
 const TFS = ["15min", "1h", "4h"];
@@ -76,6 +77,19 @@ export const Route = createFileRoute("/api/public/hooks/scan-and-alert")({
             if (candles.length < 100) continue;
             const setup = detectSetup(symbol, tf, candles);
             if (!setup || setup.score < 0.6) continue;
+
+            // Blend with trained ML model if active
+            const mlProb = await scoreSetupML({
+              instrument: symbol,
+              timeframe: tf,
+              direction: setup.direction === "long" ? "buy" : "sell",
+              pattern: "impulse",
+              wave_degree: "intermediate",
+              wave_current: setup.wave.currentWave,
+            });
+            const finalScore = mlProb === null ? setup.score : 0.5 * setup.score + 0.5 * mlProb;
+            if (finalScore < 0.6) continue;
+            setup.score = finalScore;
 
             // Skip duplicates: same symbol+tf+direction in last 4 hours
             const since = new Date(Date.now() - 4 * 3600_000).toISOString();
