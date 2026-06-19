@@ -45,6 +45,7 @@ export type LiquidityKind =
   | "EQH" | "EQL"            // equal highs / equal lows (stop clusters)
   | "SWING_HIGH" | "SWING_LOW"
   | "PDH" | "PDL"            // previous-day high / low
+  | "PWH" | "PWL"            // previous-week high / low
   | "SESSION_HIGH" | "SESSION_LOW"
   | "ASIA_HIGH" | "ASIA_LOW";
 export type LiquidityState = "ACTIVE" | "SWEPT" | "MITIGATED";
@@ -87,13 +88,32 @@ export interface LiquiditySweep {
   quality: number;
 }
 
+export type StructureState = "PROVISIONAL" | "CONFIRMED" | "FAILED";
+
 export interface StructureEvent {
   id: string;
   type: "BOS" | "CHoCH";
   direction: "long" | "short";
+  /** Pivot price that was broken. */
   price: number;
   time: number;
+  /** Candle index where the breaking close happened. */
   index: number;
+  state: StructureState;
+  /** Reference to the protected pivot whose level was broken. */
+  brokenPivotId: string;
+  /** Reference to the swing leg leading to that pivot, when known. */
+  brokenSwingId?: string;
+  breakIndex: number;
+  breakPrice: number;
+  /** Magnitude of the close beyond the broken level, expressed in ATR units. */
+  closeBeyondAtr: number;
+  /** Whether the break candle qualifies as displacement (body >= 1.5*ATR). */
+  displacement: boolean;
+  /** Optional reference to a confirming displacement candle id. */
+  displacementId?: string;
+  /** For CHoCH, optional reference to a preceding liquidity sweep. */
+  precedingSweepId?: string;
 }
 
 export type KillzoneName = "ASIA" | "LONDON" | "NY_AM" | "NY_PM" | null;

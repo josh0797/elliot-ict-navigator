@@ -1,4 +1,5 @@
 import type { CandleV2, PivotV2 } from "../schemas/analysis";
+import { atr14 } from "../indicators/atr";
 import type { LiquidityKind, LiquidityLevel, LiquiditySide } from "./types";
 
 /**
@@ -18,7 +19,8 @@ import type { LiquidityKind, LiquidityLevel, LiquiditySide } from "./types";
  *                opposite side of the sweep), i.e. the liquidity is consumed.
  */
 
-const DEFAULT_EQ_TOL = 0.0015; // 15 bps cluster tolerance
+const DEFAULT_EQ_ATR_TOL = 0.25; // |Δprice| <= 0.25 * ATR considered "equal"
+const DEFAULT_EQ_REL_TOL = 0.0015; // 15 bps fallback when ATR is unavailable
 
 function strengthOf(touches: number, recencyBars: number, totalBars: number): number {
   const touchScore = Math.min(50, touches * 15);
@@ -29,6 +31,18 @@ function strengthOf(touches: number, recencyBars: number, totalBars: number): nu
 function utcDayKey(t: number): string {
   const d = new Date(t * 1000);
   return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+}
+
+/** ISO week key (year-week) for grouping previous-week extremes. */
+function utcWeekKey(t: number): string {
+  const d = new Date(t * 1000);
+  // ISO week: Thursday in the current week decides the year.
+  const tmp = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = tmp.getUTCDay() || 7;
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${tmp.getUTCFullYear()}-W${week}`;
 }
 
 function isAsiaSession(t: number): boolean {
@@ -76,10 +90,14 @@ function pushLevel(
 }
 
 export interface DetectLiquidityOptions {
-  /** Cluster tolerance for equal highs/lows (relative). */
-  eqTolerance?: number;
+  /** Cluster tolerance for equal highs/lows expressed in ATR multiples. */
+  eqAtrTolerance?: number;
+  /** Fallback relative tolerance when ATR is unavailable. */
+  eqRelTolerance?: number;
   /** Emit individual swing-high / swing-low levels (defaults to true). */
   emitSwings?: boolean;
+  /** When true, only MAJOR pivots feed swing-high/low levels (defaults to false). */
+  majorOnly?: boolean;
 }
 
 export function detectLiquidity(
@@ -87,11 +105,22 @@ export function detectLiquidity(
   candles: ReadonlyArray<CandleV2>,
   opts: DetectLiquidityOptions = {},
 ): LiquidityLevel[] {
-  const tol = opts.eqTolerance ?? DEFAULT_EQ_TOL;
+  const atrTol = opts.eqAtrTolerance ?? DEFAULT_EQ_ATR_TOL;
+  const relTol = opts.eqRelTolerance ?? DEFAULT_EQ_REL_TOL;
   const emitSwings = opts.emitSwings ?? true;
   const out: LiquidityLevel[] = [];
   if (candles.length === 0) return out;
   const totalBars = candles.length;
+  const atrSeries = atr14(candles);
+
+  /** Equality test: |a.price - b.price| <= ATR(at later pivot) * atrTol; rel fallback otherwise. */
+  const equalPrice = (a: PivotV2, b: PivotV2): boolean => {
+    const refAtr = atrSeries[Math.max(a.index, b.index)];
+    if (Number.isFinite(refAtr) && refAtr > 0) {
+      return Math.abs(a.price - b.price) <= refAtr * atrTol;
+    }
+    return Math.abs(a.price - b.price) / Math.max(a.price, 1) <= relTol;
+  };
 
   const highs = pivots.filter((p) => p.type === "HIGH");
   const lows = pivots.filter((p) => p.type === "LOW");
@@ -105,7 +134,7 @@ export function detectLiquidity(
       const members: PivotV2[] = [ref];
       for (let j = i + 1; j < xs.length; j++) {
         if (used.has(j)) continue;
-        if (Math.abs(xs[j].price - ref.price) / ref.price <= tol) {
+        if (equalPrice(ref, xs[j])) {
           members.push(xs[j]);
           used.add(j);
         }
@@ -134,6 +163,7 @@ export function detectLiquidity(
     const clusteredIdx = new Set(out.flatMap((l) => l.originIndices));
     for (const p of pivots) {
       if (!p.confirmed) continue;
+      if (opts.majorOnly && p.strength !== "MAJOR") continue;
       if (clusteredIdx.has(p.index)) continue;
       const side: LiquiditySide = p.type === "HIGH" ? "BSL" : "SSL";
       const kind: LiquidityKind = p.type === "HIGH" ? "SWING_HIGH" : "SWING_LOW";
@@ -149,17 +179,26 @@ export function detectLiquidity(
     }
   }
 
-  // --- Session / day extremes ---
+  // --- Day / week extremes ---
   const last = candles[candles.length - 1];
   const lastDayKey = utcDayKey(last.time);
+  const lastWeekKey = utcWeekKey(last.time);
   const dayBuckets = new Map<string, { hi: CandleV2; lo: CandleV2 }>();
+  const weekBuckets = new Map<string, { hi: CandleV2; lo: CandleV2 }>();
   for (const c of candles) {
-    const key = utcDayKey(c.time);
-    const b = dayBuckets.get(key);
-    if (!b) dayBuckets.set(key, { hi: c, lo: c });
+    const dk = utcDayKey(c.time);
+    const db = dayBuckets.get(dk);
+    if (!db) dayBuckets.set(dk, { hi: c, lo: c });
     else {
-      if (c.high > b.hi.high) b.hi = c;
-      if (c.low < b.lo.low) b.lo = c;
+      if (c.high > db.hi.high) db.hi = c;
+      if (c.low < db.lo.low) db.lo = c;
+    }
+    const wk = utcWeekKey(c.time);
+    const wb = weekBuckets.get(wk);
+    if (!wb) weekBuckets.set(wk, { hi: c, lo: c });
+    else {
+      if (c.high > wb.hi.high) wb.hi = c;
+      if (c.low < wb.lo.low) wb.lo = c;
     }
   }
   const days = Array.from(dayBuckets.entries()).sort((a, b) => a[1].hi.time - b[1].hi.time);
@@ -179,6 +218,25 @@ export function detectLiquidity(
       price: prev.lo.low, time: prev.lo.time,
       originIndices: [prev.lo.index], touches: 1,
       strength: strengthOf(2, totalBars - prev.lo.index, totalBars),
+    }, candles, prev.lo.index);
+  }
+  const weeks = Array.from(weekBuckets.entries()).sort((a, b) => a[1].hi.time - b[1].hi.time);
+  const lastWeekIdx = weeks.findIndex(([k]) => k === lastWeekKey);
+  if (lastWeekIdx > 0) {
+    const [, prev] = weeks[lastWeekIdx - 1];
+    pushLevel(out, {
+      id: `liq-PWH-${prev.hi.index}`,
+      side: "BSL", kind: "PWH",
+      price: prev.hi.high, time: prev.hi.time,
+      originIndices: [prev.hi.index], touches: 1,
+      strength: strengthOf(3, totalBars - prev.hi.index, totalBars),
+    }, candles, prev.hi.index);
+    pushLevel(out, {
+      id: `liq-PWL-${prev.lo.index}`,
+      side: "SSL", kind: "PWL",
+      price: prev.lo.low, time: prev.lo.time,
+      originIndices: [prev.lo.index], touches: 1,
+      strength: strengthOf(3, totalBars - prev.lo.index, totalBars),
     }, candles, prev.lo.index);
   }
   if (lastDayIdx >= 0) {

@@ -8,6 +8,8 @@ const OPTIONS: { key: keyof LayerToggles; label: string }[] = [
   { key: "alternativeCount",  label: "Alternative count" },
   { key: "invalidation",      label: "Invalidation" },
   { key: "fibonacciElliott",  label: "Fibonacci Elliott" },
+  { key: "liquidity",         label: "Liquidity levels" },
+  { key: "sweeps",            label: "Sweep markers" },
 ];
 
 export function LayerControls({

@@ -22,6 +22,8 @@ export interface LayerToggles {
   alternativeCount: boolean;
   invalidation: boolean;
   fibonacciElliott: boolean;
+  liquidity: boolean;
+  sweeps: boolean;
 }
 
 export interface PivotTooltip {
@@ -227,6 +229,57 @@ export function TradingChart({
           }
         }
       }
+    }
+
+    // ICT Liquidity overlay: horizontal price lines + BSL/SSL labels + touches + state.
+    if (ict && layers.liquidity) {
+      // Limit to the top-strength levels (by strength) to keep the chart legible.
+      const top = [...ict.liquidity]
+        .sort((a, b) => b.strength - a.strength)
+        .slice(0, 14);
+      for (const lvl of top) {
+        const isBsl = lvl.side === "BSL";
+        const sideColor = lvl.state === "SWEPT"
+          ? "rgba(148,163,184,0.55)"
+          : lvl.state === "MITIGATED"
+            ? "rgba(100,116,139,0.4)"
+            : isBsl ? "rgba(34,197,94,0.85)" : "rgba(239,68,68,0.85)";
+        const title = `${lvl.side} ${lvl.kind} ×${lvl.touches} · ${lvl.state}`;
+        priceLinesRef.current.push(series.createPriceLine({
+          price: lvl.price,
+          color: sideColor,
+          lineWidth: lvl.state === "ACTIVE" ? 2 : 1,
+          lineStyle: lvl.state === "SWEPT" ? LineStyle.Dashed : LineStyle.Solid,
+          axisLabelVisible: true,
+          title,
+        }));
+      }
+    }
+
+    // ICT Sweep markers on the candle that raided the liquidity.
+    if (ict && layers.sweeps && ict.sweeps.length > 0) {
+      const overlay = chart.addSeries(LineSeries, {
+        color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false,
+      });
+      overlay.setData(ict.sweeps
+        .filter((s) => s.index < candles.length)
+        .map((s) => ({
+          time: candles[s.index].time as unknown as UTCTimestamp,
+          value: s.price,
+        })));
+      createSeriesMarkers(
+        overlay as unknown as Parameters<typeof createSeriesMarkers>[0],
+        ict.sweeps
+          .filter((s) => s.index < candles.length)
+          .map((s) => ({
+            time: candles[s.index].time as unknown as UTCTimestamp,
+            position: s.type === "buy_side" ? "aboveBar" : "belowBar",
+            color: s.type === "buy_side" ? "#ef4444" : "#22c55e",
+            shape: s.type === "buy_side" ? "arrowDown" : "arrowUp",
+            text: `${s.type === "buy_side" ? "BSL" : "SSL"}·Q${s.quality}`,
+          })) as Parameters<typeof createSeriesMarkers>[1],
+      );
+      overlaysRef.current.push(overlay);
     }
 
     chart.timeScale().fitContent();
