@@ -38,6 +38,8 @@ const DEFAULT_LAYERS: LayerToggles = {
   alternativeCount: false,
   invalidation: true,
   fibonacciElliott: false,
+  liquidity: true,
+  sweeps: true,
 };
 
 function loadLayers(): LayerToggles {
