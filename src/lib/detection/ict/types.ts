@@ -37,19 +37,54 @@ export interface OrderBlock {
   rangePolicy: OBRangePolicy;
 }
 
+/**
+ * Canonical Phase 6 liquidity primitives.
+ */
+export type LiquiditySide = "BSL" | "SSL";
+export type LiquidityKind =
+  | "EQH" | "EQL"            // equal highs / equal lows (stop clusters)
+  | "SWING_HIGH" | "SWING_LOW"
+  | "PDH" | "PDL"            // previous-day high / low
+  | "SESSION_HIGH" | "SESSION_LOW"
+  | "ASIA_HIGH" | "ASIA_LOW";
+export type LiquidityState = "ACTIVE" | "SWEPT" | "MITIGATED";
+
 export interface LiquidityLevel {
-  type: "BSL" | "SSL";
+  id: string;
+  side: LiquiditySide;
+  kind: LiquidityKind;
   price: number;
   time: number;
+  /** Indices that contributed to the cluster (>=1). */
+  originIndices: number[];
   touches: number;
-  swept: boolean;
+  state: LiquidityState;
+  sweptAtIndex: number | null;
+  sweptAtTime: number | null;
+  /** 0..100 — number of touches + cluster width + recency. */
+  strength: number;
 }
 
 export interface LiquiditySweep {
+  id: string;
+  side: LiquiditySide;
+  /** "buy_side" sweeps a BSL (raid on highs); "sell_side" sweeps a SSL. */
   type: "buy_side" | "sell_side";
   price: number;
   time: number;
   index: number;
+  /** Liquidity level that was raided. */
+  targetLiquidityId: string;
+  /** Wick exceeded the level. */
+  wickBeyond: boolean;
+  /** Candle closed back inside the prior range (stop-hunt confirmation). */
+  closeBack: boolean;
+  /** A BOS opposite the sweep printed within the displacement window. */
+  displacementAfter: boolean;
+  /** True once price has retraced into the swept range after the sweep. */
+  mitigated: boolean;
+  /** 0..100 composite. */
+  quality: number;
 }
 
 export interface StructureEvent {

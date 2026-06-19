@@ -13,9 +13,8 @@ export function analyzeIct(candles: ReadonlyArray<CandleV2>, pivots: ReadonlyArr
   const fvgs = detectFVGs(candles);
   const structure = detectStructure(pivots);
   const orderBlocks = detectOrderBlocks(candles, fvgs, structure);
-  const lastPrice = candles.length ? candles[candles.length - 1].close : 0;
-  const liquidity = detectLiquidity(pivots, lastPrice);
-  const sweeps = detectSweeps(candles, pivots);
+  const liquidity = detectLiquidity(pivots, candles);
+  const sweeps = detectSweeps(candles, liquidity, structure);
   const bias = currentBias(pivots);
   const killzone = candles.length ? currentKillzone(candles[candles.length - 1].time) : null;
   const pdArray = computePdArray(candles);
@@ -27,7 +26,11 @@ export function analyzeIct(candles: ReadonlyArray<CandleV2>, pivots: ReadonlyArr
       score += 0.2;
     }
   }
-  if (sweeps.length > 0 && sweeps[sweeps.length - 1].index >= candles.length - 5) score += 0.15;
+  const recent = sweeps.filter((s) => s.index >= candles.length - 5);
+  if (recent.length > 0) {
+    const best = recent.reduce((m, s) => (s.quality > m ? s.quality : m), 0);
+    score += 0.05 + 0.15 * (best / 100);
+  }
   if (fvgs.some((f) => !f.mitigated)) score += 0.1;
   if (orderBlocks.some((ob) => ob.state === "FRESH" || ob.state === "TOUCHED")) score += 0.15;
   score = Math.min(1, score);
