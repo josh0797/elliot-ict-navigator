@@ -56,7 +56,8 @@ test("Phase 6 — detectSweeps records stop-hunt with closeBack and target link"
     const pivots = [piv(10, candles[10].time, 110, "HIGH")];
     const levels = detectLiquidity(pivots, candles);
     const sweeps = detectSweeps(candles, levels, []);
-    const sw = sweeps.find((s) => s.type === "buy_side");
+    const swing = levels.find((l) => l.kind === "SWING_HIGH" && l.price === 110)!;
+    const sw = sweeps.find((s) => s.targetLiquidityId === swing.id);
     assert.ok(sw);
     assert.equal(sw!.wickBeyond, true);
     assert.equal(sw!.closeBack, true);
