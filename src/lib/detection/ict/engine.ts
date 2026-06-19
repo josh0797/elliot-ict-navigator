@@ -11,9 +11,11 @@ import type { IctContext } from "./types";
 
 export function analyzeIct(candles: ReadonlyArray<CandleV2>, pivots: ReadonlyArray<PivotV2>): IctContext {
   const fvgs = detectFVGs(candles);
-  const structure = detectStructure(pivots);
-  const orderBlocks = detectOrderBlocks(candles, fvgs, structure);
   const liquidity = detectLiquidity(pivots, candles);
+  // Structure needs candle closes; sweeps enrich CHoCH provenance.
+  const provisionalSweeps = detectSweeps(candles, liquidity, []);
+  const structure = detectStructure(pivots, candles, { sweeps: provisionalSweeps });
+  const orderBlocks = detectOrderBlocks(candles, fvgs, structure);
   const sweeps = detectSweeps(candles, liquidity, structure);
   const bias = currentBias(pivots);
   const killzone = candles.length ? currentKillzone(candles[candles.length - 1].time) : null;
