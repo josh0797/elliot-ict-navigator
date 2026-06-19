@@ -2,7 +2,9 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } 
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { Activity, LayoutDashboard, BellRing, Settings, LogOut } from "lucide-react";
+import { Activity, LayoutDashboard, BellRing, Settings, LogOut, Brain } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { checkAdmin } from "@/lib/training.functions";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -20,9 +22,12 @@ function AuthenticatedShell() {
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [email, setEmail] = useState<string | null>(null);
+  const isAdminFn = useServerFn(checkAdmin);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+    isAdminFn().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
   }, []);
 
   async function signOut() {
@@ -33,8 +38,9 @@ function AuthenticatedShell() {
   const nav = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/alerts", label: "Alerts", icon: BellRing },
+    ...(isAdmin ? [{ to: "/training" as const, label: "Training", icon: Brain }] : []),
     { to: "/settings", label: "Settings", icon: Settings },
-  ] as const;
+  ];
 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
