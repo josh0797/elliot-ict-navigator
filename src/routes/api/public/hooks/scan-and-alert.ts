@@ -85,7 +85,7 @@ export const Route = createFileRoute("/api/public/hooks/scan-and-alert")({
               direction: setup.direction === "long" ? "buy" : "sell",
               pattern: "impulse",
               wave_degree: "intermediate",
-              wave_current: setup.wave.currentWave,
+              wave_current: setup.wave.currentWave ?? undefined,
             });
             const finalScore = mlProb === null ? setup.score : 0.5 * setup.score + 0.5 * mlProb;
             if (finalScore < 0.6) continue;
