@@ -1,6 +1,10 @@
 import type { Candle, Pivot } from "./types";
 
 /**
+ * @deprecated Use `detectPivots()` from `src/lib/detection/structure/pivots.ts`
+ * for ATR-aware, no-repaint, MAJOR/MINOR-graded pivots. Kept until the legacy
+ * `engine.ts` setup builder is migrated.
+ *
  * Percent-based ZigZag pivot detector. `depth` defines minimum % move
  * required to confirm a new pivot, expressed as fraction (0.003 = 0.3%).
  */

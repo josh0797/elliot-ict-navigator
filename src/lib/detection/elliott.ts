@@ -1,6 +1,11 @@
 import type { ElliottCount, Pivot, WaveLabel } from "./types";
 
 /**
+ * @deprecated Phase-1/2 introduced `src/lib/detection/elliott/engine.ts` with
+ * full candidate generation, A-B-C, diagonals and Fib scoring. This file is
+ * kept temporarily to keep `engine.ts` (legacy) building; it will be removed
+ * when the new pipeline is wired into the setup builder.
+ *
  * Attempts to label the last 6 pivots as an Elliott 1-2-3-4-5 impulse
  * (followed optionally by A-B-C). Applies the three classic rules.
  */
