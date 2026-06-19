@@ -1,65 +1,79 @@
-## Elliott + ICT Pro — App de trading con alertas en tiempo real
+## Goal
 
-App web que escanea los 7 pares mayores de FX + XAU/USD usando Twelve Data, detecta confluencias entre **conteo Elliott** (5 impulsivas + ABC) e **ICT** (Order Blocks, FVG, Liquidity Sweeps, BOS/CHoCH), y emite alertas con **Entry / SL / TP** dentro de la app y por **Telegram**.
+Permitirte subir tu CSV histórico (`elliott_dataset.csv` y futuros), entrenar un modelo de probabilidad de éxito por setup, guardarlo versionado en `model_versions`, y que el scanner use ese modelo para mejorar el score de las alertas.
 
-Arquitectura **híbrida**: detección y trazos corren en el navegador (rápido, sin costos), Lovable Cloud persiste setups + resultados + modelo compartido entre dispositivos, y un cron server-side evalúa TP/SL y dispara las alertas de Telegram.
+## Dataset analizado
 
-### Stack
-- **Frontend**: TanStack Start + React, gráficos con `lightweight-charts` (TradingView), TF.js para reentrenar el modelo de scoring en el browser.
-- **Datos**: Twelve Data (API key proporcionada). Polling cada 60s para timeframes operativos.
-- **Backend**: Lovable Cloud (Supabase) para tablas, RLS, cron y server functions. Conector **Telegram** vía gateway de Lovable.
-- **Pares/TFs por defecto**: EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD, USDCAD, NZDUSD, XAUUSD en 15m, 1h, 4h (configurable por usuario).
+3.309 filas. Etiquetas útiles `win` (608) y `loss` (906) → ~1.514 muestras de entrenamiento. El resto (`pending`, `no_symbol_or_data`) se descarta.
 
-### Pantallas
-1. **Dashboard** — grid de los 8 activos con estado actual (tendencia, onda en curso, último setup, alertas activas).
-2. **Chart detail** — gráfico con trazos automáticos: pivotes ZigZag, etiquetas de ondas 1-2-3-4-5/A-B-C, cajas OB, FVG sombreado, líneas de liquidez barridas, marcadores BOS/CHoCH y zonas de entrada con E/SL/TP.
-3. **Alertas** — feed en tiempo real (toast + panel persistente) con historial y resultado (TP1/SL/Pendiente).
-4. **Backtest & Modelo** — métricas del modelo TF.js, winrate por par/TF, botón "reentrenar con datos actuales".
-5. **Settings** — pares/TFs activos, riesgo %, chat_id de Telegram, umbral mínimo de score.
+Columnas que usaremos como features:
+- Categóricas: `instrument` (normalizado a `EUR/USD` etc.), `timeframe` (normalizado a minúsculas), `direction`, `pattern`, `wave_degree`, `wave_current` (bucketizado: motriz 1/3/5, correctivo 2/4, ABC, WXY, subondas).
+- Numéricas derivadas: `rr_ratio`, `sl_pips`, distancia Fib (presencia de `fib_618`, `fib_382`, `fib_786`), `has_alternative`.
+- Target: `result == 'win'` → 1, `result == 'loss'` → 0.
 
-### Motor de detección (cliente)
+## UX (página nueva)
+
+Nueva ruta protegida **`/training`** (solo rol `admin`) con:
+1. Tarjeta de **Upload CSV**: drag & drop, valida cabeceras, muestra preview (rows, win/loss ratio).
+2. Botón **Entrenar modelo** → llama server function, muestra progreso, devuelve accuracy de validación y nº de features.
+3. Lista de **versiones** desde `model_versions` (versión, accuracy, trained_on, fecha) con botón "Activar" para marcar la versión usada en el scanner.
+4. Panel **Importancia de features** (top 15 coeficientes) tras entrenar.
+
+Acceso al menú lateral: enlace "Training" visible solo si `has_role(uid,'admin')`. Para tu cuenta, el primer admin se asigna desde una migración seed (`INSERT user_roles ... 'admin'` con tu `user_id`).
+
+## Backend
+
+### Tabla
+Reusamos `model_versions` (ya existe). Añadimos columna `is_active boolean default false` y un índice único parcial para tener una sola versión activa. Añadimos `feature_names text[]` y `metrics jsonb` (accuracy, precision, recall, sample sizes, confusion matrix).
+
+### Server functions (`src/lib/training.functions.ts`, admin-gated con `requireSupabaseAuth` + check `has_role`)
+- `uploadDataset({ csv: string })` → parsea, valida, devuelve resumen (counts, columnas faltantes).
+- `trainModel({ csv: string })` →
+  1. Parse CSV (sin libs nativas, parser puro JS).
+  2. Normaliza y construye matriz X/y.
+  3. Split 80/20 estratificado.
+  4. Entrena **regresión logística** con gradiente descendente + L2 (implementación pura JS — el Worker runtime no soporta sklearn ni binarios nativos, ver `server-runtime`).
+  5. Calcula accuracy/precision/recall en validación.
+  6. Inserta nueva fila en `model_versions` con `version = max+1`, `weights_b64` (Float64Array → base64), `model_topology` (jsonb con feature spec y normalizers), `metrics`, marca `is_active = true` y desactiva las anteriores.
+- `setActiveModel({ version })` → admin.
+- `listModelVersions()` → admin.
+
+### Scoring
+Helper `scoreSetup(features)` en `src/lib/detection/model.ts` que, al ejecutar el scanner (`/api/public/hooks/scan-and-alert`), carga la versión activa del modelo (cache en memoria por invocación), calcula la probabilidad y la combina con el score heurístico actual (ej. `score = 0.5*heuristic + 0.5*model_prob`). Sigue funcionando si no hay modelo activo (fallback al heurístico).
+
+## Seguridad
+
+- Toda la ruta `/training` y todas las server functions exigen rol `admin` (RLS de `model_versions` ya restringido a admin, lo extendemos a INSERT/UPDATE/DELETE).
+- CSV se procesa en memoria, no se almacena el dataset crudo.
+- Límite de tamaño: 5 MB por upload.
+
+## Detalles técnicos
+
 ```text
-OHLCV → ZigZag pivotes → Elliott counter (valida reglas:
-  W2 ≤ 100% W1, W3 no la más corta, W4 no solapa W1)
-                       ↓
-         ICT layer: BOS/CHoCH, OB bullish/bearish,
-         FVG, sweeps de highs/lows previos
-                       ↓
-   Confluencia: entrada en OB/FVG dentro de W2 o W4
-                       ↓
-   Setup = { entry, sl (bajo OB / sobre sweep),
-             tp1 = 1.618 ext, tp2 = liquidez próxima,
-             score = modelo TF.js }
+training.functions.ts
+  ├─ parseCsv(text) -> rows[]
+  ├─ buildFeatures(rows) -> { X: number[][], y: number[], spec }
+  ├─ trainLogisticRegression(X, y, {lr, epochs, l2}) -> { w, b }
+  ├─ evaluate(model, Xval, yval) -> metrics
+  └─ persistModel(spec, weights, metrics)  // supabaseAdmin (cargado dentro del handler)
+
+detection/model.ts
+  ├─ loadActiveModel()  // cache por proceso
+  └─ scoreSetup(setupFeatures) -> number  // 0..1
 ```
 
-### Backend (Lovable Cloud)
-- Tablas: `setups`, `alerts`, `trade_results`, `model_versions` (blob), `user_settings` (con `telegram_chat_id`), `user_roles`.
-- RLS por `auth.uid()` en todas las tablas de usuario; `service_role` para el cron.
-- **Server function `scan-and-alert`** (cron cada 1-5 min): consulta Twelve Data, corre detección headless, inserta `setups` nuevos y envía Telegram vía connector gateway.
-- **Server function `evaluate-results`** (cron cada 15 min): por cada setup abierto compara precio actual vs SL/TP, marca resultado, alimenta `trade_results` para entrenar el modelo.
-- Realtime de Supabase → el frontend recibe inserts en `alerts` instantáneamente (toast + sonido).
+Persistencia de pesos: `Float64Array` → `Buffer.from(...).toString('base64')` en `weights_b64`. Topology guarda `{ featureNames, categoricalEncodings, numericMeans, numericStds, intercept }`.
 
-### Modelo (híbrido A+B)
-- TF.js entrena en el browser sobre `trade_results` traídos de Cloud (no se borra al limpiar storage).
-- Modelo se serializa y guarda en `model_versions` como blob; al cargar la app se baja el más reciente.
-- Features: tipo de onda, fuerza del OB, tamaño del FVG, RSI/ATR, distancia a liquidez, sesión (Londres/NY), par.
+## Cambios de archivos
 
-### Alertas
-- **In-app**: Sonner toast + panel lateral con badge.
-- **Telegram**: connector de Lovable. El usuario inicia chat con el bot → guarda su `chat_id` en settings → cada alerta envía mensaje formateado (par, TF, dirección, Entry, SL, TP1, TP2, score, link al chart).
+- nuevo `src/routes/_authenticated/training.tsx` (+ enlace en sidebar condicional)
+- nuevo `src/lib/training.functions.ts`
+- nuevo `src/lib/csv.ts` (parser)
+- nuevo `src/lib/ml/logreg.ts`
+- nuevo `src/lib/detection/model.ts` + integración en `src/routes/api/public/hooks/scan-and-alert.ts`
+- migración SQL: añade `is_active`, `feature_names`, `metrics` a `model_versions`; políticas RLS INSERT/UPDATE para admin; seed opcional de admin (te preguntaré tu email/uid en build mode si quieres asignarlo automáticamente).
 
-### Seguridad
-- `TWELVEDATA_API_KEY` como secret server-side (no expuesto al cliente; el cron lo usa, y para el preview en vivo el frontend lo consulta vía un server function proxy con rate limit).
-- RLS estricto, roles en tabla separada `user_roles`, función `has_role` SECURITY DEFINER.
+## Fuera de alcance (siguiente iteración)
 
-### Entregables por fase
-1. **Fase 1** — Cloud + esquema + auth + dashboard con datos en vivo y trazos Elliott/ICT en chart detail.
-2. **Fase 2** — Motor de confluencia + cálculo de E/SL/TP + persistencia de setups + alertas in-app realtime.
-3. **Fase 3** — Cron server-side + integración Telegram + evaluación de resultados.
-4. **Fase 4** — Modelo TF.js con persistencia en Cloud + panel de métricas y reentrenamiento.
-
-### Lo que necesitarás darme después
-- Confirmar enable de **Lovable Cloud** (yo lo activo).
-- Guardar `TWELVEDATA_API_KEY` como secret (yo lo solicito).
-- Conectar el connector **Telegram** (yo lo inicio).
-- Tu `chat_id` de Telegram (lo capturas en Settings tras hablarle al bot).
+- Re-entrenamiento automático semanal con datos en vivo de `setups`+`trade_results` (ya cubierto por la arquitectura, lo dejamos para después de validar el flujo manual).
+- Modelos no lineales (RandomForest/GBM) — requieren un servicio externo; el plan los descarta deliberadamente para no añadir Railway/Render.
