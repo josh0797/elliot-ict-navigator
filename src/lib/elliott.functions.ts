@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { fetchCandles } from "./twelvedata.functions";
+import { fetchOhlcv } from "./marketData.functions";
 import { liftCandles } from "./detection/schemas/analysis";
 import { detectPivots } from "./detection/structure/pivots";
 import { currentBias } from "./detection/structure/market-structure";
@@ -19,6 +19,7 @@ const Input = z.object({
 export interface AnalyzeResponse {
   elliott: ElliottResultDTO;
   ict: IctContext | null;
+  provider?: "polygon" | "twelvedata" | "none";
   error?: string;
 }
 
@@ -40,14 +41,14 @@ function emptyElliott(): ElliottResultDTO {
 export const analyzeSymbol = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<AnalyzeResponse> => {
-    const { candles, error } = await fetchCandles({ data });
+    const { candles, provider, error } = await fetchOhlcv({ data });
     if (error || candles.length === 0) {
-      return { elliott: emptyElliott(), ict: null, error: error ?? "No candles" };
+      return { elliott: emptyElliott(), ict: null, provider, error: error ?? "No candles" };
     }
     const lifted = liftCandles(candles);
     const pivots = detectPivots(lifted);
     const bias = currentBias(pivots);
     const analysis = analyzeElliott(pivots);
     const ict = analyzeIct(lifted, pivots);
-    return { elliott: toElliottResult(analysis, bias), ict };
+    return { elliott: toElliottResult(analysis, bias), ict, provider };
   });
