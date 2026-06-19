@@ -3,7 +3,8 @@ import { z } from "zod";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeSymbol } from "@/lib/elliott.functions";
-import { fetchCandles, type Candle } from "@/lib/twelvedata.functions";
+import { fetchOhlcv } from "@/lib/marketData.functions";
+import type { Candle } from "@/lib/twelvedata.functions";
 import { detectSetup } from "@/lib/detection/engine";
 import type { TradeSetup } from "@/lib/detection/types";
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
@@ -49,7 +50,7 @@ function ChartPage() {
   const { symbol } = Route.useParams();
   const { tf } = Route.useSearch();
   const decoded = decodeURIComponent(symbol);
-  const fetch = useServerFn(fetchCandles);
+  const fetch = useServerFn(fetchOhlcv);
   const analyze = useServerFn(analyzeSymbol);
 
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -202,7 +203,17 @@ function ChartPage() {
                 <div className="text-xs uppercase tracking-widest text-muted-foreground">ICT context</div>
                 <ul className="mt-2 text-xs text-muted-foreground space-y-1">
                   <li>Bias: <span className="text-foreground">{ict.bias}</span></li>
-                  <li>Order Blocks: {ict.orderBlocks.length} ({ict.orderBlocks.filter((o) => !o.mitigated).length} fresh)</li>
+                  <li>
+                    Order Blocks: {ict.orderBlocks.length} (
+                    {ict.orderBlocks.filter((o) => o.state === "FRESH").length} fresh,{" "}
+                    {ict.orderBlocks.filter((o) => o.state === "BREAKER").length} breaker)
+                  </li>
+                  {ict.orderBlocks.slice(-3).reverse().map((ob) => (
+                    <li key={ob.id} className="pl-2">
+                      <span className={ob.type === "BULLISH" ? "text-success" : "text-destructive"}>{ob.type}</span>{" "}
+                      Q{ob.quality} · {ob.state} · {px(ob.bottom)}–{px(ob.top)}
+                    </li>
+                  ))}
                   <li>Fair Value Gaps: {ict.fvgs.length} ({ict.fvgs.filter((f) => !f.mitigated).length} fresh)</li>
                   <li>Liquidity Sweeps: {ict.sweeps.length}</li>
                   <li>Structure events: {ict.structure.length}</li>

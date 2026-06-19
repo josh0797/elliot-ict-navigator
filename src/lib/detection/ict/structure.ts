@@ -17,19 +17,12 @@ export function detectStructure(pivots: ReadonlyArray<PivotV2>): StructureEvent[
     const prev = lastSameType(i, p.type);
     if (!prev) continue;
     if (p.type === "HIGH" && p.price > prev.price) {
-      if (trend === "down") {
-        out.push({ type: "CHoCH", direction: "long", price: prev.price, time: p.time, index: p.index });
-      } else {
-        // up trend continuation OR first directional break.
-        out.push({ type: "BOS", direction: "long", price: prev.price, time: p.time, index: p.index });
-      }
+      const type = trend === "down" ? "CHoCH" : "BOS";
+      out.push({ id: `${type.toLowerCase()}-${p.index}-l`, type, direction: "long", price: prev.price, time: p.time, index: p.index });
       trend = "up";
     } else if (p.type === "LOW" && p.price < prev.price) {
-      if (trend === "up") {
-        out.push({ type: "CHoCH", direction: "short", price: prev.price, time: p.time, index: p.index });
-      } else {
-        out.push({ type: "BOS", direction: "short", price: prev.price, time: p.time, index: p.index });
-      }
+      const type = trend === "up" ? "CHoCH" : "BOS";
+      out.push({ id: `${type.toLowerCase()}-${p.index}-s`, type, direction: "short", price: prev.price, time: p.time, index: p.index });
       trend = "down";
     }
   }

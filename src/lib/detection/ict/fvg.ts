@@ -12,9 +12,9 @@ export function detectFVGs(candles: ReadonlyArray<CandleV2>): FVG[] {
     const a = candles[i - 1];
     const c = candles[i + 1];
     if (c.low > a.high) {
-      out.push({ type: "bullish", top: c.low, bottom: a.high, startIndex: i, startTime: candles[i].time, endTime: c.time, mitigated: false });
+      out.push({ id: `fvg-${i}-b`, type: "bullish", top: c.low, bottom: a.high, startIndex: i, startTime: candles[i].time, endTime: c.time, mitigated: false });
     } else if (c.high < a.low) {
-      out.push({ type: "bearish", top: a.low, bottom: c.high, startIndex: i, startTime: candles[i].time, endTime: c.time, mitigated: false });
+      out.push({ id: `fvg-${i}-s`, type: "bearish", top: a.low, bottom: c.high, startIndex: i, startTime: candles[i].time, endTime: c.time, mitigated: false });
     }
   }
   for (const f of out) {
