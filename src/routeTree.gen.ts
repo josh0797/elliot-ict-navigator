@@ -16,6 +16,8 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
 import { Route as AuthenticatedChartSymbolRouteImport } from './routes/_authenticated/chart.$symbol'
+import { Route as ApiPublicHooksScanAndAlertRouteImport } from './routes/api/public/hooks/scan-and-alert'
+import { Route as ApiPublicHooksEvaluateResultsRouteImport } from './routes/api/public/hooks/evaluate-results'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -52,6 +54,18 @@ const AuthenticatedChartSymbolRoute =
     path: '/chart/$symbol',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const ApiPublicHooksScanAndAlertRoute =
+  ApiPublicHooksScanAndAlertRouteImport.update({
+    id: '/api/public/hooks/scan-and-alert',
+    path: '/api/public/hooks/scan-and-alert',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksEvaluateResultsRoute =
+  ApiPublicHooksEvaluateResultsRouteImport.update({
+    id: '/api/public/hooks/evaluate-results',
+    path: '/api/public/hooks/evaluate-results',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,6 +74,8 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
+  '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -68,6 +84,8 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
+  '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -78,6 +96,8 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
+  '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -88,8 +108,18 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/settings'
     | '/chart/$symbol'
+    | '/api/public/hooks/evaluate-results'
+    | '/api/public/hooks/scan-and-alert'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/alerts' | '/dashboard' | '/settings' | '/chart/$symbol'
+  to:
+    | '/'
+    | '/auth'
+    | '/alerts'
+    | '/dashboard'
+    | '/settings'
+    | '/chart/$symbol'
+    | '/api/public/hooks/evaluate-results'
+    | '/api/public/hooks/scan-and-alert'
   id:
     | '__root__'
     | '/'
@@ -99,12 +129,16 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/settings'
     | '/_authenticated/chart/$symbol'
+    | '/api/public/hooks/evaluate-results'
+    | '/api/public/hooks/scan-and-alert'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiPublicHooksEvaluateResultsRoute: typeof ApiPublicHooksEvaluateResultsRoute
+  ApiPublicHooksScanAndAlertRoute: typeof ApiPublicHooksScanAndAlertRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -158,6 +192,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChartSymbolRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/hooks/scan-and-alert': {
+      id: '/api/public/hooks/scan-and-alert'
+      path: '/api/public/hooks/scan-and-alert'
+      fullPath: '/api/public/hooks/scan-and-alert'
+      preLoaderRoute: typeof ApiPublicHooksScanAndAlertRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/evaluate-results': {
+      id: '/api/public/hooks/evaluate-results'
+      path: '/api/public/hooks/evaluate-results'
+      fullPath: '/api/public/hooks/evaluate-results'
+      preLoaderRoute: typeof ApiPublicHooksEvaluateResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -182,6 +230,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiPublicHooksEvaluateResultsRoute: ApiPublicHooksEvaluateResultsRoute,
+  ApiPublicHooksScanAndAlertRoute: ApiPublicHooksScanAndAlertRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
