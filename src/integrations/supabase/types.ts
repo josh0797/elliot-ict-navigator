@@ -56,7 +56,10 @@ export type Database = {
         Row: {
           accuracy: number | null
           created_at: string
+          feature_names: string[]
           id: string
+          is_active: boolean
+          metrics: Json
           model_topology: Json
           trained_on: number
           version: number
@@ -65,7 +68,10 @@ export type Database = {
         Insert: {
           accuracy?: number | null
           created_at?: string
+          feature_names?: string[]
           id?: string
+          is_active?: boolean
+          metrics?: Json
           model_topology: Json
           trained_on?: number
           version: number
@@ -74,7 +80,10 @@ export type Database = {
         Update: {
           accuracy?: number | null
           created_at?: string
+          feature_names?: string[]
           id?: string
+          is_active?: boolean
+          metrics?: Json
           model_topology?: Json
           trained_on?: number
           version?: number
