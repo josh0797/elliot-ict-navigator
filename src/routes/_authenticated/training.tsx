@@ -65,7 +65,7 @@ function TrainingPage() {
 
   async function refreshVersions() {
     try {
-      const v = (await listFn()) as Version[];
+      const v = (await listFn()) as unknown as Version[];
       setVersions(v);
     } catch {
       /* ignore */

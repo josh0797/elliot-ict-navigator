@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedTrainingRouteImport } from './routes/_authenticated/training'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
@@ -32,6 +33,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedTrainingRoute = AuthenticatedTrainingRouteImport.update({
+  id: '/training',
+  path: '/training',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof AuthenticatedAlertsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/training': typeof AuthenticatedTrainingRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/alerts': typeof AuthenticatedAlertsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/training': typeof AuthenticatedTrainingRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/_authenticated/alerts': typeof AuthenticatedAlertsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/training': typeof AuthenticatedTrainingRoute
   '/_authenticated/chart/$symbol': typeof AuthenticatedChartSymbolRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/dashboard'
     | '/settings'
+    | '/training'
     | '/chart/$symbol'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/dashboard'
     | '/settings'
+    | '/training'
     | '/chart/$symbol'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/_authenticated/alerts'
     | '/_authenticated/dashboard'
     | '/_authenticated/settings'
+    | '/_authenticated/training'
     | '/_authenticated/chart/$symbol'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
@@ -163,6 +175,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/training': {
+      id: '/_authenticated/training'
+      path: '/training'
+      fullPath: '/training'
+      preLoaderRoute: typeof AuthenticatedTrainingRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
@@ -213,6 +232,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedTrainingRoute: typeof AuthenticatedTrainingRoute
   AuthenticatedChartSymbolRoute: typeof AuthenticatedChartSymbolRoute
 }
 
@@ -220,6 +240,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAlertsRoute: AuthenticatedAlertsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedTrainingRoute: AuthenticatedTrainingRoute,
   AuthenticatedChartSymbolRoute: AuthenticatedChartSymbolRoute,
 }
 
