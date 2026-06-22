@@ -3,16 +3,19 @@ import { z } from "zod";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeSymbol } from "@/lib/elliott.functions";
+import { detectSetups } from "@/lib/setups.functions";
 import { fetchOhlcv } from "@/lib/marketData.functions";
 import type { Candle } from "@/lib/twelvedata.functions";
 import { detectSetup } from "@/lib/detection/engine";
 import type { TradeSetup } from "@/lib/detection/types";
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
 import type { IctContext } from "@/lib/detection/ict/types";
+import type { TradeSignal } from "@/lib/detection/setup/types";
 import { TradingChart, type LayerToggles, type PivotTooltip } from "@/components/chart/TradingChart";
 import { LayerControls } from "@/components/chart/LayerControls";
 import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
 import { SymbolPicker } from "@/components/chart/SymbolPicker";
+import { SignalsPanel } from "@/components/chart/SignalsPanel";
 import { HISTORY_PRESETS } from "@/lib/symbols";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,11 +62,14 @@ function ChartPage() {
   const decoded = decodeURIComponent(symbol);
   const fetch = useServerFn(fetchOhlcv);
   const analyze = useServerFn(analyzeSymbol);
+  const findSetups = useServerFn(detectSetups);
 
   const [candles, setCandles] = useState<Candle[]>([]);
   const [setup, setSetup] = useState<TradeSetup | null>(null);
   const [elliott, setElliott] = useState<ElliottResultDTO | null>(null);
   const [ict, setIct] = useState<IctContext | null>(null);
+  const [signals, setSignals] = useState<TradeSignal[]>([]);
+  const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<PivotTooltip | null>(null);
   const [loading, setLoading] = useState(true);
   const [interval, setInterval] = useState(tf);
@@ -77,9 +83,10 @@ function ChartPage() {
 
   async function load() {
     setLoading(true);
-    const [res, ana] = await Promise.all([
+    const [res, ana, sigs] = await Promise.all([
       fetch({ data: { symbol: decoded, interval, outputsize } }),
       analyze({ data: { symbol: decoded, interval, outputsize } }),
+      findSetups({ data: { symbol: decoded, interval, outputsize, topN: 3 } }),
     ]);
     if (res.candles.length) {
       setCandles(res.candles);
@@ -87,6 +94,8 @@ function ChartPage() {
     }
     setElliott(ana.elliott);
     setIct(ana.ict);
+    setSignals(sigs.signals);
+    setSelectedSignalId((prev) => (prev && sigs.signals.some((s) => s.id === prev) ? prev : sigs.signals[0]?.id ?? null));
     setLoading(false);
   }
 
@@ -108,6 +117,11 @@ function ChartPage() {
   }, [setup]);
 
   const px = (n: number) => n.toFixed(decoded === "XAU/USD" ? 2 : decoded === "USD/JPY" ? 3 : 5);
+
+  const activeSignal = useMemo(
+    () => signals.find((s) => s.id === selectedSignalId) ?? null,
+    [signals, selectedSignalId],
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -164,6 +178,7 @@ function ChartPage() {
               elliott={elliott}
               ict={ict}
               layers={layers}
+              signal={activeSignal}
               onPivotHover={setTooltip}
             />
             {tooltip && (
@@ -270,6 +285,13 @@ function ChartPage() {
           </CardContent>
         </Card>
       </div>
+
+      <SignalsPanel
+        signals={signals}
+        selectedId={selectedSignalId}
+        onSelect={setSelectedSignalId}
+        pxFmt={px}
+      />
     </div>
   );
 }

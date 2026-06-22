@@ -15,6 +15,7 @@ import {
 import type { Candle } from "@/lib/twelvedata.functions";
 import type { ElliottResultDTO, ElliottWaveDTO } from "@/lib/detection/elliott/types";
 import type { IctContext } from "@/lib/detection/ict/types";
+import type { TradeSignal } from "@/lib/detection/setup/types";
 
 export interface LayerToggles {
   elliottLines: boolean;
@@ -60,12 +61,14 @@ export function TradingChart({
   elliott,
   ict,
   layers,
+  signal,
   onPivotHover,
 }: {
   candles: Candle[];
   elliott: ElliottResultDTO | null;
   ict: IctContext | null;
   layers: LayerToggles;
+  signal?: TradeSignal | null;
   onPivotHover?: (tip: PivotTooltip | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -284,6 +287,22 @@ export function TradingChart({
 
     chart.timeScale().fitContent();
 
+    // Active trade signal overlay (entry / SL / TP1 / TP2).
+    if (signal) {
+      const lines: { price: number; color: string; title: string; style: LineStyle }[] = [
+        { price: signal.entry, color: "#3b82f6", title: `ENTRY ${signal.direction.toUpperCase()}`, style: LineStyle.Solid },
+        { price: signal.sl, color: "#ef4444", title: "SL", style: LineStyle.Dashed },
+        { price: signal.tp1, color: "#22c55e", title: `TP1 (${signal.rrToTp1.toFixed(2)}R)`, style: LineStyle.Dotted },
+        { price: signal.tp2, color: "#16a34a", title: `TP2 (${signal.rrToTp2.toFixed(2)}R)`, style: LineStyle.Dotted },
+      ];
+      for (const l of lines) {
+        priceLinesRef.current.push(series.createPriceLine({
+          price: l.price, color: l.color, lineWidth: 2, lineStyle: l.style,
+          axisLabelVisible: true, title: l.title,
+        }));
+      }
+    }
+
     // Crosshair tooltip — track nearest pivot.
     if (!onPivotHover) return;
     const waves = elliott?.waves ?? [];
@@ -318,7 +337,7 @@ export function TradingChart({
     return () => chart.unsubscribeCrosshairMove(handler);
     // ICT overlays are intentionally minimal: the legend panel surfaces them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, elliott, ict, layers]);
+  }, [candles, elliott, ict, layers, signal]);
 
   return <div ref={containerRef} className="h-[520px] w-full" />;
 }
