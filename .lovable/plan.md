@@ -1,206 +1,147 @@
-# Plan — Elliott API v2 + ICT canónico + Render multicolor
 
-Trabajo 100% dentro del stack actual: TanStack Start, React, TS, server functions, Lovable Cloud, Vitest, logreg JS. Sin Python/FastAPI/Render/scikit/Next.
+# Plan — Adapter `legacy-pretrained-html-v1` (congelado, en paralelo)
 
-Sobre `MASSIVE_API_KEY`: lo guardo vía `add_secret` (server-only) solo si lo vamos a usar en una server function. Pregunto al final si toca cablearlo a un proveedor de velas concreto; mientras tanto el contrato Elliott no depende de esa API.
+Objetivo: integrar el modelo MLP pre-entrenado del HTML legacy como un scorer
+independiente y verificable, sin tocar el pipeline canónico ni el `logreg` actual.
+No se reentrena nada en esta iteración.
 
----
+## 1. Artefacto de pesos
 
-## Bloque A — Elliott: contrato API + confianza 0–100
+Crear `src/lib/ml/legacy/pretrained.json` con el bloque exacto extraído de
+`elliott-ict-pro2.html` línea 3125 (`PRETRAINED`):
+- `weights`: 6 arrays planos en orden `[W0, b0, W1, b1, W2, b2]`
+  shapes `(6×12)=72, 12, (12×8)=96, 8, (8×1)=8, 1`.
+- `minNorm` (6), `maxNorm` (6).
+- Metadata: `trainedAt`, `samples=698`, `accuracy_test=0.5286`,
+  `win_rate_dataset=0.4971`, `schema="legacy-pretrained-html-v1"`,
+  `status="TRAINING_SCHEMA_VERIFIED"`,
+  array `warnings` con las 9 advertencias documentadas (fvg proxy, atr no Wilder,
+  is_killzone constante, score heurístico, dist_ob no usa OB real, waveCode ordinal
+  artificial, target post-hoc contaminado, accuracy 52.86%, baseline 49.71%).
 
-### A1. Tipos nuevos (no romper engine v2 actual)
+## 2. Extractor legacy (proxies exactos)
 
-`src/lib/detection/elliott/types.ts` añade:
+Crear `src/lib/ml/legacy/features.ts` con `extractLegacyFeatures(input)` que
+devuelve `{ raw: number[6], normalized: number[6], waveLabelUsed, warnings }`.
 
+Input (DTO mínimo; sin asumir nombres del pipeline canónico):
 ```ts
-export type ElliottStatus = "VALID" | "DEVELOPING" | "INVALIDATED" | "NO_COUNT" | "COMPLETED";
-export type Bias = "BULLISH" | "BEARISH" | "NEUTRAL";
-export type RuleStatus = "PASS" | "FAIL" | "PENDING";
-
-export interface ElliottRuleResult {
-  code: "W2_ORIGIN" | "W3_NOT_SHORTEST" | "W4_OVERLAP" | "W2_RETRACE" | "W3_EXTENSION" | "W4_ALTERNATION" | "W5_PROJECTION";
-  status: RuleStatus;
-  message: string;
-}
-
-export interface ElliottWaveDTO {
-  label: WaveLabel;
-  index: number;
-  time: string;      // ISO-8601
-  price: number;
-  type: "HIGH" | "LOW";
-  confirmed: boolean;
-}
-
-export interface ElliottResultDTO {
-  status: ElliottStatus;
-  bias: Bias;
-  pattern: WavePattern;
-  currentWave: WaveLabel | null;
-  completion: number;        // 0..1
-  confidence: number;        // 0..100
-  invalidationLevel: number | null;
-  rules: ElliottRuleResult[];
-  waves: ElliottWaveDTO[];
-  alternatives: ElliottResultDTO[];
-}
+type LegacyInput = {
+  confirmationLevel: number;
+  invalidationLevel: number;
+  fibTarget1?: number | null;
+  rrRatio?: number | null;
+  hasAlternative?: boolean;
+  currentPriceApprox?: number | null;
+  waveLabel?: string | null;   // "1","(iii)","B",...
+};
 ```
 
-### A2. Scoring 0–100 (`elliott/scoring.ts`)
+Fórmulas (textualmente las del mensaje del usuario):
+- `slSize = |confirmation - invalidation|`
+- `tpSize = fibTarget1 finito ? |confirmation - fibTarget1| : slSize*2`
+- `f0 = min(tpSize/slSize, 5)/5`
+- `f1 = min(slSize/confirmation, 0.05)/0.05`
+- `f2 = 0.5` (constante por contrato)
+- `rrNorm = min(max(rr,0),5)/5`; `f3 = rrNorm*0.7 + (1-hasAlt)*0.3`
+- `f4 = currentPrice>0 ? min(|current-conf|/slSize,3)/3 : 0.5`
+- `f5 = waveCodeMap(label)` con tabla legacy literal:
+  `1/(1)/i/(i)→0.1, 2/(2)/ii/(ii)→0.2, 3/(3)/iii/(iii)→0.9,
+   4/(4)/iv/(iv)→0.4, 5/(5)/v/(v)→0.6, A→0.3, B→0.1, C→0.7, else 0.5`.
+  Match exacto tras `trim().toLowerCase()`; etiqueta desconocida añade
+  warning `UNKNOWN_WAVE_LABEL` y devuelve 0.5.
+- Normalización min-max: si `max>min`, `(x-min)/(max-min)`; si no, `0.5`.
+  Sin clipping adicional. (`f2` siempre cae al else → 0.5, consistente con
+  `minNorm[2]=maxNorm[2]=0.5`.)
 
-Función `computeConfidence(count, ctx)` con buckets:
+## 3. Forward pass
 
-| Componente | Máx |
-|---|---|
-| Reglas obligatorias (W2_ORIGIN, W3_NOT_SHORTEST, W4_OVERLAP) | 25 |
-| Alternancia W2/W4 | 20 |
-| Proporciones Fibonacci (W2, W3, W4, W5) | 20 |
-| Claridad de pivotes (ATR distance + confirmed) | 15 |
-| Duración temporal proporcional | 10 |
-| Market structure alineada (bias HH/HL vs dirección) | 10 |
+Crear `src/lib/ml/legacy/mlp.ts` con `predictLegacy(xNorm: number[6]): number`:
+- Carga pesos vía `import pretrained from "./pretrained.json"`.
+- Reconstruye matrices a partir de los flats con shapes fijas.
+- `h1 = relu(x · W0 + b0)`  (12)
+- `h2 = relu(h1 · W1 + b1)` (8)   (dropout desactivado en inferencia)
+- `y  = sigmoid(h2 · W2 + b2)` (1)
+- Devuelve `y ∈ [0,1]`.
 
-**Regla dura**: cualquier `FAIL` en obligatorias → `status: "INVALIDATED"`, `confidence: 0`. El candidato se descarta antes de scoring blando.
+Helpers `relu`, `sigmoid` locales (estables: `sigmoid` con rama por signo).
 
-`completion` = nº de ondas confirmadas / 5 (impulso) o /3 (correctivo).
+## 4. Scorer público
 
-`invalidationLevel`:
-- Si `currentWave ∈ {1,2,3}` → P0.
-- Si `currentWave = 4` → P1 (overlap).
-- Si `5` → última extrema del impulso.
-
-### A3. Mapper engine v2 → DTO
-
-`src/lib/detection/elliott/dto.ts` con `toElliottResult(analysis, candles): ElliottResultDTO`. Las reglas obligatorias se reportan siempre (PASS/FAIL/PENDING).
-
-### A4. Server function
-
-`src/lib/elliott.functions.ts`:
-
+Crear `src/lib/ml/legacy/index.ts`:
 ```ts
-export const analyzeSymbol = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ symbol: z.string(), interval: z.string() }).parse)
-  .handler(async ({ data }) => {
-    const candles = await fetchCandles({ data });
-    const pivots = detectPivots(...);
-    const analysis = analyzeElliott(pivots);
-    return toElliottResult(analysis, candles);
-  });
+export const LEGACY_SCHEMA = "legacy-pretrained-html-v1";
+export function scoreLegacy(input: LegacyInput): {
+  schema: string; probability: number;
+  features: { raw: number[]; normalized: number[] };
+  warnings: string[]; metadata: { ... };
+};
 ```
+Este scorer **no** se enchufa a `loadActiveModel()` ni a `scoreSetupML()`.
+Queda disponible para shadow logging / UI / comparación futura. Cero cambios
+en `src/lib/detection/model.ts`, `training.functions.ts`, `logreg.ts` o en
+rutas/loaders existentes. Sin cambios operativos.
 
-### A5. Tests Vitest
+## 5. Golden tests
 
-`src/lib/detection/__tests__/elliott-dto.test.ts`:
-- Impulso válido → status VALID/COMPLETED, todas obligatorias PASS, confidence > 60.
-- W2 > W1 → INVALIDATED, confidence 0, regla W2_ORIGIN FAIL.
-- W4 overlap → INVALIDATED salvo diagonal.
-- DEVELOPING con onda 5 incompleta → W3_NOT_SHORTEST PENDING.
+Crear `src/lib/ml/legacy/__tests__/legacy.test.ts` con los 11 tests pedidos:
 
----
+1. **Fórmulas exactas** — 6 casos parametrizados, uno por feature, comprobando
+   `raw[i]` con tolerancia 1e-12.
+2. **Orden del vector** — keys del array == `[fvgSizeProxy, atrNormProxy,
+   isKillzone, scoreProxy, distObProxy, waveCode]` (vía constante exportada
+   `LEGACY_FEATURE_ORDER`).
+3. **Longitud 6** — `raw.length === 6 && normalized.length === 6`.
+4. **Fallback TP=2R** — sin `fibTarget1`: con slSize=10 → tpSize=20 →
+   `f0 = min(2,5)/5 = 0.4`.
+5. **Fallback distOB=0.5** — sin `currentPriceApprox` → `f4 = 0.5`.
+6. **isKillzone constante** — siempre `0.5` independientemente del input.
+7. **Mapping waveCode** — tabla completa, incluyendo paréntesis y romanos
+   en mayúsculas/minúsculas, más `"Z" → 0.5 + warning UNKNOWN_WAVE_LABEL`.
+8. **Min-max exacto** — vector raw conocido vs normalización manual con los
+   `minNorm`/`maxNorm` del JSON.
+9. **Rango cero → 0.5** — para índice 2 (`min==max`), normalized[2] siempre
+   `0.5` incluso si raw cambia.
+10. **Forward pass manual vs predicción conocida del HTML** — capturar la
+    predicción del HTML para un input fijo y compararla. Procedimiento en
+    construcción: ejecutaré el bloque `MLEngine.predict` del HTML con un
+    input conocido (`slSize=10, fibTarget1` produce `tpSize=20`,
+    `confirmation=100`, `rr=2`, `hasAlt=false`, `currentPrice=100`,
+    `wave="3"` → vector raw `[0.4, 0.5/100/0.05 capped, 0.5, …]`) usando
+    Node con los pesos del JSON, anotaré el valor esperado en el test y
+    validaré igualdad ≤ 1e-9 contra `predictLegacy(normalized)`.
+11. **Shapes de pesos** — assert que tras reconstruir, las matrices tienen
+    `[6,12], [12], [12,8], [8], [8,1], [1]`.
 
-## Bloque B — ICT engine canónico
+## 6. Separación con `canonical-ict-v2`
 
-Nuevo árbol `src/lib/detection/ict/`:
+- Carpeta dedicada `src/lib/ml/legacy/*`. Nada en esta carpeta se importa
+  desde `model.ts`, `training.functions.ts`, ni desde rutas operativas.
+- Documentar en `src/lib/ml/legacy/README.md` (corto): schema congelado,
+  no reentrenar, no fusionar con `logreg`, advertencias, accuracy 52.86%.
 
-```
-ict/
-  types.ts          FVG, OrderBlock, LiquidityLevel, Sweep, BOS, CHoCH, Killzone, PDArray, IctContext
-  fvg.ts            3-candle imbalance, mitigación, fresh/tested
-  orderBlocks.ts    last opposite candle antes de desplazamiento; bullish/bearish
-  liquidity.ts      equal highs/lows, swing highs/lows, trendline liquidity
-  sweeps.ts         barrido + cierre dentro del rango
-  structure.ts      BOS / CHoCH desde market-structure (HH/HL/LH/LL)
-  killzones.ts      London/NY/Asia por timestamp UTC
-  pdArray.ts        Premium (>0.62) / Equilibrium (0.38–0.62) / Discount (<0.38) sobre rango dealing
-  engine.ts         analyzeIct(candles, atr, pivots, swings, marketStructure) → IctContext
-  __tests__/        unit tests por módulo
-```
+## Detalles técnicos
 
-`IctContext` agregado:
+- TypeScript estricto: tipos `number[]` para los flats, tuplas `[number,...]`
+  donde aplica, sin `any`.
+- JSON importado con `with { type: "json" }` o `import data from "./pretrained.json"`
+  según convención existente del repo (verificar `tsconfig.json` permite
+  `resolveJsonModule`; el repo ya usa imports JSON).
+- Tests con vitest (mismo runner que `ict/__tests__/*.test.ts`).
+- Sin dependencias nuevas. Sin tocar `package.json`.
 
-```ts
-interface IctContext {
-  bias: Bias;
-  fvgs: FVG[]; orderBlocks: OrderBlock[]; liquidity: LiquidityLevel[]; sweeps: Sweep[];
-  structure: (BOS|CHoCH)[]; killzone: Killzone | null; pdArray: PDArray; score: number;
-}
-```
+## Archivos a crear
 
-Engine v2 puro, sin tocar `src/lib/detection/ict.ts` legacy (queda `@deprecated`).
+- `src/lib/ml/legacy/pretrained.json`
+- `src/lib/ml/legacy/features.ts`
+- `src/lib/ml/legacy/mlp.ts`
+- `src/lib/ml/legacy/index.ts`
+- `src/lib/ml/legacy/README.md`
+- `src/lib/ml/legacy/__tests__/legacy.test.ts`
 
----
+## Archivos NO modificados
 
-## Bloque C — Render multicolor en chart
-
-Refactor de `src/routes/_authenticated/chart.$symbol.tsx` (no existe `TradingChart.tsx` aparte; lo creamos extrayendo).
-
-### C1. Extraer `src/components/chart/TradingChart.tsx`
-
-Props: `candles`, `elliott: ElliottResultDTO | null`, `ict: IctContext | null`, `layers: LayerToggles`.
-
-### C2. Segmentos por color
-
-Una `LineSeries` por tramo con su propio color:
-
-| Segmento | Color |
-|---|---|
-| 0→1 | `#06b6d4` cyan |
-| 1→2 | `#a855f7` purple |
-| 2→3 | `#22c55e` green |
-| 3→4 | `#f97316` orange |
-| 4→5 | `#ec4899` magenta |
-| 5→A | `#ef4444` red |
-| A→B | `#eab308` gold |
-| B→C | `#fb7185` coral |
-
-Implementación: array `segments = pairwise(labeledPivots)` → `chart.addSeries(LineSeries, { color })` con dos puntos. Limpieza en cleanup ref.
-
-### C3. Etiquetas
-
-Por pivote: círculo + label (`createSeriesMarkers`), posición `aboveBar` si HIGH, `belowBar` si LOW. Estilo distinto para `confirmed=false` (opacity 0.5, sufijo `?`).
-
-Tooltip con precio, fecha, estado: capa DOM overlay sincronizada con `subscribeCrosshairMove` (los markers nativos no soportan tooltip rich).
-
-### C4. Línea de invalidación
-
-`series.createPriceLine({ price: invalidationLevel, lineStyle: LineStyle.Dashed, color: "#ef4444", title: "INV: W4_OVERLAP" })` + tooltip vía leyenda lateral describiendo la regla.
-
-### C5. Controles de capa
-
-Panel lateral con `Switch` shadcn:
-- Elliott lines
-- Elliott labels
-- Alternative count (renderiza `alternatives[0]` con opacity 0.4)
-- Invalidation
-- Fibonacci Elliott (overlay con retrocesos 0.382/0.5/0.618 sobre W1, y extensiones 1.0/1.618 sobre W3)
-
-Estado local `useState<LayerToggles>` persistido en `localStorage`.
-
----
-
-## Archivos a crear / editar
-
-**Crear**
-- `src/lib/detection/elliott/dto.ts`
-- `src/lib/elliott.functions.ts`
-- `src/lib/detection/__tests__/elliott-dto.test.ts`
-- `src/lib/detection/ict/{types,fvg,orderBlocks,liquidity,sweeps,structure,killzones,pdArray,engine}.ts`
-- `src/lib/detection/ict/__tests__/{fvg,orderBlocks,liquidity,structure}.test.ts`
-- `src/components/chart/TradingChart.tsx`
-- `src/components/chart/LayerControls.tsx`
-- `src/components/chart/InvalidationLegend.tsx`
-
-**Editar**
-- `src/lib/detection/elliott/{types,scoring,engine}.ts` — añadir buckets + DTO mapping
-- `src/routes/_authenticated/chart.$symbol.tsx` — usar `TradingChart` + layers + nuevo DTO
-
-**No tocar** legacy `src/lib/detection/{elliott,ict,zigzag,engine}.ts` (siguen `@deprecated` hasta migrar setup builder).
-
----
-
-## Fuera de alcance (siguientes fases)
-
-- Confluencia Elliott × ICT y nuevo Setup Builder (Fase 4).
-- Exponer features ICT al `logreg` (Fase 6).
-- Sustituir `fetchCandles` (TwelveData) por la nueva `MASSIVE_API_KEY` — **necesito confirmación**: ¿qué proveedor es y qué endpoint OHLCV expone? Si confirmas, lo añado como `src/lib/massive.functions.ts` + `add_secret MASSIVE_API_KEY` server-only en un commit aparte.
-
-¿Procedo con Bloques A + B + C tal cual?
+- `src/lib/detection/model.ts`
+- `src/lib/training.functions.ts`
+- `src/lib/ml/logreg.ts`
+- Rutas / loaders / UI operativa
