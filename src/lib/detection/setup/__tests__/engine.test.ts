@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import { detectSignals } from "../engine";
 import type { CandleV2, PivotV2 } from "../../schemas/analysis";
 import type { ElliottAnalysis, ElliottCountV2 } from "../../elliott/types";
@@ -79,44 +80,42 @@ function bullishIct(currentIndex: number): IctContext {
   };
 }
 
-describe("setup engine", () => {
-  const candles = mkCandles(60, 104);
-  const symbol = "TEST", timeframe = "1h";
+const candles = mkCandles(60, 104);
+const symbol = "TEST", timeframe = "1h";
 
-  it("produces a long signal with positive RR when bullish confluences align", () => {
-    const elliott = bullishElliott();
-    const ict = bullishIct(candles.length - 1);
-    const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
-    expect(out.length).toBeGreaterThan(0);
-    const s = out[0];
-    expect(s.direction).toBe("long");
-    expect(s.rrToTp1).toBeGreaterThan(1);
-    expect(s.score).toBeGreaterThan(0.5);
-    expect(s.confluences).toContain("BIAS_ALIGN");
-    expect(s.confluences).toContain("OB_CONFLUENCE");
-    expect(s.mlScore).not.toBeNull();
-    expect(s.modelVersion).toBe("legacy-pretrained-html-v1");
-  });
+test("setup engine produces a long signal with positive RR when bullish confluences align", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  assert.ok(out.length > 0, "expected at least one signal");
+  const s = out[0];
+  assert.equal(s.direction, "long");
+  assert.ok(s.rrToTp1 > 1, `RR>1 expected, got ${s.rrToTp1}`);
+  assert.ok(s.score > 0.5, `score>0.5 expected, got ${s.score}`);
+  assert.ok(s.confluences.includes("BIAS_ALIGN"));
+  assert.ok(s.confluences.includes("OB_CONFLUENCE"));
+  assert.notEqual(s.mlScore, null);
+  assert.equal(s.modelVersion, "legacy-pretrained-html-v1");
+});
 
-  it("returns no signals when Elliott is INVALIDATED", () => {
-    const elliott = bullishElliott();
-    elliott.primary!.state = "INVALIDATED";
-    const ict = bullishIct(candles.length - 1);
-    const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
-    expect(out).toEqual([]);
-  });
+test("setup engine returns no signals when Elliott is INVALIDATED", () => {
+  const elliott = bullishElliott();
+  elliott.primary!.state = "INVALIDATED";
+  const ict = bullishIct(candles.length - 1);
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  assert.deepEqual(out, []);
+});
 
-  it("returns no signals when there are no matching POIs", () => {
-    const elliott = bullishElliott();
-    const ict = bullishIct(candles.length - 1);
-    ict.orderBlocks = [];
-    ict.fvgs = [];
-    const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
-    expect(out).toEqual([]);
-  });
+test("setup engine returns no signals when there are no matching POIs", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  ict.orderBlocks = [];
+  ict.fvgs = [];
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  assert.deepEqual(out, []);
+});
 
-  it("returns no signals when primary is null", () => {
-    const out = detectSignals(candles, [], { primary: null, alternatives: [] }, bullishIct(candles.length - 1), { symbol, timeframe });
-    expect(out).toEqual([]);
-  });
+test("setup engine returns no signals when primary is null", () => {
+  const out = detectSignals(candles, [], { primary: null, alternatives: [] }, bullishIct(candles.length - 1), { symbol, timeframe });
+  assert.deepEqual(out, []);
 });
