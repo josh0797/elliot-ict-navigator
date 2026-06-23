@@ -388,9 +388,31 @@ export function detectSignals(
     ];
 
     const entryZone = { top: Math.max(poi.top, poi.bottom), bottom: Math.min(poi.top, poi.bottom) };
+    // Last *confirmed* (closed) candle = the bar before the live one when ≥2 exist.
+    const lastConfirmedCandle = candles.length >= 2
+      ? candles[candles.length - 2]
+      : candles[candles.length - 1];
+    // POI birth ≈ when the structure became actionable. Approximate "armed at" as
+    // the POI origin so LIMIT scans only forward candles.
+    const armedAtIndex = poi.originIndex ?? lastConfirmedCandle.index;
+    const candlesSinceArmed = candles.filter(
+      (c) => c.index >= armedAtIndex && c.index <= lastConfirmedCandle.index,
+    );
     const trigger = deriveTrigger({
-      direction, orderType: cls.orderType, entry, entryZone, currentPrice: lastClose,
+      direction,
+      orderType: cls.orderType,
+      entry,
+      entryZone,
+      currentPrice: lastClose,
+      lastConfirmedCandle,
+      armedAtIndex,
+      candlesSinceArmed,
     });
+    // Upgrade status when a pending order has actually been triggered by price.
+    let finalStatus = cls.status;
+    if (trigger.satisfied && cls.status === "WAITING_RETRACE") {
+      finalStatus = "TRIGGERED";
+    }
 
     const nextAction = trigger.satisfied
       ? `Ejecutar ${cls.orderType} en ${entry.toFixed(5)} con SL ${sl.toFixed(5)}.`
@@ -413,7 +435,7 @@ export function detectSignals(
       direction,
       directionUpper: direction === "long" ? "LONG" : "SHORT",
       orderType: cls.orderType,
-      status: cls.status,
+      status: finalStatus,
       entry,
       sl,
       tp1,
