@@ -20,6 +20,42 @@ export interface PivotOptions {
 
 const ID = (time: number, type: "HIGH" | "LOW") => `${time}-${type}`;
 
+/**
+ * Resolve ATR at or before `index`, skipping NaN/<=0 values.
+ * Returns `null` when ATR has not warmed up yet (first ~14 bars) — callers
+ * MUST treat this as "no reliable scale" rather than substituting an
+ * epsilon, which would inflate distance ratios and mis-classify early
+ * pivots as MAJOR.
+ */
+function resolveAtr(atrSeries: ReadonlyArray<number>, index: number): number | null {
+  for (let i = Math.min(index, atrSeries.length - 1); i >= 0; i--) {
+    const v = atrSeries[i];
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
+}
+
+/**
+ * Collapse consecutive same-type pivots, keeping the more extreme one.
+ * Applied both right after fractal detection AND after the ATR-distance
+ * filter, because removing intermediate pivots can leave two same-type
+ * pivots adjacent (e.g. LOW, HIGH-dropped, LOW → LOW, LOW).
+ */
+function dedupeAlternating(pivots: ReadonlyArray<PivotV2>): PivotV2[] {
+  const out: PivotV2[] = [];
+  for (const p of pivots) {
+    const prev = out[out.length - 1];
+    if (!prev) { out.push(p); continue; }
+    if (prev.type === p.type) {
+      const keepNew = p.type === "HIGH" ? p.price > prev.price : p.price < prev.price;
+      if (keepNew) out[out.length - 1] = { ...p, confirmed: prev.confirmed && p.confirmed };
+      continue;
+    }
+    out.push(p);
+  }
+  return out;
+}
+
 function pivotPrice(c: CandleV2, type: "HIGH" | "LOW"): number {
   return type === "HIGH" ? c.high : c.low;
 }
@@ -62,7 +98,6 @@ export function detectPivots(
   // Confirmed fractals.
   for (let i = leftBars; i < candles.length - rightBars; i++) {
     const c = candles[i];
-    const a = atrSeries[i] || atrSeries[Math.max(0, i - 1)] || 1e-9;
     for (const type of ["HIGH", "LOW"] as const) {
       if (!isFractal(candles, i, type, leftBars, rightBars)) continue;
       const price = pivotPrice(c, type);
@@ -108,45 +143,34 @@ export function detectPivots(
   raw.sort((a, b) => a.index - b.index || (a.type === b.type ? 0 : a.type === "HIGH" ? -1 : 1));
 
   // Dedup same-type consecutive pivots, keep most extreme.
-  const dedup: PivotV2[] = [];
-  for (const p of raw) {
-    const prev = dedup[dedup.length - 1];
-    if (!prev) {
-      dedup.push(p);
-      continue;
-    }
-    if (prev.type === p.type) {
-      const keepNew = p.type === "HIGH" ? p.price > prev.price : p.price < prev.price;
-      if (keepNew) dedup[dedup.length - 1] = { ...p, confirmed: prev.confirmed && p.confirmed };
-      continue;
-    }
-    dedup.push(p);
-  }
+  const dedup = dedupeAlternating(raw);
 
   // Enforce ATR distance threshold + tag strength.
   const filtered: PivotV2[] = [];
   for (let i = 0; i < dedup.length; i++) {
     const p = dedup[i];
     const prev = filtered[filtered.length - 1];
-    const a = atrSeries[p.index] || 1e-9;
+    const a = resolveAtr(atrSeries, p.index);
     if (!prev) {
       filtered.push({ ...p, atrDistance: 0, strength: "MINOR" });
       continue;
     }
-    const dist = Math.abs(p.price - prev.price) / a;
-    if (dist < minAtr) {
-      // Replace prev if current is a more extreme reversal of opposite type.
-      if (prev.type !== p.type && ((p.type === "HIGH" && p.price > prev.price) || (p.type === "LOW" && p.price < prev.price))) {
-        // Keep the more recent one if it dominates.
-        continue;
-      }
+    if (a === null) {
+      // ATR not warmed up — accept the pivot but never promote to MAJOR
+      // and skip the ATR-distance gate to avoid epsilon-induced inflation.
+      filtered.push({ ...p, atrDistance: 0, strength: "MINOR" });
       continue;
     }
+    const dist = Math.abs(p.price - prev.price) / a;
+    if (dist < minAtr) continue;
     const strength: PivotStrength = dist >= majorAtr ? "MAJOR" : "MINOR";
     filtered.push({ ...p, atrDistance: dist, strength });
   }
 
-  return filtered;
+  // ATR filter can drop intermediate pivots and leave same-type neighbours
+  // (LOW, HIGH-dropped, LOW). Re-dedup so downstream Elliott/ICT receive a
+ // strictly alternating sequence.
+  return dedupeAlternating(filtered);
 }
 
 export function majorPivots(pivots: ReadonlyArray<PivotV2>): PivotV2[] {
