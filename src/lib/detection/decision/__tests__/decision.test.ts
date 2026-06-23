@@ -5,6 +5,8 @@ import type { ElliottAnalysis, ElliottCountV2 } from "../../elliott/types";
 import type { IctContext, StructureEvent } from "../../ict/types";
 import type { TradeSignal } from "../../setup/types";
 
+function ictEmpty() { return ict("NEUTRAL"); }
+
 function bullishCount(invalidations: string[] = []): ElliottCountV2 {
   return {
     direction: "long",
