@@ -49,6 +49,6 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
     const pivots = detectPivots(lifted);
     const bias = currentBias(pivots);
     const analysis = analyzeElliott(pivots);
-    const ict = analyzeIct(lifted, pivots);
+    const ict = analyzeIct(lifted, pivots, { timeframe: data.interval });
     return { elliott: toElliottResult(analysis, bias), ict, provider };
   });
