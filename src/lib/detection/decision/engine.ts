@@ -27,6 +27,26 @@ export interface DecisionEngineOptions {
 
 const MANDATORY_RULES = ["W2_ORIGIN", "W3_NOT_SHORTEST", "W4_OVERLAP"] as const;
 
+/**
+ * Mandatory-rule aliases. The internal Elliott engine emits invalidations as
+ * legacy short codes (`R1:`, `R2:`, `R3:`), while the public DTO and external
+ * contracts use the canonical codes (`W2_ORIGIN`, `W3_NOT_SHORTEST`, `W4_OVERLAP`).
+ * We accept both so a rule failure is never silently missed.
+ */
+const MANDATORY_RULE_ALIASES: Record<(typeof MANDATORY_RULES)[number], readonly string[]> = {
+  W2_ORIGIN: ["W2_ORIGIN", "R1:"],
+  W3_NOT_SHORTEST: ["W3_NOT_SHORTEST", "R2:"],
+  W4_OVERLAP: ["W4_OVERLAP", "R3:"],
+};
+
+function hasMandatoryFailure(invalidations: readonly string[]): boolean {
+  return MANDATORY_RULES.some((code) =>
+    MANDATORY_RULE_ALIASES[code].some((alias) =>
+      invalidations.some((v) => v.includes(alias)),
+    ),
+  );
+}
+
 function pickSignalForDirection(
   signals: ReadonlyArray<TradeSignal>,
   dir: "long" | "short",
@@ -114,9 +134,7 @@ export function decideOperation(
 
   // ── Gate C: mandatory Elliott rule FAILed → NO_TRADE unless an alternative is valid.
   const primaryRules = (elliott.primary?.invalidations ?? []) as readonly string[];
-  const mandatoryFailed = MANDATORY_RULES.some((code) =>
-    primaryRules.some((v) => v.includes(code)),
-  );
+  const mandatoryFailed = hasMandatoryFailure(primaryRules);
   if (mandatoryFailed && elliott.alternatives.length === 0) {
     const r: OperationalReport = {
       decision: "NO_TRADE",

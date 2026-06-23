@@ -38,3 +38,24 @@ it("detectPivots assigns MAJOR strength to large swings", () => {
   const pivots = detectPivots(cs, { leftBars: 2, rightBars: 2, minAtrDistance: 0.1, majorAtrThreshold: 1.5 });
   expect(pivots.some((p) => p.strength === "MAJOR")).toBeTruthy();
 });
+
+it("detectPivots always alternates HIGH/LOW after ATR filtering", () => {
+  const cs = buildSeries();
+  // Aggressive ATR threshold to force some pivots to be filtered out and
+  // potentially leave same-type neighbours behind without re-dedupe.
+  const pivots = detectPivots(cs, { leftBars: 2, rightBars: 2, minAtrDistance: 5 });
+  for (let i = 1; i < pivots.length; i++) {
+    expect(pivots[i].type).not.toBe(pivots[i - 1].type);
+  }
+});
+
+it("detectPivots does not promote early pivots to MAJOR when ATR is cold", () => {
+  // Short series where ATR14 never warms up → no pivot should be MAJOR.
+  const cs: CandleV2[] = [];
+  for (let i = 0; i < 12; i++) {
+    const p = 100 + (i % 2 === 0 ? 1 : -1) * 5; // alternating ±5
+    cs.push({ index: i, time: i, open: p, high: p + 0.5, low: p - 0.5, close: p });
+  }
+  const pivots = detectPivots(cs, { leftBars: 1, rightBars: 1, minAtrDistance: 0.1, majorAtrThreshold: 1.5 });
+  expect(pivots.every((p) => p.strength === "MINOR")).toBeTruthy();
+});

@@ -100,6 +100,16 @@ describe("decision/engine", () => {
     expect(r.reasons).toContain("ELLIOTT_INVALIDATED");
   });
 
+  it("treats legacy R1:/R2:/R3: invalidations as mandatory-rule failures", () => {
+    const count = bullishCount(["R1: wave 2 retraced 100% of wave 1 (past P0)"]);
+    // Force state to a non-INVALIDATED value to ensure mandatory-rule gate
+    // (Gate C) — not Gate B — is what catches the failure.
+    count.state = "DEVELOPING";
+    const r = decideOperation({ primary: count, alternatives: [] }, ict("NEUTRAL"), [], 100);
+    expect(r.decision).toBe("NO_TRADE");
+    expect(r.reasons).toContain("MANDATORY_RULE_FAIL");
+  });
+
   it("returns BUY when bullish bias and gated signal align", () => {
     const elliott: ElliottAnalysis = { primary: bullishCount(), alternatives: [] };
     const struct: StructureEvent = {

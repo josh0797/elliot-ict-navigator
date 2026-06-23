@@ -1,5 +1,6 @@
 import type { CandleV2, PivotV2 } from "../schemas/analysis";
 import { atr14 } from "../indicators/atr";
+import { isIntradayTimeframe } from "../timeframe";
 import type { LiquidityKind, LiquidityLevel, LiquiditySide } from "./types";
 
 /**
@@ -32,15 +33,7 @@ import type { LiquidityKind, LiquidityLevel, LiquiditySide } from "./types";
 const DEFAULT_EQ_ATR_TOL = 0.25; // |Δprice| <= 0.25 * ATR considered "equal"
 const DEFAULT_EQ_REL_TOL = 0.0015; // 15 bps fallback when ATR is unavailable
 
-const INTRADAY_TIMEFRAMES = new Set([
-  "1m", "2m", "3m", "5m", "10m", "15m", "30m",
-  "45m", "60m", "1h", "2h", "3h", "4h", "6h", "8h", "12h",
-]);
-
-function isIntraday(tf: string | undefined): boolean {
-  if (!tf) return true; // back-compat: assume intraday when caller doesn't specify
-  return INTRADAY_TIMEFRAMES.has(tf.toLowerCase());
-}
+const isIntraday = isIntradayTimeframe;
 
 function strengthOf(touches: number, recencyBars: number, totalBars: number): number {
   const touchScore = Math.min(50, touches * 15);
