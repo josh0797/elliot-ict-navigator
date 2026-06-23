@@ -32,15 +32,49 @@ export function DecisionBanner({
       <p className="mt-2 text-sm text-foreground/90">{report.summary}</p>
 
       {sig && (
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
-          <div><span className="text-muted-foreground">Entry </span>{pxFmt(sig.entry)}</div>
-          <div><span className="text-muted-foreground">SL </span><span className="text-destructive">{pxFmt(sig.sl)}</span></div>
-          <div><span className="text-muted-foreground">TP1 </span><span className="text-success">{pxFmt(sig.tp1)}</span></div>
-          <div><span className="text-muted-foreground">TP2 </span><span className="text-success">{pxFmt(sig.tp2)}</span></div>
-          <div><span className="text-muted-foreground">Order </span>{sig.orderType}</div>
-          <div><span className="text-muted-foreground">RR </span>{sig.rrToTp1.toFixed(2)} / {sig.rrToTp2.toFixed(2)}</div>
-          <div><span className="text-muted-foreground">POI </span>{sig.poi.kind}</div>
-          <div><span className="text-muted-foreground">Score </span>{Math.round(sig.score * 100)}%</div>
+        <div className="mt-3 space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
+            <div><span className="text-muted-foreground">Order </span>{sig.orderType}</div>
+            <div><span className="text-muted-foreground">Entry </span>{pxFmt(sig.entry)}</div>
+            <div><span className="text-muted-foreground">SL </span><span className="text-destructive">{pxFmt(sig.sl)}</span> <span className="text-muted-foreground">({sig.stopReason})</span></div>
+            <div><span className="text-muted-foreground">Score </span>{sig.scoreOut100}/100 · {sig.grade}</div>
+            <div className="col-span-2 sm:col-span-4">
+              <span className="text-muted-foreground">Zona </span>
+              {pxFmt(sig.entryZone.bottom)}–{pxFmt(sig.entryZone.top)}
+              <span className="text-muted-foreground"> · POI </span>{sig.selectedPoi?.type ?? sig.poi.kind}
+              <span className="text-muted-foreground"> · política </span>{sig.entryPolicy}
+            </div>
+          </div>
+          <table className="w-full text-xs font-mono">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="text-left">Target</th><th className="text-right">Precio</th>
+                <th className="text-right">RR</th><th className="text-right">%</th>
+                <th className="text-left pl-3">Razón</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sig.targets.map((t) => (
+                <tr key={t.name}>
+                  <td className="text-success">{t.name}</td>
+                  <td className="text-right">{pxFmt(t.price)}</td>
+                  <td className="text-right">{t.rr.toFixed(2)}</td>
+                  <td className="text-right">{t.allocationPct}%</td>
+                  <td className="text-left pl-3 text-muted-foreground">{t.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {sig.trigger && (
+            <div className={`rounded border p-2 text-xs ${sig.trigger.satisfied ? "border-success/40 bg-success/5" : "border-amber-400/40 bg-amber-400/5"}`}>
+              <span className="font-bold uppercase mr-2">{sig.trigger.type.replace(/_/g, " ")}</span>
+              {sig.trigger.description}
+            </div>
+          )}
+          <div className="text-xs">
+            <span className="text-muted-foreground">Next: </span>
+            <span className="text-foreground/90">{sig.nextAction}</span>
+          </div>
         </div>
       )}
 

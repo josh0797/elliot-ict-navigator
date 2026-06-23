@@ -81,11 +81,16 @@ export function SignalsPanel({
                 <span className="text-right">{s.rrToTp1.toFixed(2)} / {s.rrToTp2.toFixed(2)}</span>
               </div>
               <div className="mt-1 text-[10px] font-mono text-muted-foreground">
-                TP1: {s.tp1Source.kind === "LIQUIDITY" ? "liquidez" : "2R"} · TP2: {s.tp2Source.kind === "FIB_EXTENSION" ? `fib1.618 W${s.tp2Source.wave}` : "3R"}
+                TP1: {s.targets[0]?.reason ?? "—"} · TP2: {s.targets[1]?.reason ?? "—"} · TP3: {s.targets[2]?.reason ?? "—"}
               </div>
+              {s.trigger && (
+                <div className={`mt-1 text-[10px] font-mono ${s.trigger.satisfied ? "text-success" : "text-amber-400"}`}>
+                  {s.trigger.satisfied ? "✓" : "⏳"} {s.trigger.description}
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Score</span>
-                <span className="font-mono text-primary">{Math.round(s.finalScore * 100)}%</span>
+                <span className="font-mono text-primary">{s.scoreOut100}/100 · {s.grade}</span>
               </div>
               <div className="text-[10px] font-mono text-muted-foreground">
                 canon {Math.round(s.score * 100)}% · ml {s.mlScore !== null ? Math.round(s.mlScore * 100) + "%" : "—"}
