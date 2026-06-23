@@ -39,7 +39,7 @@ function bullishElliott(): ElliottAnalysis {
   return { primary, alternatives: [] };
 }
 
-function bullishIct(currentIndex: number): IctContext {
+function bullishIct(currentIndex: number, opts: { obTop?: number; obBottom?: number } = {}): IctContext {
   return {
     bias: "BULLISH",
     fvgs: [],
@@ -47,8 +47,8 @@ function bullishIct(currentIndex: number): IctContext {
       {
         id: "ob1",
         type: "BULLISH",
-        top: 104.5,
-        bottom: 103.5,
+        top: opts.obTop ?? 102.5,
+        bottom: opts.obBottom ?? 101.5,
         originIndex: 38,
         originTime: 0,
         state: "FRESH",
@@ -95,6 +95,9 @@ it("setup engine produces a long signal with positive RR when bullish confluence
   expect(s.confluences.includes("OB_CONFLUENCE")).toBeTruthy();
   expect(s.mlScore).not.toBe(null);
   expect(s.modelVersion).toBe("legacy-pretrained-html-v1");
+  expect(s.schemaVersion).toBe("canonical-setup-v2");
+  expect(s.gatesPassed.length >= 10).toBeTruthy();
+  expect(["BUY_LIMIT", "MARKET_BUY"].includes(s.orderType)).toBeTruthy();
 });
 
 it("setup engine returns no signals when Elliott is INVALIDATED", () => {
@@ -117,4 +120,81 @@ it("setup engine returns no signals when there are no matching POIs", () => {
 it("setup engine returns no signals when primary is null", () => {
   const out = detectSignals(candles, [], { primary: null, alternatives: [] }, bullishIct(candles.length - 1), { symbol, timeframe });
   expect(out).toEqual([]);
+});
+
+it("hard gate: drops MITIGATED POIs", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  ict.orderBlocks[0].state = "MITIGATED";
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out).toEqual([]);
+});
+
+it("hard gate: requires structural confirmation (BOS or sweep+displacement)", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  ict.structure = [];
+  ict.sweeps = [];
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out).toEqual([]);
+});
+
+it("hard gate: drops setups when RR is too small", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  // Liquidity right above entry → 2R fallback; force minRR very high.
+  ict.liquidity = [];
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe, minRR: 99 });
+  expect(out).toEqual([]);
+});
+
+it("entry policy: price inside POI yields MARKET_BUY / TRIGGERED", () => {
+  // priceAtDetection ≈ candles[n-2].close. Force POI to straddle that close.
+  const priceAtDet = candles[candles.length - 2].close;
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1, { obTop: priceAtDet + 0.5, obBottom: priceAtDet - 0.5 });
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out.length > 0).toBeTruthy();
+  expect(out[0].orderType).toBe("MARKET_BUY");
+  expect(out[0].status).toBe("TRIGGERED");
+});
+
+it("entry policy: price below POI long → BUY_LIMIT / WAITING_RETRACE", () => {
+  const priceAtDet = candles[candles.length - 2].close;
+  const elliott = bullishElliott();
+  // Long demand POI sits BELOW current price; price retraces down → BUY_LIMIT.
+  const ict = bullishIct(candles.length - 1, { obTop: priceAtDet - 1, obBottom: priceAtDet - 2 });
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out.length > 0).toBeTruthy();
+  expect(out[0].orderType).toBe("BUY_LIMIT");
+  expect(out[0].status).toBe("WAITING_RETRACE");
+});
+
+it("TP1 policy: provisional liquidity is ignored, falls back to 2R", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  ict.liquidity = [{ ...ict.liquidity[0], provisional: true }];
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out.length > 0).toBeTruthy();
+  expect(out[0].tp1Source.kind).toBe("FALLBACK");
+});
+
+it("TP2 policy: uses fib 1.618 extension when wave pivots are present", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out.length > 0).toBeTruthy();
+  expect(out[0].tp2Source.kind).toBe("FIB_EXTENSION");
+});
+
+it("SL policy: slBasis records every contributing structural level", () => {
+  const elliott = bullishElliott();
+  const ict = bullishIct(candles.length - 1);
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out.length > 0).toBeTruthy();
+  const sb = out[0].slBasis;
+  expect(sb.elliottInvalidation).toBe(100);
+  expect(sb.sweepExtreme).toBe(102);
+  expect(sb.chosen).toBe("min");
+  expect(out[0].sl < out[0].entry).toBeTruthy();
 });

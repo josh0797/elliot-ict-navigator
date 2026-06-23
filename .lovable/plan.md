@@ -1,107 +1,131 @@
-# Plan — Cierre del esqueleto: señales operativas end-to-end
+# Plan: Setup canónico v2 con hard gates y política robusta
 
-Objetivo: que la app deje de mostrar solo capas visuales y produzca **setups accionables** combinando el motor canónico (`detection/elliott` + `detection/ict`) con el scorer legacy congelado (`ml/legacy`). Sin reentrenar nada. Sin tocar tipos del contrato congelado.
+Refactor del motor de setups para sustituir el scoring acumulativo blando por **hard gates** explícitos, una política de entry/SL/TP bien definida y un tipo canónico independiente del legacy.
 
-## Alcance
+## 1. Nuevo tipo canónico independiente (`types.ts`)
 
-1. **Motor de setups canónico v2** (`src/lib/detection/setup/engine.ts`)
-   - Input: `candles`, `pivots`, `ElliottAnalysis`, `IctContext`.
-   - Reglas de confluencia (todas opcionales y ponderadas, no hard-gates excepto invalidación):
-     - Sesgo Elliott coincide con bias ICT (`BULLISH`/`BEARISH`).
-     - Onda actual ∈ {2, 4, B} (zona de entrada) o impulso temprano (1/3/5 con sweep previo).
-     - Confluencia con **Order Block FRESH/TOUCHED** en dirección, o **FVG no mitigado**.
-     - **Liquidity sweep** reciente (≤5 velas) en lado opuesto.
-     - Evento de estructura `BOS`/`CHoCH` CONFIRMED en dirección.
-     - Premium/Discount alineado: longs en discount, shorts en premium.
-     - Killzone activa (bonus, no requisito).
-   - Output `TradeSetupV2` (extiende `TradeSetup` legacy con campos opcionales):
-     - `entry` = borde de zona POI más cercano.
-     - `sl` = extremo de la zona ± buffer ATR×0.1.
-     - `tp1` = liquidez opuesta más cercana o 1R×2.
-     - `tp2` = extensión Fib 1.618 de la onda dominante.
-     - `confirmationLevel`, `invalidationLevel`, `fibTarget1` poblados para feature extractor legacy.
-     - `scoreBreakdown { elliott, ict, confluence }`.
-     - `rationale` (string en español, lista de confluencias activas).
+Reemplazar `TradeSignal` por `TradeSetupV2` versionado, sin herencia del contrato legacy:
 
-2. **Conexión legacy → setup**
-   - En el engine, tras construir el setup, llamar
-     `scoreSignalLegacy(buildLegacyInput(signal, elliott, priceAtDetection))`
-     y adjuntar:
-     - `signal.mlScore` (0..1) — ACTIVE BASELINE, diagnóstico paralelo.
-     - `signal.modelVersion = "legacy-pretrained-html-v1"`.
-   - Helper `buildLegacyInput` en `src/lib/detection/setup/legacyAdapter.ts`
-     mapea `(signal, elliott, currentPrice)` → `LegacyInput` con los **siete**
-     campos reales del contrato:
-     `confirmationLevel`, `invalidationLevel`, `fibTarget1`, `rrRatio`,
-     `hasAlternative`, `currentPriceApprox`, `waveLabel`.
-   - Invariante de contrato: `fibTarget1` y `rrRatio` deben referirse al
-     **mismo** objetivo (TP1) para mantener coherentes las features legacy
-     f0 (tp/sl) y f3 (rrNorm).
-   - `currentPriceApprox` se congela como `priceAtDetection` (cierre de la
-     última vela confirmada) y se guarda en el snapshot del signal, para que
-     re-puntuar el mismo setup sea determinista.
-   - Sin tocar `src/lib/ml/legacy/*` ni `model.ts`.
+```ts
+interface TradeSetupV2 {
+  schemaVersion: "canonical-setup-v2";
+  id: string; symbol: string; timeframe: string;
+  direction: "long" | "short";
+  orderType: "BUY_LIMIT" | "SELL_LIMIT" | "BUY_STOP" | "SELL_STOP"
+           | "MARKET_BUY" | "MARKET_SELL" | "NO_ORDER";
+  status: "READY" | "WAITING_RETRACE" | "TRIGGERED" | "INVALIDATED" | "NO_SETUP";
+  entry: number; sl: number; tp1: number; tp2: number;
+  rrToTp1: number; rrToTp2: number;
+  priceAtDetection: number;
+  // metadatos de SL/TP/POI para auditoría
+  sl Basis: { elliottInvalidation: number|null; poiExtreme: number;
+              sweepExtreme: number|null; protectedSwing: number|null;
+              atrBuffer: number; chosen: "max"|"min" };
+  tp1Source: { liquidityId: string; price: number } | { fallback: "2R" };
+  tp2Source: { wave: string; from: number; to: number; projectedFrom: number; ratio: 1.618 }
+           | { fallback: "3R" };
+  poi: { kind: "ORDER_BLOCK"|"FVG"; id: string; proximal: number; distal: number; state: string };
+  score: number;                    // canonical
+  mlScore: number|null;             // ACTIVE BASELINE diagnostic
+  modelVersion: string|null;
+  breakdown: ScoreBreakdown;
+  confluences: SignalConfluence[];
+  gatesPassed: string[];            // auditoría de hard gates
+  rationale: string;
+  detectedAt: number;
+}
+```
 
-3. **Filtros y ranking de señales**
-   - Descartar setup si:
-     - RR (a TP1) < 1.0
-     - Score canónico < 0.35
-     - Elliott `state === "INVALIDATED"`
-   - Score operativo (`finalScore`) = `canonicalScore`. El legacy NO pondera
-     decisiones operativas en esta fase: 52.86% accuracy vs 49.71% base no
-     justifica un peso fijo, y mezclar 40% podría degradar setups canónicos
-     buenos. Se mantendrá como ACTIVE BASELINE en paralelo hasta que un
-     backtest calibre un peso (máximo 0.1 inicialmente).
-   - Devolver top-N (default 3) ordenados por `finalScore`.
+`LegacyInput` se construye solo vía adapter explícito desde `TradeSetupV2`.
 
-4. **Server function**
-   - Extender `src/lib/elliott.functions.ts` (o nueva `src/lib/setups.functions.ts`) con `detectSetups({ symbol, interval, outputsize })` que devuelve `{ setups: TradeSetupV2[], elliott, ict, provider }`.
-   - Sin auth (paridad con `analyzeSymbol` actual).
+## 2. Hard gates obligatorios (`engine.ts`)
 
-5. **UI mínima en `chart.$symbol.tsx`**
-   - Panel "Señales" debajo del chart:
-     - Tarjeta por setup: dirección (chip), entry/SL/TP1/TP2, RR, score canónico, score ML, rationale, lista de confluencias.
-     - Si no hay setups: estado vacío explicativo.
-   - Líneas en el chart para el setup seleccionado: entry (azul), SL (rojo punteado), TP1/TP2 (verde punteado).
-   - No tocar layers existentes ni el LayerControls.
+Antes de cualquier scoring, una candidata debe pasar TODAS estas verificaciones; si falla cualquiera → descartada (no se baja el score, se elimina):
 
-6. **Tests**
-   - `src/lib/detection/setup/__tests__/engine.test.ts`:
-     - Fixture sintético bullish: pivotes en patrón impulsivo + OB bullish + sweep SSL → setup long con score > 0.5, RR > 1.
-     - Fixture bearish simétrico.
-     - Fixture sin confluencia → 0 setups.
-     - Setup con Elliott INVALIDATED → descartado.
-   - `src/lib/detection/setup/__tests__/legacyAdapter.test.ts`:
-     - Verifica que el `LegacyInput` producido tenga los 4 campos requeridos y `fibTarget1` finito cuando hay tp2.
-     - Verifica que `scoreLegacy` se invoca y devuelve 0..1.
+1. `elliott.primary` existe y `state !== "INVALIDATED"`.
+2. POI alineado con la dirección y `state ∈ {FRESH, TOUCHED}` (no `MITIGATED`/`INVALIDATED`).
+3. `entry`, `sl`, `tp1`, `tp2` son finitos y > 0.
+4. SL en el lado correcto: long → `sl < entry`; short → `sl > entry`.
+5. TP1 en el lado correcto: long → `tp1 > entry`; short → `tp1 < entry`.
+6. `risk = |entry - sl| > 0`.
+7. `rrToTp1 >= minRR` (default 1.0).
+8. POI no invalidado por precio posterior (close más allá del distal).
+9. Pivotes usados en estructura/POI deben ser `confirmed: true`.
+10. **Confirmación estructural**: al menos una de:
+    - BOS/CHoCH `CONFIRMED` en la misma dirección dentro de N velas, o
+    - sweep válido (`wickBeyond && closeBack`) + `displacementAfter` + POI activo en la zona del sweep.
 
-## Fuera de alcance (explícito)
+Solo entonces se computa el score; el umbral `MIN_SCORE` se mantiene como filtro adicional, no como sustituto de los gates.
 
-- No se reentrena modelo, no se crea `canonical-ict-v2`.
-- No se modifica `src/lib/detection/types.ts` (legacy) ni `src/lib/detection/engine.ts` (legacy zigzag-based). Quedan como están para no romper consumidores existentes (`scan-and-alert`, etc.).
-- No se cambian rutas, auth, ni esquema de BD.
-- No se cambia el LayerControls ni el sistema de capas del chart.
+## 3. Política de Entry
 
-## Archivos nuevos
+- `proximal = top` (long) / `bottom` (short) del POI.
+- `distal = bottom` (long) / `top` (short).
+- Si `priceAtDetection` ya está dentro del POI → `orderType = MARKET_*`, `status = TRIGGERED`.
+- Si fuera (precio aún no alcanzó el POI) → `BUY_LIMIT`/`SELL_LIMIT` en proximal, `status = WAITING_RETRACE`.
+- Si el POI ya quedó atrás (precio cruzó el distal) → `status = INVALIDATED`, descartar.
+- Para OB+FVG superpuestos: usar la intersección como zona de entrada.
 
-- `src/lib/detection/setup/engine.ts`
-- `src/lib/detection/setup/legacyAdapter.ts`
-- `src/lib/detection/setup/types.ts` (re-exporta `TradeSetupV2` desde contract)
-- `src/lib/detection/setup/__tests__/engine.test.ts`
-- `src/lib/detection/setup/__tests__/legacyAdapter.test.ts`
-- `src/lib/setups.functions.ts`
-- `src/components/chart/SignalsPanel.tsx`
+## 4. Política de Stop Loss
 
-## Archivos modificados
+`sl` debe quedar más allá de **todos** los niveles estructurales relevantes + buffer ATR:
 
-- `src/routes/_authenticated/chart.$symbol.tsx` — montar `<SignalsPanel/>` y pasar setup seleccionado a `TradingChart`.
-- `src/components/chart/TradingChart.tsx` — dibujar entry/SL/TP del setup activo (prop opcional, sin romper si es undefined).
+- Long: `sl = min(elliottInvalidation, poiDistal, sweepLow, protectedSwingLow) - atr * 0.1`.
+- Short: `sl = max(elliottInvalidation, poiDistal, sweepHigh, protectedSwingHigh) + atr * 0.1`.
 
-## Riesgo
+Los componentes ausentes se omiten del min/max. `slBasis` registra cada valor para auditoría.
 
-- El motor canónico hoy no expone `confirmationLevel`/`invalidationLevel` directamente; el adapter los deriva de `setup.entry` y `setup.sl`. Documentado en código.
-- `fibTarget1` se toma de `tp1` (mismo target que `rrRatio`) para preservar
-  la coherencia interna del vector legacy. Si falta, el extractor aplica el
-  fallback congelado `tpSize = slSize * 2`.
+## 5. Política de TP1
 
-¿Apruebas y procedo a implementar?
+Liquidez elegible debe cumplir TODAS:
+
+- `state === "ACTIVE"` (no `SWEPT`/`BROKEN`).
+- `!provisional`.
+- Lado correcto: long → BSL con `price > entry`; short → SSL con `price < entry`.
+- No mitigada/barrida previamente.
+- Genera `rr >= minRR`.
+
+Selección: la más cercana al entry que cumpla todo. Si ninguna cualifica → fallback `entry ± 2R`, marcado en `tp1Source`.
+
+## 6. Política de TP2
+
+Extensión 1.618 explícita:
+
+- Onda usada: si Elliott está en onda 2 → proyectar onda 3 desde fin de onda 1.
+- Si en onda 4 → proyectar onda 5 desde fin de onda 3.
+- Si en B → proyectar C desde fin de A.
+- `from`, `to`, `projectedFrom` registrados en `tp2Source`.
+- Si la onda base está incompleta o faltan pivotes → fallback `entry ± 3R` con `tp2Source.fallback`.
+
+## 7. Tests nuevos (`engine.test.ts`)
+
+Añadir casos golden para cada gate (cada uno debe descartar el setup):
+
+- Elliott `INVALIDATED` → 0 setups.
+- POI `MITIGATED` → 0 setups.
+- SL del lado equivocado (datos forzados) → descartado.
+- RR insuficiente → descartado.
+- Sin BOS confirmado ni sweep+displacement → descartado aunque score sea alto.
+- Precio dentro del POI → `orderType = MARKET_*`, `status = TRIGGERED`.
+- Precio antes del POI → `BUY_LIMIT`, `status = WAITING_RETRACE`.
+- Liquidez provisional ignorada para TP1; usa fallback 2R.
+- TP2 fallback cuando faltan pivotes Elliott.
+
+Tests legacy adapter ajustados al nuevo `TradeSetupV2`.
+
+## 8. SignalsPanel
+
+Mostrar `orderType`, `status`, `slBasis` resumido, fuente de TP1/TP2. Sin cambios estructurales mayores.
+
+## Archivos a modificar
+
+- `src/lib/detection/setup/types.ts` — `TradeSetupV2` canónico.
+- `src/lib/detection/setup/engine.ts` — hard gates + políticas entry/SL/TP.
+- `src/lib/detection/setup/legacyAdapter.ts` — adapter desde `TradeSetupV2`.
+- `src/lib/detection/setup/__tests__/engine.test.ts` — nuevos golden tests.
+- `src/lib/detection/setup/__tests__/legacyAdapter.test.ts` — ajustar.
+- `src/components/chart/SignalsPanel.tsx` — render de orderType/status.
+- `src/lib/setups.functions.ts` — tipo retorno.
+- `.lovable/plan.md` — documentar contrato v2.
+
+Sin cambios en motores ICT/Elliott existentes (ya entregan los datos necesarios).
