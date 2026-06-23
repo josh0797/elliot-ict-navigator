@@ -9,6 +9,7 @@ import { analyzeIct } from "./detection/ict/engine";
 import { toElliottResult } from "./detection/elliott/dto";
 import { detectSignals } from "./detection/setup/engine";
 import type { DetectSetupsResult } from "./detection/setup/types";
+import { decideOperation } from "./detection/decision/engine";
 
 const Input = z.object({
   symbol: z.string().min(2),
@@ -29,7 +30,19 @@ export const detectSetups = createServerFn({ method: "POST" })
     if (error || candles.length === 0) {
       return {
         symbol: data.symbol, timeframe: data.interval,
-        signals: [], elliott: emptyElliott, provider, error: error ?? "No candles",
+        signals: [], elliott: emptyElliott,
+        decision: {
+          decision: "NO_TRADE",
+          status: "NO_SETUP",
+          template: "NO_VALID_TEMPLATE",
+          direction: "NEUTRAL",
+          bias: { dominant: "NEUTRAL", bullScore: 0, bearScore: 0, conflict: false, votes: [] },
+          primarySignal: null,
+          reasons: ["NO_PRIMARY_COUNT"],
+          summary: "NO TRADE — sin datos.",
+          missing: [],
+        },
+        provider, error: error ?? "No candles",
       };
     }
     const lifted = liftCandles(candles);
@@ -42,11 +55,13 @@ export const detectSetups = createServerFn({ method: "POST" })
       timeframe: data.interval,
       topN: data.topN,
     });
+    const decision = decideOperation(analysis, ict, signals, lifted.length);
     return {
       symbol: data.symbol,
       timeframe: data.interval,
       signals,
       elliott: toElliottResult(analysis, bias),
+      decision,
       provider,
     };
   });

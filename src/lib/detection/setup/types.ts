@@ -1,4 +1,5 @@
 import type { ElliottResultDTO } from "../elliott/types";
+import type { OperationalReport } from "../decision/types";
 
 export type SignalDirection = "long" | "short";
 
@@ -121,6 +122,7 @@ export interface DetectSetupsResult {
   timeframe: string;
   signals: TradeSignal[];
   elliott: ElliottResultDTO;
+  decision: OperationalReport;
   provider?: "polygon" | "twelvedata" | "none";
   error?: string;
 }
