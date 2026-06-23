@@ -1,5 +1,4 @@
-import { test } from "vitest";
-import assert from "node:assert/strict";
+import { describe, expect, it } from "vitest";
 import { toElliottResult } from "../elliott/dto";
 import type { ElliottAnalysis, ElliottCountV2, LabeledPivot, WaveLabel } from "../elliott/types";
 import type { PivotV2 } from "../schemas/analysis";
@@ -27,26 +26,26 @@ function count(prices: number[], opts: Partial<ElliottCountV2> = {}): ElliottCou
   };
 }
 
-test("Elliott DTO: clean impulse → COMPLETED with high confidence", () => {
+it("Elliott DTO: clean impulse → COMPLETED with high confidence", () => {
   const analysis: ElliottAnalysis = { primary: count([100, 110, 105, 130, 120, 140]), alternatives: [] };
   const dto = toElliottResult(analysis, "BULLISH");
-  assert.equal(dto.status, "COMPLETED");
-  assert.equal(dto.bias, "BULLISH");
-  assert.equal(dto.currentWave, "5");
-  assert.equal(dto.completion, 1);
-  assert.ok(dto.confidence > 60, `confidence ${dto.confidence} should exceed 60`);
-  assert.equal(dto.rules.find((r) => r.code === "W2_ORIGIN")?.status, "PASS");
+  expect(dto.status).toBe("COMPLETED");
+  expect(dto.bias).toBe("BULLISH");
+  expect(dto.currentWave).toBe("5");
+  expect(dto.completion).toBe(1);
+  expect(dto.confidence > 60).toBeTruthy();
+  expect(dto.rules.find((r) => r.code === "W2_ORIGIN")?.status).toBe("PASS");
 });
 
-test("Elliott DTO: invalidated → confidence 0, W2_ORIGIN FAIL", () => {
+it("Elliott DTO: invalidated → confidence 0, W2_ORIGIN FAIL", () => {
   const c = count([100, 110, 95, 130, 120, 140], { state: "INVALIDATED", invalidations: ["R1: wave 2 retraced 100% of wave 1 (past P0)"] });
   const dto = toElliottResult({ primary: c, alternatives: [] }, "BULLISH");
-  assert.equal(dto.status, "INVALIDATED");
-  assert.equal(dto.confidence, 0);
-  assert.equal(dto.rules.find((r) => r.code === "W2_ORIGIN")?.status, "FAIL");
+  expect(dto.status).toBe("INVALIDATED");
+  expect(dto.confidence).toBe(0);
+  expect(dto.rules.find((r) => r.code === "W2_ORIGIN")?.status).toBe("FAIL");
 });
 
-test("Elliott DTO: developing count → W3_NOT_SHORTEST PENDING", () => {
+it("Elliott DTO: developing count → W3_NOT_SHORTEST PENDING", () => {
   const c = count([100, 110, 105, 130], {
     state: "DEVELOPING",
     labeled: labeled([100, 110, 105, 130]),
@@ -55,12 +54,12 @@ test("Elliott DTO: developing count → W3_NOT_SHORTEST PENDING", () => {
     alternation: null,
   });
   const dto = toElliottResult({ primary: c, alternatives: [] }, "BULLISH");
-  assert.equal(dto.status, "DEVELOPING");
-  assert.equal(dto.currentWave, "3");
-  assert.equal(dto.rules.find((r) => r.code === "W3_NOT_SHORTEST")?.status, "PENDING");
+  expect(dto.status).toBe("DEVELOPING");
+  expect(dto.currentWave).toBe("3");
+  expect(dto.rules.find((r) => r.code === "W3_NOT_SHORTEST")?.status).toBe("PENDING");
 });
 
-test("Elliott DTO: invalidationLevel uses P1 when currentWave=4", () => {
+it("Elliott DTO: invalidationLevel uses P1 when currentWave=4", () => {
   const c = count([100, 110, 105, 130, 115], {
     state: "VALID",
     labeled: labeled([100, 110, 105, 130, 115]),
@@ -68,5 +67,5 @@ test("Elliott DTO: invalidationLevel uses P1 when currentWave=4", () => {
     fibScores: { wave2Retracement: 0.8, wave3Extension: 0.9, wave4Retracement: 0.7, wave5Projection: null },
   });
   const dto = toElliottResult({ primary: c, alternatives: [] }, "BULLISH");
-  assert.equal(dto.invalidationLevel, 110);
+  expect(dto.invalidationLevel).toBe(110);
 });
