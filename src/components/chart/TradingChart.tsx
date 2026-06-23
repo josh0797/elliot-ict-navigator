@@ -11,6 +11,8 @@ import {
   type IPriceLine,
   type MouseEventParams,
   type Time,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
 } from "lightweight-charts";
 import type { Candle } from "@/lib/twelvedata.functions";
 import type { ElliottResultDTO, ElliottWaveDTO } from "@/lib/detection/elliott/types";
@@ -96,6 +98,7 @@ export function TradingChart({
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const overlaysRef = useRef<ISeriesApi<"Line">[]>([]);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   // Init chart once.
   useEffect(() => {
@@ -122,11 +125,13 @@ export function TradingChart({
     chartRef.current = chart;
     candleRef.current = series;
     return () => {
+      try { markersRef.current?.detach(); } catch { /* removed during teardown */ }
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
       overlaysRef.current = [];
       priceLinesRef.current = [];
+      markersRef.current = null;
     };
   }, []);
 
@@ -134,28 +139,14 @@ export function TradingChart({
   useEffect(() => {
     const chart = chartRef.current;
     const series = candleRef.current;
-    if (!chart || !series || candles.length === 0) return;
+    if (!chart || !series) return;
 
-    series.setData(
-      candles
-        .filter(
-          (c) =>
-            isValidChartTime(c.time) &&
-            isFiniteNumber(c.open) &&
-            isFiniteNumber(c.high) &&
-            isFiniteNumber(c.low) &&
-            isFiniteNumber(c.close),
-        )
-        .map((c) => ({
-          time: c.time as unknown as UTCTimestamp,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-        })),
-    );
-
-    // Clear overlays.
+    // Clear overlays and marker primitives BEFORE replacing candle data. The
+    // chart library recalculates primitives during setData(); stale marker
+    // plugins attached to old overlay series can otherwise crash with
+    // `Value is null` when the timeframe/history changes.
+    try { markersRef.current?.detach(); } catch { /* removed during teardown */ }
+    markersRef.current = null;
     for (const s of overlaysRef.current) {
       try { chart.removeSeries(s); } catch { /* removed during teardown */ }
     }
@@ -164,6 +155,43 @@ export function TradingChart({
       try { series.removePriceLine(pl); } catch { /* idem */ }
     }
     priceLinesRef.current = [];
+
+    if (candles.length === 0) {
+      series.setData([]);
+      onPivotHover?.(null);
+      return;
+    }
+
+    const byTime = new Map<number, Candle>();
+    for (const c of candles) {
+      if (
+        isValidChartTime(c.time) &&
+        isFiniteNumber(c.open) &&
+        isFiniteNumber(c.high) &&
+        isFiniteNumber(c.low) &&
+        isFiniteNumber(c.close)
+      ) {
+        byTime.set(c.time, c);
+      }
+    }
+    const chartCandles = [...byTime.values()].sort((a, b) => a.time - b.time);
+    const candleData = chartCandles.map((c) => ({
+      time: c.time as unknown as UTCTimestamp,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+    series.setData(candleData);
+    if (candleData.length === 0) return;
+
+    const validTimes = new Set(chartCandles.map((c) => c.time));
+    const chartMarkers: SeriesMarker<Time>[] = [];
+    const pushMarker = (marker: SeriesMarker<Time>) => {
+      const t = Number(marker.time);
+      if (!isValidChartTime(t) || !validTimes.has(t)) return;
+      chartMarkers.push(marker);
+    };
 
     const renderCount = (waves: ElliottWaveDTO[], opacity: number) => {
       if (waves.length < 2) return;
@@ -174,7 +202,14 @@ export function TradingChart({
           const b = waves[i];
           const ta = waveTime(a, candles);
           const tb = waveTime(b, candles);
-          if (ta === null || tb === null || !isFiniteNumber(a.price) || !isFiniteNumber(b.price)) continue;
+          if (
+            ta === null ||
+            tb === null ||
+            !validTimes.has(ta) ||
+            !validTimes.has(tb) ||
+            !isFiniteNumber(a.price) ||
+            !isFiniteNumber(b.price)
+          ) continue;
           const color = segmentColor(a.label, b.label);
           const s = chart.addSeries(LineSeries, {
             color: opacity < 1 ? hexWithAlpha(color, opacity) : color,
@@ -191,27 +226,19 @@ export function TradingChart({
         }
       }
       if (layers.elliottLabels) {
-        // markers attached to a transparent overlay line.
-        const m = chart.addSeries(LineSeries, { color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false });
         const wavePoints = waves
           .map((w) => ({ t: waveTime(w, candles), w }))
-          .filter((p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && isFiniteNumber(p.w.price));
-        if (wavePoints.length === 0) {
-          try { chart.removeSeries(m); } catch { /* noop */ }
-          return;
-        }
-        m.setData(wavePoints.map((p) => ({ time: p.t as unknown as UTCTimestamp, value: p.w.price })));
-        createSeriesMarkers(
-          m as unknown as Parameters<typeof createSeriesMarkers>[0],
-          wavePoints.map(({ t, w }) => ({
+          .filter((p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && validTimes.has(p.t) && isFiniteNumber(p.w.price));
+        for (const { t, w } of wavePoints) {
+          pushMarker({
+            id: `elliott-${w.label}-${t}-${opacity}`,
             time: t as unknown as UTCTimestamp,
             position: w.type === "HIGH" ? "aboveBar" : "belowBar",
             color: w.confirmed ? "#facc15" : "rgba(250,204,21,0.5)",
             shape: "circle",
             text: w.confirmed ? w.label : `${w.label}?`,
-          })) as Parameters<typeof createSeriesMarkers>[1],
-        );
-        overlaysRef.current.push(m);
+          });
+        }
       }
     };
 
@@ -303,28 +330,19 @@ export function TradingChart({
 
     // ICT Sweep markers on the candle that raided the liquidity.
     if (isDiag && ict && layers.sweeps && ict.sweeps.length > 0) {
-      const overlay = chart.addSeries(LineSeries, {
-        color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false,
-      });
-      overlay.setData(ict.sweeps
+      ict.sweeps
         .filter((s) => s.index >= 0 && s.index < candles.length && isFiniteNumber(s.price) && isValidChartTime(candles[s.index].time))
-        .map((s) => ({
-          time: candles[s.index].time as unknown as UTCTimestamp,
-          value: s.price,
-        })));
-      createSeriesMarkers(
-        overlay as unknown as Parameters<typeof createSeriesMarkers>[0],
-        ict.sweeps
-          .filter((s) => s.index >= 0 && s.index < candles.length && isFiniteNumber(s.price) && isValidChartTime(candles[s.index].time))
-          .map((s) => ({
+        .forEach((s) => {
+          const t = candles[s.index].time;
+          pushMarker({
+            id: `sweep-${s.id}-${t}`,
             time: candles[s.index].time as unknown as UTCTimestamp,
             position: s.type === "buy_side" ? "aboveBar" : "belowBar",
             color: s.type === "buy_side" ? "#ef4444" : "#22c55e",
             shape: s.type === "buy_side" ? "arrowDown" : "arrowUp",
             text: `${s.type === "buy_side" ? "BSL" : "SSL"}·Q${s.quality}`,
-          })) as Parameters<typeof createSeriesMarkers>[1],
-      );
-      overlaysRef.current.push(overlay);
+          });
+        });
     }
 
     chart.timeScale().fitContent();
@@ -381,23 +399,21 @@ export function TradingChart({
       if (ict && ict.sweeps.length > 0) {
         const sw = ict.sweeps[ict.sweeps.length - 1];
         if (sw && sw.index >= 0 && sw.index < candles.length && isFiniteNumber(sw.price) && isValidChartTime(candles[sw.index].time)) {
-          const overlay = chart.addSeries(LineSeries, {
-            color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false,
+          pushMarker({
+            id: `active-sweep-${sw.id}-${candles[sw.index].time}`,
+            time: candles[sw.index].time as unknown as UTCTimestamp,
+            position: sw.type === "buy_side" ? "aboveBar" : "belowBar",
+            color: sw.type === "buy_side" ? "#ef4444" : "#22c55e",
+            shape: sw.type === "buy_side" ? "arrowDown" : "arrowUp",
+            text: `SWEEP ${sw.type === "buy_side" ? "BSL" : "SSL"}`,
           });
-          overlay.setData([{ time: candles[sw.index].time as unknown as UTCTimestamp, value: sw.price }]);
-          createSeriesMarkers(
-            overlay as unknown as Parameters<typeof createSeriesMarkers>[0],
-            [{
-              time: candles[sw.index].time as unknown as UTCTimestamp,
-              position: sw.type === "buy_side" ? "aboveBar" : "belowBar",
-              color: sw.type === "buy_side" ? "#ef4444" : "#22c55e",
-              shape: sw.type === "buy_side" ? "arrowDown" : "arrowUp",
-              text: `SWEEP ${sw.type === "buy_side" ? "BSL" : "SSL"}`,
-            }] as Parameters<typeof createSeriesMarkers>[1],
-          );
-          overlaysRef.current.push(overlay);
         }
       }
+    }
+
+    if (chartMarkers.length > 0) {
+      chartMarkers.sort((a, b) => Number(a.time) - Number(b.time));
+      markersRef.current = createSeriesMarkers(series, chartMarkers);
     }
 
     // Crosshair tooltip — track nearest pivot.
