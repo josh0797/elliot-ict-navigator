@@ -394,7 +394,7 @@ export function detectSignals(
       : candles[candles.length - 1];
     // POI birth ≈ when the structure became actionable. Approximate "armed at" as
     // the POI origin so LIMIT scans only forward candles.
-    const armedAtIndex = poi.originIndex ?? lastConfirmedCandle.index;
+    const armedAtIndex = lastConfirmedCandle.index;
     const candlesSinceArmed = candles.filter(
       (c) => c.index >= armedAtIndex && c.index <= lastConfirmedCandle.index,
     );
