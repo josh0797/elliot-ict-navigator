@@ -64,6 +64,10 @@ export function SignalsPanel({
                 <span className={`font-bold uppercase ${dirCls}`}>{s.direction}</span>
                 <span className="text-muted-foreground">{s.poiKind === "ORDER_BLOCK" ? "OB" : "FVG"}</span>
               </div>
+              <div className="mt-1 flex items-center justify-between text-[10px] font-mono">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-foreground/80">{s.orderType}</span>
+                <span className="text-muted-foreground">{s.status}</span>
+              </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs font-mono">
                 <span className="text-muted-foreground">Entry</span>
                 <span className="text-right">{pxFmt(s.entry)}</span>
@@ -75,6 +79,9 @@ export function SignalsPanel({
                 <span className="text-right text-success">{pxFmt(s.tp2)}</span>
                 <span className="text-muted-foreground">RR</span>
                 <span className="text-right">{s.rrToTp1.toFixed(2)} / {s.rrToTp2.toFixed(2)}</span>
+              </div>
+              <div className="mt-1 text-[10px] font-mono text-muted-foreground">
+                TP1: {s.tp1Source.kind === "LIQUIDITY" ? "liquidez" : "2R"} · TP2: {s.tp2Source.kind === "FIB_EXTENSION" ? `fib1.618 W${s.tp2Source.wave}` : "3R"}
               </div>
               <div className="mt-2 flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Score</span>
