@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { detectSignals } from "../engine";
 import type { CandleV2, PivotV2 } from "../../schemas/analysis";

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { detectPivots, isLastProvisional } from "../structure/pivots";
 import type { CandleV2 } from "../schemas/analysis";
