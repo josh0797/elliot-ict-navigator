@@ -51,6 +51,7 @@ export function deriveTrigger(args: {
     direction, orderType, entry, entryZone, currentPrice,
     lastConfirmedCandle = null, armedAtIndex = null, candlesSinceArmed = [],
   } = args;
+  void direction;
 
   // Market entry → already triggered.
   if (orderType === "MARKET_BUY" || orderType === "MARKET_SELL") {
