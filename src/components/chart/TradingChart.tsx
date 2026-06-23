@@ -52,6 +52,22 @@ function segmentColor(a: string, b: string): string {
   return SEGMENT_COLORS[`${a}-${b}`] ?? "#94a3b8";
 }
 
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+function isValidChartTime(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0;
+}
+function waveTime(w: ElliottWaveDTO, candles: Candle[]): number | null {
+  if (w.index >= 0 && w.index < candles.length) {
+    const t = candles[w.index].time;
+    return isValidChartTime(t) ? t : null;
+  }
+  const ms = new Date(w.time).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return Math.floor(ms / 1000);
+}
+
 function priceOf(label: string, waves: ElliottWaveDTO[]): number | undefined {
   return waves.find((w) => w.label === label)?.price;
 }
@@ -117,13 +133,22 @@ export function TradingChart({
     if (!chart || !series || candles.length === 0) return;
 
     series.setData(
-      candles.map((c) => ({
-        time: c.time as unknown as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
+      candles
+        .filter(
+          (c) =>
+            isValidChartTime(c.time) &&
+            isFiniteNumber(c.open) &&
+            isFiniteNumber(c.high) &&
+            isFiniteNumber(c.low) &&
+            isFiniteNumber(c.close),
+        )
+        .map((c) => ({
+          time: c.time as unknown as UTCTimestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        })),
     );
 
     // Clear overlays.
@@ -143,6 +168,9 @@ export function TradingChart({
         for (let i = 1; i < waves.length; i++) {
           const a = waves[i - 1];
           const b = waves[i];
+          const ta = waveTime(a, candles);
+          const tb = waveTime(b, candles);
+          if (ta === null || tb === null || !isFiniteNumber(a.price) || !isFiniteNumber(b.price)) continue;
           const color = segmentColor(a.label, b.label);
           const s = chart.addSeries(LineSeries, {
             color: opacity < 1 ? hexWithAlpha(color, opacity) : color,
@@ -152,8 +180,8 @@ export function TradingChart({
             lastValueVisible: false,
           });
           s.setData([
-            { time: (a.index < candles.length ? candles[a.index].time : Math.floor(new Date(a.time).getTime() / 1000)) as unknown as UTCTimestamp, value: a.price },
-            { time: (b.index < candles.length ? candles[b.index].time : Math.floor(new Date(b.time).getTime() / 1000)) as unknown as UTCTimestamp, value: b.price },
+            { time: ta as unknown as UTCTimestamp, value: a.price },
+            { time: tb as unknown as UTCTimestamp, value: b.price },
           ]);
           overlaysRef.current.push(s);
         }
@@ -161,14 +189,18 @@ export function TradingChart({
       if (layers.elliottLabels) {
         // markers attached to a transparent overlay line.
         const m = chart.addSeries(LineSeries, { color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false });
-        m.setData(waves.map((w) => ({
-          time: (w.index < candles.length ? candles[w.index].time : Math.floor(new Date(w.time).getTime() / 1000)) as unknown as UTCTimestamp,
-          value: w.price,
-        })));
+        const wavePoints = waves
+          .map((w) => ({ t: waveTime(w, candles), w }))
+          .filter((p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && isFiniteNumber(p.w.price));
+        if (wavePoints.length === 0) {
+          try { chart.removeSeries(m); } catch { /* noop */ }
+          return;
+        }
+        m.setData(wavePoints.map((p) => ({ time: p.t as unknown as UTCTimestamp, value: p.w.price })));
         createSeriesMarkers(
           m as unknown as Parameters<typeof createSeriesMarkers>[0],
-          waves.map((w) => ({
-            time: (w.index < candles.length ? candles[w.index].time : Math.floor(new Date(w.time).getTime() / 1000)) as unknown as UTCTimestamp,
+          wavePoints.map(({ t, w }) => ({
+            time: t as unknown as UTCTimestamp,
             position: w.type === "HIGH" ? "aboveBar" : "belowBar",
             color: w.confirmed ? "#facc15" : "rgba(250,204,21,0.5)",
             shape: "circle",
@@ -186,7 +218,7 @@ export function TradingChart({
       }
 
       // Invalidation line.
-      if (layers.invalidation && elliott.invalidationLevel !== null) {
+      if (layers.invalidation && isFiniteNumber(elliott.invalidationLevel)) {
         const failRule = elliott.rules.find((r) => r.status === "FAIL");
         const title = `INV: ${failRule?.code ?? "INVALIDATION"}`;
         const pl = series.createPriceLine({
@@ -205,9 +237,10 @@ export function TradingChart({
         const p0 = priceOf("0", elliott.waves);
         const p1 = priceOf("1", elliott.waves);
         const p3 = priceOf("3", elliott.waves);
-        if (p0 !== undefined && p1 !== undefined) {
+        if (isFiniteNumber(p0) && isFiniteNumber(p1)) {
           for (const ratio of [0.382, 0.5, 0.618]) {
             const price = p1 - (p1 - p0) * ratio;
+            if (!isFiniteNumber(price)) continue;
             priceLinesRef.current.push(series.createPriceLine({
               price,
               color: "rgba(56,189,248,0.6)",
@@ -218,9 +251,10 @@ export function TradingChart({
             }));
           }
         }
-        if (p0 !== undefined && p3 !== undefined) {
+        if (isFiniteNumber(p0) && isFiniteNumber(p3)) {
           for (const ext of [1.0, 1.618]) {
             const price = p0 + (p3 - p0) * ext;
+            if (!isFiniteNumber(price)) continue;
             priceLinesRef.current.push(series.createPriceLine({
               price,
               color: "rgba(168,85,247,0.5)",
@@ -241,6 +275,7 @@ export function TradingChart({
         .sort((a, b) => b.strength - a.strength)
         .slice(0, 14);
       for (const lvl of top) {
+        if (!isFiniteNumber(lvl.price)) continue;
         const isBsl = lvl.side === "BSL";
         const sideColor = lvl.state === "SWEPT"
           ? "rgba(148,163,184,0.55)"
@@ -265,7 +300,7 @@ export function TradingChart({
         color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false,
       });
       overlay.setData(ict.sweeps
-        .filter((s) => s.index < candles.length)
+        .filter((s) => s.index >= 0 && s.index < candles.length && isFiniteNumber(s.price) && isValidChartTime(candles[s.index].time))
         .map((s) => ({
           time: candles[s.index].time as unknown as UTCTimestamp,
           value: s.price,
@@ -273,7 +308,7 @@ export function TradingChart({
       createSeriesMarkers(
         overlay as unknown as Parameters<typeof createSeriesMarkers>[0],
         ict.sweeps
-          .filter((s) => s.index < candles.length)
+          .filter((s) => s.index >= 0 && s.index < candles.length && isFiniteNumber(s.price) && isValidChartTime(candles[s.index].time))
           .map((s) => ({
             time: candles[s.index].time as unknown as UTCTimestamp,
             position: s.type === "buy_side" ? "aboveBar" : "belowBar",
@@ -289,12 +324,14 @@ export function TradingChart({
 
     // Active trade signal overlay (entry / SL / TP1 / TP2).
     if (signal) {
+      const rr1 = isFiniteNumber(signal.rrToTp1) ? signal.rrToTp1.toFixed(2) : "—";
+      const rr2 = isFiniteNumber(signal.rrToTp2) ? signal.rrToTp2.toFixed(2) : "—";
       const lines: { price: number; color: string; title: string; style: LineStyle }[] = [
         { price: signal.entry, color: "#3b82f6", title: `ENTRY ${signal.direction.toUpperCase()}`, style: LineStyle.Solid },
         { price: signal.sl, color: "#ef4444", title: "SL", style: LineStyle.Dashed },
-        { price: signal.tp1, color: "#22c55e", title: `TP1 (${signal.rrToTp1.toFixed(2)}R)`, style: LineStyle.Dotted },
-        { price: signal.tp2, color: "#16a34a", title: `TP2 (${signal.rrToTp2.toFixed(2)}R)`, style: LineStyle.Dotted },
-      ];
+        { price: signal.tp1, color: "#22c55e", title: `TP1 (${rr1}R)`, style: LineStyle.Dotted },
+        { price: signal.tp2, color: "#16a34a", title: `TP2 (${rr2}R)`, style: LineStyle.Dotted },
+      ].filter((l) => isFiniteNumber(l.price));
       for (const l of lines) {
         priceLinesRef.current.push(series.createPriceLine({
           price: l.price, color: l.color, lineWidth: 2, lineStyle: l.style,
