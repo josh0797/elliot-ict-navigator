@@ -11,8 +11,9 @@ import type { TradeSetup } from "@/lib/detection/types";
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
 import type { IctContext } from "@/lib/detection/ict/types";
 import type { TradeSignal } from "@/lib/detection/setup/types";
-import { TradingChart, type LayerToggles, type PivotTooltip } from "@/components/chart/TradingChart";
+import { TradingChart, type LayerToggles, type PivotTooltip, type ChartViewMode } from "@/components/chart/TradingChart";
 import { LayerControls } from "@/components/chart/LayerControls";
+import { ChartViewToggle } from "@/components/chart/ChartViewToggle";
 import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
 import { SymbolPicker } from "@/components/chart/SymbolPicker";
 import { SignalsPanel } from "@/components/chart/SignalsPanel";
@@ -92,6 +93,7 @@ function ChartPage() {
   const [interval, setInterval] = useState(tf);
   const [outputsize, setOutputsize] = useState(bars);
   const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
+  const [viewMode, setViewMode] = useState<ChartViewMode>("operational");
   const latestRequestRef = useRef(0);
 
   useEffect(() => {
@@ -188,6 +190,7 @@ function ChartPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <ChartViewToggle mode={viewMode} onChange={setViewMode} />
           <div className="flex rounded-md border border-border bg-card overflow-hidden text-xs">
             {["15min", "1h", "4h", "1day"].map((t) => (
               <button
@@ -231,6 +234,7 @@ function ChartPage() {
               layers={layers}
               signal={activeSignal}
               onPivotHover={setTooltip}
+              viewMode={viewMode}
             />
             {tooltip && (
               <div
@@ -252,7 +256,14 @@ function ChartPage() {
         </Card>
         <Card className="border-border/60">
           <CardContent className="p-4 space-y-4">
-            <LayerControls layers={layers} onChange={setLayers} />
+            {viewMode === "diagnostic" ? (
+              <LayerControls layers={layers} onChange={setLayers} />
+            ) : (
+              <div className="rounded border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
+                Vista <span className="font-mono text-foreground">Operational</span> activa. Solo se dibuja el setup primario.
+                Cambia a <span className="font-mono text-foreground">Diagnostic</span> para ver todas las capas Elliott × ICT.
+              </div>
+            )}
             <InvalidationLegend elliott={elliott} />
             <div>
               <div className="text-xs uppercase tracking-widest text-muted-foreground">Setup</div>

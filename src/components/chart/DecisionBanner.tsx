@@ -2,10 +2,24 @@ import type { OperationalReport } from "@/lib/detection/decision/types";
 import { Badge } from "@/components/ui/badge";
 
 const DECISION_STYLE: Record<OperationalReport["decision"], string> = {
-  BUY: "border-success/40 bg-success/10 text-success",
-  SELL: "border-destructive/40 bg-destructive/10 text-destructive",
-  WAIT: "border-amber-400/40 bg-amber-400/10 text-amber-400",
-  NO_TRADE: "border-muted bg-muted/30 text-muted-foreground",
+  BUY: "border-success/50 bg-success/10",
+  SELL: "border-destructive/50 bg-destructive/10",
+  WAIT: "border-amber-400/50 bg-amber-400/10",
+  NO_TRADE: "border-muted bg-muted/30",
+};
+
+const DECISION_HEADLINE: Record<OperationalReport["decision"], string> = {
+  BUY: "COMPRAR",
+  SELL: "VENDER",
+  WAIT: "ESPERAR",
+  NO_TRADE: "NO OPERAR",
+};
+
+const DECISION_TEXT: Record<OperationalReport["decision"], string> = {
+  BUY: "text-success",
+  SELL: "text-destructive",
+  WAIT: "text-amber-400",
+  NO_TRADE: "text-muted-foreground",
 };
 
 export function DecisionBanner({
@@ -16,11 +30,19 @@ export function DecisionBanner({
   pxFmt: (n: number) => string;
 }) {
   const cls = DECISION_STYLE[report.decision];
+  const headlineCls = DECISION_TEXT[report.decision];
   const sig = report.primarySignal;
   return (
-    <div className={`rounded-lg border p-4 ${cls}`}>
+    <div className={`rounded-lg border p-5 ${cls}`}>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-2xl font-bold tracking-tight font-mono">{report.decision}</span>
+        <span className={`text-3xl font-extrabold tracking-tight font-mono ${headlineCls}`}>
+          {DECISION_HEADLINE[report.decision]}
+        </span>
+        {sig && (report.decision === "BUY" || report.decision === "SELL") && (
+          <Badge variant="outline" className={`font-mono ${headlineCls}`}>
+            {sig.orderType.replace(/_/g, " ")}
+          </Badge>
+        )}
         <Badge variant="outline" className="font-mono">{report.status}</Badge>
         <Badge variant="outline" className="font-mono">
           {report.template.replace(/_/g, " ")}
@@ -31,7 +53,7 @@ export function DecisionBanner({
       </div>
       <p className="mt-2 text-sm text-foreground/90">{report.summary}</p>
 
-      {sig && (
+      {sig && (report.decision === "BUY" || report.decision === "SELL") && (
         <div className="mt-3 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
             <div><span className="text-muted-foreground">Order </span>{sig.orderType}</div>
@@ -67,21 +89,57 @@ export function DecisionBanner({
           </table>
           {sig.trigger && (
             <div className={`rounded border p-2 text-xs ${sig.trigger.satisfied ? "border-success/40 bg-success/5" : "border-amber-400/40 bg-amber-400/5"}`}>
-              <span className="font-bold uppercase mr-2">{sig.trigger.type.replace(/_/g, " ")}</span>
+              <span className="font-bold uppercase mr-2">Activación · {sig.trigger.type.replace(/_/g, " ")}</span>
               {sig.trigger.description}
             </div>
           )}
+          {sig.invalidation.price !== null && (
+            <div className="text-xs text-muted-foreground">
+              Cancelar escenario si: cierre cruza <span className="font-mono text-destructive">{pxFmt(sig.invalidation.price)}</span>
+              {sig.invalidation.reason ? ` (${sig.invalidation.reason})` : ""}
+            </div>
+          )}
           <div className="text-xs">
-            <span className="text-muted-foreground">Next: </span>
+            <span className="text-muted-foreground">Próxima acción: </span>
             <span className="text-foreground/90">{sig.nextAction}</span>
           </div>
         </div>
       )}
 
-      {report.missing.length > 0 && (
-        <div className="mt-3 text-xs">
-          <span className="text-muted-foreground">Falta: </span>
-          <span className="text-foreground/90">{report.missing.join(" · ")}</span>
+      {report.decision === "WAIT" && (
+        <div className="mt-3 space-y-2 text-sm">
+          <div>
+            <span className="text-muted-foreground">Sesgo: </span>
+            <span className="text-foreground">
+              {report.direction === "BULLISH" ? "Alcista potencial" : report.direction === "BEARISH" ? "Bajista potencial" : "Sin sesgo claro"}
+            </span>
+          </div>
+          {report.missing.length > 0 && (
+            <div>
+              <span className="text-muted-foreground">Falta: </span>
+              <span className="text-foreground/90">{report.missing.join(" · ")}</span>
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground">No operar todavía. El sistema seguirá vigilando la estructura.</div>
+        </div>
+      )}
+
+      {report.decision === "NO_TRADE" && (
+        <div className="mt-3 space-y-1 text-sm">
+          <div>
+            <span className="text-muted-foreground">Motivo: </span>
+            <span className="text-foreground/90 font-mono">
+              {report.reasons[0] ?? "NO_VALID_SETUP"}
+            </span>
+          </div>
+          {report.reasons.length > 1 && (
+            <div className="text-xs text-muted-foreground font-mono">
+              {report.reasons.slice(1).join(" · ")}
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground">
+            El sistema continuará buscando un conteo alternativo válido.
+          </div>
         </div>
       )}
 

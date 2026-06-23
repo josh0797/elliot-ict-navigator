@@ -27,6 +27,8 @@ export interface LayerToggles {
   sweeps: boolean;
 }
 
+export type ChartViewMode = "operational" | "diagnostic";
+
 export interface PivotTooltip {
   x: number;
   y: number;
@@ -79,6 +81,7 @@ export function TradingChart({
   layers,
   signal,
   onPivotHover,
+  viewMode = "diagnostic",
 }: {
   candles: Candle[];
   elliott: ElliottResultDTO | null;
@@ -86,6 +89,7 @@ export function TradingChart({
   layers: LayerToggles;
   signal?: TradeSignal | null;
   onPivotHover?: (tip: PivotTooltip | null) => void;
+  viewMode?: ChartViewMode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -211,7 +215,9 @@ export function TradingChart({
       }
     };
 
-    if (elliott) {
+    const isDiag = viewMode === "diagnostic";
+
+    if (isDiag && elliott) {
       renderCount(elliott.waves, 1);
       if (layers.alternativeCount && elliott.alternatives.length > 0) {
         renderCount(elliott.alternatives[0].waves, 0.4);
@@ -269,11 +275,12 @@ export function TradingChart({
     }
 
     // ICT Liquidity overlay: horizontal price lines + BSL/SSL labels + touches + state.
-    if (ict && layers.liquidity) {
+    if (isDiag && ict && layers.liquidity) {
       // Limit to the top-strength levels (by strength) to keep the chart legible.
       const top = [...ict.liquidity]
+        .filter((l) => l.state === "ACTIVE")
         .sort((a, b) => b.strength - a.strength)
-        .slice(0, 14);
+        .slice(0, 6);
       for (const lvl of top) {
         if (!isFiniteNumber(lvl.price)) continue;
         const isBsl = lvl.side === "BSL";
@@ -295,7 +302,7 @@ export function TradingChart({
     }
 
     // ICT Sweep markers on the candle that raided the liquidity.
-    if (ict && layers.sweeps && ict.sweeps.length > 0) {
+    if (isDiag && ict && layers.sweeps && ict.sweeps.length > 0) {
       const overlay = chart.addSeries(LineSeries, {
         color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false,
       });
@@ -326,23 +333,76 @@ export function TradingChart({
     if (signal) {
       const rr1 = isFiniteNumber(signal.rrToTp1) ? signal.rrToTp1.toFixed(2) : "—";
       const rr2 = isFiniteNumber(signal.rrToTp2) ? signal.rrToTp2.toFixed(2) : "—";
-      const lines: { price: number; color: string; title: string; style: LineStyle }[] = [
-        { price: signal.entry, color: "#3b82f6", title: `ENTRY ${signal.direction.toUpperCase()}`, style: LineStyle.Solid },
-        { price: signal.sl, color: "#ef4444", title: "SL", style: LineStyle.Dashed },
-        { price: signal.tp1, color: "#22c55e", title: `TP1 (${rr1}R)`, style: LineStyle.Dotted },
-        { price: signal.tp2, color: "#16a34a", title: `TP2 (${rr2}R)`, style: LineStyle.Dotted },
-      ].filter((l) => isFiniteNumber(l.price));
+      const orderLabel = signal.orderType.replace(/_/g, " ");
+      const lines: { price: number; color: string; title: string; style: LineStyle; width?: 1 | 2 | 3 }[] = [
+        { price: signal.entry, color: "#3b82f6", title: `${orderLabel} ENTRY`, style: LineStyle.Solid, width: 2 },
+        { price: signal.entryZone.top, color: "rgba(59,130,246,0.5)", title: "ZONE TOP", style: LineStyle.Dotted, width: 1 },
+        { price: signal.entryZone.bottom, color: "rgba(59,130,246,0.5)", title: "ZONE BOT", style: LineStyle.Dotted, width: 1 },
+        { price: signal.sl, color: "#ef4444", title: `SL · ${signal.stopReason.replace(/_/g, " ")}`, style: LineStyle.Dashed, width: 2 },
+        { price: signal.tp1, color: "#22c55e", title: `TP1 (${rr1}R)`, style: LineStyle.Dotted, width: 2 },
+        { price: signal.tp2, color: "#16a34a", title: `TP2 (${rr2}R)`, style: LineStyle.Dotted, width: 2 },
+      ];
+      // TP3 if present
+      const tp3 = signal.targets.find((t) => t.name === "TP3");
+      if (tp3 && isFiniteNumber(tp3.price)) {
+        lines.push({ price: tp3.price, color: "#15803d", title: `TP3 (${tp3.rr.toFixed(2)}R)`, style: LineStyle.Dotted, width: 1 });
+      }
+      // Trigger
+      if (signal.trigger && isFiniteNumber(signal.trigger.price)) {
+        lines.push({
+          price: signal.trigger.price,
+          color: "#facc15",
+          title: `TRIGGER · ${signal.trigger.type.replace(/_/g, " ")}`,
+          style: LineStyle.Dashed,
+          width: 2,
+        });
+      }
+      // Invalidation
+      if (isFiniteNumber(signal.invalidation.price)) {
+        lines.push({
+          price: signal.invalidation.price as number,
+          color: "#b91c1c",
+          title: `INVALIDATION${signal.invalidation.reason ? ` · ${signal.invalidation.reason}` : ""}`,
+          style: LineStyle.Dotted,
+          width: 1,
+        });
+      }
+      const drawn = lines.filter((l) => isFiniteNumber(l.price));
       for (const l of lines) {
+        if (!isFiniteNumber(l.price)) continue;
         priceLinesRef.current.push(series.createPriceLine({
-          price: l.price, color: l.color, lineWidth: 2, lineStyle: l.style,
+          price: l.price, color: l.color, lineWidth: l.width ?? 2, lineStyle: l.style,
           axisLabelVisible: true, title: l.title,
         }));
+      }
+      void drawn;
+
+      // Originating sweep marker.
+      if (ict && ict.sweeps.length > 0) {
+        const sw = ict.sweeps[ict.sweeps.length - 1];
+        if (sw && sw.index >= 0 && sw.index < candles.length && isFiniteNumber(sw.price) && isValidChartTime(candles[sw.index].time)) {
+          const overlay = chart.addSeries(LineSeries, {
+            color: "rgba(0,0,0,0)", priceLineVisible: false, lastValueVisible: false,
+          });
+          overlay.setData([{ time: candles[sw.index].time as unknown as UTCTimestamp, value: sw.price }]);
+          createSeriesMarkers(
+            overlay as unknown as Parameters<typeof createSeriesMarkers>[0],
+            [{
+              time: candles[sw.index].time as unknown as UTCTimestamp,
+              position: sw.type === "buy_side" ? "aboveBar" : "belowBar",
+              color: sw.type === "buy_side" ? "#ef4444" : "#22c55e",
+              shape: sw.type === "buy_side" ? "arrowDown" : "arrowUp",
+              text: `SWEEP ${sw.type === "buy_side" ? "BSL" : "SSL"}`,
+            }] as Parameters<typeof createSeriesMarkers>[1],
+          );
+          overlaysRef.current.push(overlay);
+        }
       }
     }
 
     // Crosshair tooltip — track nearest pivot.
     if (!onPivotHover) return;
-    const waves = elliott?.waves ?? [];
+    const waves = isDiag ? (elliott?.waves ?? []) : [];
     const handler = (param: MouseEventParams<Time>) => {
       if (!param.point || param.time === undefined || waves.length === 0) {
         onPivotHover(null);
@@ -374,7 +434,7 @@ export function TradingChart({
     return () => chart.unsubscribeCrosshairMove(handler);
     // ICT overlays are intentionally minimal: the legend panel surfaces them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, elliott, ict, layers, signal]);
+  }, [candles, elliott, ict, layers, signal, viewMode]);
 
   return <div ref={containerRef} className="h-[520px] w-full" />;
 }
