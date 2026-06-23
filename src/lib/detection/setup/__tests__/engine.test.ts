@@ -65,7 +65,7 @@ function bullishIct(currentIndex: number, opts: { obTop?: number; obBottom?: num
       },
     ],
     liquidity: [
-      { id: "lq1", side: "BSL", kind: "PDH", price: 115, time: 0, originIndices: [10], touches: 2, state: "ACTIVE", sweptAtIndex: null, sweptAtTime: null, strength: 70, provisional: false },
+      { id: "lq1", side: "BSL", kind: "PDH", price: 115, time: 0, originIndices: [10], touches: 2, state: "ACTIVE", sweptAtIndex: null, sweptAtTime: null, brokenAtIndex: null, brokenAtTime: null, strength: 70, provisional: false },
     ],
     sweeps: [
       { id: "sw1", side: "SSL", type: "sell_side", price: 102, time: 0, index: currentIndex - 2, targetLiquidityId: "x", wickBeyond: true, closeBack: true, displacementAfter: true, mitigated: false, quality: 80 },
