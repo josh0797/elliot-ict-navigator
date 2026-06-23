@@ -33,7 +33,7 @@ export function SymbolPicker({
       onValueChange={(next) =>
         navigate({
           to: "/chart/$symbol",
-          params: { symbol: encodeURIComponent(next) },
+          params: { symbol: next },
           search: { tf, bars },
         })
       }

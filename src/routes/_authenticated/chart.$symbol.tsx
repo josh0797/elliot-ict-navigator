@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeSymbol } from "@/lib/elliott.functions";
 import { detectSetups } from "@/lib/setups.functions";
@@ -30,10 +30,24 @@ const Search = z.object({
 export const Route = createFileRoute("/_authenticated/chart/$symbol")({
   validateSearch: (s) => Search.parse(s),
   head: ({ params }) => ({
-    meta: [{ title: `${decodeURIComponent(params.symbol)} — Elliott × ICT Pro` }],
+    meta: [{ title: `${decodeSymbolParam(params.symbol)} — Elliott × ICT Pro` }],
   }),
   component: ChartPage,
 });
+
+/**
+ * Decode a route symbol param defensively. TanStack Router already decodes
+ * params once, but legacy/shared links may carry a double-encoded form
+ * (e.g. `XAU%252FUSD`). Try one extra safe decode pass.
+ */
+function decodeSymbolParam(raw: string): string {
+  let value = raw;
+  // If a stray %25 still encodes a percent, decode one more time.
+  if (/%25[0-9A-Fa-f]{2}/.test(value)) {
+    try { value = decodeURIComponent(value); } catch { /* ignore */ }
+  }
+  return value;
+}
 
 const DEFAULT_LAYERS: LayerToggles = {
   elliottLines: true,
@@ -59,7 +73,7 @@ function loadLayers(): LayerToggles {
 function ChartPage() {
   const { symbol } = Route.useParams();
   const { tf, bars } = Route.useSearch();
-  const decoded = decodeURIComponent(symbol);
+  const decoded = decodeSymbolParam(symbol);
   const fetch = useServerFn(fetchOhlcv);
   const analyze = useServerFn(analyzeSymbol);
   const findSetups = useServerFn(detectSetups);
@@ -75,6 +89,7 @@ function ChartPage() {
   const [interval, setInterval] = useState(tf);
   const [outputsize, setOutputsize] = useState(bars);
   const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
+  const latestRequestRef = useRef(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -82,24 +97,51 @@ function ChartPage() {
   }, [layers]);
 
   async function load() {
+    const requestId = ++latestRequestRef.current;
+    const requestedSymbol = decoded;
+    const requestedInterval = interval;
     setLoading(true);
-    const [res, ana, sigs] = await Promise.all([
-      fetch({ data: { symbol: decoded, interval, outputsize } }),
-      analyze({ data: { symbol: decoded, interval, outputsize } }),
-      findSetups({ data: { symbol: decoded, interval, outputsize, topN: 3 } }),
-    ]);
-    if (res.candles.length) {
-      setCandles(res.candles);
-      setSetup(detectSetup(decoded, interval, res.candles));
+    try {
+      const [res, ana, sigs] = await Promise.all([
+        fetch({ data: { symbol: requestedSymbol, interval: requestedInterval, outputsize } }),
+        analyze({ data: { symbol: requestedSymbol, interval: requestedInterval, outputsize } }),
+        findSetups({ data: { symbol: requestedSymbol, interval: requestedInterval, outputsize, topN: 3 } }),
+      ]);
+      // Discard stale responses if the user switched symbol/timeframe meanwhile.
+      if (requestId !== latestRequestRef.current) return;
+      if (res.candles.length) {
+        setCandles(res.candles);
+        setSetup(detectSetup(requestedSymbol, requestedInterval, res.candles));
+      } else {
+        setCandles([]);
+        setSetup(null);
+      }
+      setElliott(ana.elliott);
+      setIct(ana.ict);
+      setSignals(sigs.signals);
+      setSelectedSignalId((prev) =>
+        prev && sigs.signals.some((s) => s.id === prev) ? prev : sigs.signals[0]?.id ?? null,
+      );
+    } catch (err) {
+      if (requestId === latestRequestRef.current) {
+        console.error("[chart] load failed", err);
+      }
+    } finally {
+      if (requestId === latestRequestRef.current) setLoading(false);
     }
-    setElliott(ana.elliott);
-    setIct(ana.ict);
-    setSignals(sigs.signals);
-    setSelectedSignalId((prev) => (prev && sigs.signals.some((s) => s.id === prev) ? prev : sigs.signals[0]?.id ?? null));
-    setLoading(false);
   }
 
   useEffect(() => {
+    // Reset symbol-derived state immediately so the previous instrument's
+    // overlays never bleed into the new one.
+    latestRequestRef.current++;
+    setCandles([]);
+    setSetup(null);
+    setElliott(null);
+    setIct(null);
+    setSignals([]);
+    setSelectedSignalId(null);
+    setTooltip(null);
     load();
     const id = window.setInterval(load, 60_000);
     return () => window.clearInterval(id);

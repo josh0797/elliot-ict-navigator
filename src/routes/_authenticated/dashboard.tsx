@@ -127,7 +127,7 @@ function PairCard({ row, tf }: { row: Row; tf: string }) {
   return (
     <Link
       to="/chart/$symbol"
-      params={{ symbol: encodeURIComponent(row.symbol) }}
+      params={{ symbol: row.symbol }}
       search={{ tf }}
       className="group"
     >
