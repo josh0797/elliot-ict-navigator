@@ -86,7 +86,7 @@ function AlertCard({ s }: { s: SetupRow }) {
   return (
     <Link
       to="/chart/$symbol"
-      params={{ symbol: encodeURIComponent(s.symbol) }}
+      params={{ symbol: s.symbol }}
       search={{ tf: s.timeframe }}
     >
       <Card className="border-border/60 hover:border-primary/50 transition-colors">
