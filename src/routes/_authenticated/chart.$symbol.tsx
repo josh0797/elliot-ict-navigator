@@ -16,6 +16,8 @@ import { LayerControls } from "@/components/chart/LayerControls";
 import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
 import { SymbolPicker } from "@/components/chart/SymbolPicker";
 import { SignalsPanel } from "@/components/chart/SignalsPanel";
+import { DecisionBanner } from "@/components/chart/DecisionBanner";
+import type { OperationalReport } from "@/lib/detection/decision/types";
 import { HISTORY_PRESETS } from "@/lib/symbols";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -83,6 +85,7 @@ function ChartPage() {
   const [elliott, setElliott] = useState<ElliottResultDTO | null>(null);
   const [ict, setIct] = useState<IctContext | null>(null);
   const [signals, setSignals] = useState<TradeSignal[]>([]);
+  const [decision, setDecision] = useState<OperationalReport | null>(null);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<PivotTooltip | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,6 +122,7 @@ function ChartPage() {
       setElliott(ana.elliott);
       setIct(ana.ict);
       setSignals(sigs.signals);
+      setDecision(sigs.decision);
       setSelectedSignalId((prev) =>
         prev && sigs.signals.some((s) => s.id === prev) ? prev : sigs.signals[0]?.id ?? null,
       );
@@ -140,6 +144,7 @@ function ChartPage() {
     setElliott(null);
     setIct(null);
     setSignals([]);
+    setDecision(null);
     setSelectedSignalId(null);
     setTooltip(null);
     load();
@@ -211,6 +216,10 @@ function ChartPage() {
           </Button>
         </div>
       </div>
+
+      {decision && (
+        <DecisionBanner report={decision} pxFmt={px} />
+      )}
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-4">
         <Card className="border-border/60">
