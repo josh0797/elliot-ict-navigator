@@ -162,8 +162,8 @@ it("entry policy: price inside POI yields MARKET_BUY / TRIGGERED", () => {
 it("entry policy: price below POI long → BUY_LIMIT / WAITING_RETRACE", () => {
   const priceAtDet = candles[candles.length - 2].close;
   const elliott = bullishElliott();
-  // POI sits comfortably above current price.
-  const ict = bullishIct(candles.length - 1, { obTop: priceAtDet + 4, obBottom: priceAtDet + 2 });
+  // Long demand POI sits BELOW current price; price retraces down → BUY_LIMIT.
+  const ict = bullishIct(candles.length - 1, { obTop: priceAtDet - 1, obBottom: priceAtDet - 2 });
   const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
   expect(out.length > 0).toBeTruthy();
   expect(out[0].orderType).toBe("BUY_LIMIT");
