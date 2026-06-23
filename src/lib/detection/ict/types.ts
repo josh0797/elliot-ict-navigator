@@ -48,7 +48,7 @@ export type LiquidityKind =
   | "PWH" | "PWL"            // previous-week high / low
   | "SESSION_HIGH" | "SESSION_LOW"
   | "ASIA_HIGH" | "ASIA_LOW";
-export type LiquidityState = "ACTIVE" | "SWEPT" | "MITIGATED";
+export type LiquidityState = "ACTIVE" | "SWEPT" | "MITIGATED" | "BROKEN";
 
 export interface LiquidityLevel {
   id: string;
@@ -64,6 +64,12 @@ export interface LiquidityLevel {
   sweptAtTime: number | null;
   /** 0..100 — number of touches + cluster width + recency. */
   strength: number;
+  /**
+   * Provisional levels (e.g. current SESSION_HIGH/LOW, ASIA range while still
+   * developing) can change on every new bar and MUST NOT be treated like
+   * confirmed historical levels by consumers.
+   */
+  provisional: boolean;
 }
 
 export interface LiquiditySweep {
