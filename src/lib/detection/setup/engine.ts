@@ -9,7 +9,7 @@
 import { atr14 } from "../indicators/atr";
 import type { CandleV2, PivotV2 } from "../schemas/analysis";
 import type { ElliottAnalysis, ElliottCountV2 } from "../elliott/types";
-import type { IctContext, LiquidityLevel, OrderBlock, FVG, StructureEvent, LiquiditySweep } from "../ict/types";
+import type { IctContext, StructureEvent, LiquiditySweep } from "../ict/types";
 import { buildLegacyInput, scoreSignalLegacy } from "./legacyAdapter";
 import type {
   OrderType,
@@ -17,12 +17,16 @@ import type {
   SetupStatus,
   SignalConfluence,
   SignalDirection,
-  SLBasis,
   Tp1Source,
-  Tp2Source,
   TradeSignal,
   TradeSetupV2,
 } from "./types";
+import { resolveConfig, type SetupConfig } from "./config";
+import { selectPois, type SelectedPOI } from "./poi-selector";
+import { computeStopLoss } from "./risk";
+import { pickTargets, legacyTp2Source, type TargetSpec } from "./targets";
+import { computeScore } from "./scoring";
+import { deriveTrigger } from "./trigger";
 
 const MIN_SCORE = 0.35;
 const MIN_RR = 1.0;
@@ -37,6 +41,7 @@ export interface SetupEngineOptions {
   topN?: number;
   minScore?: number;
   minRR?: number;
+  config?: Partial<SetupConfig>;
 }
 
 function isFinitePositive(n: unknown): n is number {
@@ -47,49 +52,9 @@ function priceAtLabel(count: ElliottCountV2, label: string): number | undefined 
   return count.labeled.find((l) => l.label === label)?.pivot.price;
 }
 
-/**
- * Explicit 1.618 projection per current wave context.
- *   Wave 2 → project wave 3 from end of wave 1 (1.618 × |1-0|).
- *   Wave 4 → project wave 5 from end of wave 3 (1.618 × |3-2|).
- *   Wave B → project C from end of A (1.618 × |A-0|).
- * Returns the full source descriptor or null when pivots are missing.
- */
-function fib1618Projection(
-  count: ElliottCountV2,
-  direction: SignalDirection,
-): Extract<Tp2Source, { kind: "FIB_EXTENSION" }> | null {
-  const cw = count.currentWave;
-  const sign = direction === "long" ? 1 : -1;
-
-  if (cw === "2") {
-    const p0 = priceAtLabel(count, "0"); const p1 = priceAtLabel(count, "1");
-    if (!isFinitePositive(p0) || !isFinitePositive(p1)) return null;
-    const leg = Math.abs(p1 - p0);
-    return { kind: "FIB_EXTENSION", wave: "3", from: p0, to: p1, projectedFrom: p1, ratio: 1.618 } as const;
-    // projected price = p1 + sign * 1.618 * leg — used below.
-  }
-  if (cw === "4") {
-    const p2 = priceAtLabel(count, "2"); const p3 = priceAtLabel(count, "3");
-    if (!isFinitePositive(p2) || !isFinitePositive(p3)) return null;
-    return { kind: "FIB_EXTENSION", wave: "5", from: p2, to: p3, projectedFrom: p3, ratio: 1.618 } as const;
-  }
-  if (cw === "B") {
-    const pA0 = priceAtLabel(count, "0"); const pA = priceAtLabel(count, "A");
-    if (!isFinitePositive(pA0) || !isFinitePositive(pA)) return null;
-    return { kind: "FIB_EXTENSION", wave: "C", from: pA0, to: pA, projectedFrom: pA, ratio: 1.618 } as const;
-  }
-  // Other waves — leave to fallback.
-  void sign;
-  return null;
-}
-
-function evalFibProjection(src: Extract<Tp2Source, { kind: "FIB_EXTENSION" }>, direction: SignalDirection): number {
-  const leg = Math.abs(src.to - src.from);
-  return direction === "long" ? src.projectedFrom + 1.618 * leg : src.projectedFrom - 1.618 * leg;
-}
-
 /** Elliott invalidation level for the running count, given current wave. */
 function elliottInvalidationLevel(count: ElliottCountV2, direction: SignalDirection): number | null {
+  void direction;
   // Long impulse: wave 2 cannot retrace below wave 0. Wave 4 cannot enter wave 1.
   const p0 = priceAtLabel(count, "0");
   if (count.currentWave === "2" && isFinitePositive(p0)) return p0!;
@@ -117,70 +82,9 @@ function recentSwingExtreme(
   return null;
 }
 
-function nearestOppositeLiquidity(
-  levels: ReadonlyArray<LiquidityLevel>,
-  direction: SignalDirection,
-  entry: number,
-  minRR: number,
-  risk: number,
-): LiquidityLevel | null {
-  const wanted = direction === "long" ? "BSL" : "SSL";
-  const above = direction === "long";
-  const candidates = levels
-    .filter((l) => l.state === "ACTIVE")
-    .filter((l) => !l.provisional)
-    .filter((l) => l.side === wanted)
-    .filter((l) => (above ? l.price > entry : l.price < entry))
-    .filter((l) => Math.abs(l.price - entry) / risk >= minRR)
-    .sort((a, b) => Math.abs(a.price - entry) - Math.abs(b.price - entry));
-  return candidates[0] ?? null;
-}
-
-function obToPoi(ob: OrderBlock, atr: number, direction: SignalDirection) {
-  const proximal = direction === "long" ? ob.top : ob.bottom;
-  const distal = direction === "long" ? ob.bottom : ob.top;
-  return { proximal, distal, atrBuffer: atr * SL_ATR_BUFFER };
-}
-
-function fvgToPoi(f: FVG, atr: number, direction: SignalDirection) {
-  const proximal = direction === "long" ? f.top : f.bottom;
-  const distal = direction === "long" ? f.bottom : f.top;
-  return { proximal, distal, atrBuffer: atr * SL_ATR_BUFFER };
-}
-
 function inWaveEntryZone(label: string | null): boolean {
   if (!label) return false;
   return ["2", "4", "B"].includes(label);
-}
-
-/**
- * Aggregate SL beyond every relevant structural level + ATR buffer.
- */
-function computeSl(
-  direction: SignalDirection,
-  poiDistal: number,
-  atrBuffer: number,
-  elliottInv: number | null,
-  sweepExtreme: number | null,
-  protectedSwing: number | null,
-): { sl: number; basis: SLBasis } {
-  const parts = [poiDistal, elliottInv, sweepExtreme, protectedSwing].filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v),
-  );
-  const chosen: "max" | "min" = direction === "long" ? "min" : "max";
-  const ext = direction === "long" ? Math.min(...parts) : Math.max(...parts);
-  const sl = direction === "long" ? ext - atrBuffer : ext + atrBuffer;
-  return {
-    sl,
-    basis: {
-      elliottInvalidation: elliottInv,
-      poiExtreme: poiDistal,
-      sweepExtreme,
-      protectedSwing,
-      atrBuffer,
-      chosen,
-    },
-  };
 }
 
 /**
@@ -339,6 +243,7 @@ export function detectSignals(
   ict: IctContext,
   opts: SetupEngineOptions,
 ): TradeSignal[] {
+  const config = resolveConfig(opts.config);
   // ── Gate 1: Elliott primary exists and is not INVALIDATED.
   const primary = elliott.primary;
   if (!primary) return [];
@@ -360,7 +265,6 @@ export function detectSignals(
   const conf = structuralConfirmation(ict, direction, candles.length);
   if (!conf.ok) return [];
 
-  const fibProj = fib1618Projection(primary, direction);
   const elliottInv = elliottInvalidationLevel(primary, direction);
 
   // Most recent sweep on the opposite side (for SL extreme).
@@ -369,52 +273,44 @@ export function detectSignals(
   const sweepExtreme = lastSweep ? lastSweep.price : null;
   const protectedSwing = recentSwingExtreme(pivots, direction, candles.length);
 
-  // Candidate POIs: OBs first (higher weight), then non-mitigated FVGs.
-  type Candidate = {
-    kind: "ORDER_BLOCK" | "FVG";
-    id: string;
-    proximal: number;
-    distal: number;
-    atrBuffer: number;
-    state: string;
-  };
-  const candidates: Candidate[] = [];
-
-  for (const ob of ict.orderBlocks) {
-    const matches =
-      (direction === "long" && ob.type === "BULLISH") ||
-      (direction === "short" && ob.type === "BEARISH");
-    if (!matches) continue;
-    // Gate 2: POI state must be active.
-    if (ob.state !== "FRESH" && ob.state !== "TOUCHED") continue;
-    const { proximal, distal, atrBuffer } = obToPoi(ob, lastAtr, direction);
-    candidates.push({ kind: "ORDER_BLOCK", id: ob.id, proximal, distal, atrBuffer, state: ob.state });
-  }
-
-  for (const f of ict.fvgs) {
-    const matches =
-      (direction === "long" && f.type === "bullish") ||
-      (direction === "short" && f.type === "bearish");
-    if (!matches || f.mitigated) continue;
-    const { proximal, distal, atrBuffer } = fvgToPoi(f, lastAtr, direction);
-    candidates.push({ kind: "FVG", id: f.id, proximal, distal, atrBuffer, state: "FRESH" });
-  }
+  // ── Phase 6: ranked POI candidates from selector.
+  const pois = selectPois(ict, direction);
 
   const minScore = opts.minScore ?? MIN_SCORE;
   const minRR = opts.minRR ?? MIN_RR;
-  const topN = opts.topN ?? TOP_N;
+  const topN = opts.topN ?? config.topN;
 
   const setups: TradeSignal[] = [];
 
-  for (const cand of candidates) {
-    const entry = cand.proximal;
+  for (const poi of pois) {
+    // Phase 9 entry: proximal of OB; consequent encroachment of FVG; midpoint of intersection.
+    const entry =
+      poi.type === "OB_FVG_INTERSECTION" ? poi.midpoint
+      : poi.type === "FVG" ? poi.midpoint
+      : poi.proximal;
+    const entryPolicy =
+      poi.type === "OB_FVG_INTERSECTION" ? "OB_FVG_INTERSECTION"
+      : poi.type === "FVG" ? "FVG_CE"
+      : "OB_PROXIMAL";
+    const candKind: "ORDER_BLOCK" | "FVG" =
+      poi.type === "FVG" ? "FVG" : "ORDER_BLOCK";
 
     // ── Entry classification (orderType / status / invalidation).
-    const cls = classifyEntry(direction, cand.proximal, cand.distal, priceAtDetection);
+    const cls = classifyEntry(direction, poi.proximal, poi.distal, priceAtDetection);
     if (cls.invalidated) continue; // Gate: POI invalidated by price action.
 
     // ── SL aggregation across structural levels + ATR buffer.
-    const { sl, basis } = computeSl(direction, cand.distal, cand.atrBuffer, elliottInv, sweepExtreme, protectedSwing);
+    const slRes = computeStopLoss({
+      direction,
+      poiDistal: poi.distal,
+      atr: lastAtr,
+      atrBufferMultiplier: config.slAtrBufferMultiplier,
+      elliottInvalidation: elliottInv,
+      sweepExtreme,
+      protectedSwing,
+    });
+    const sl = slRes.price;
+    const basis = slRes.basis;
 
     // Gate 3/4/6: finite + side + risk.
     if (!isFinitePositive(entry) || !Number.isFinite(sl)) continue;
@@ -423,51 +319,38 @@ export function detectSignals(
     if (direction === "long" && !(sl < entry)) continue;
     if (direction === "short" && !(sl > entry)) continue;
 
-    // ── TP1: eligible liquidity or 2R fallback.
-    const liq = nearestOppositeLiquidity(ict.liquidity, direction, entry, minRR, risk);
-    let tp1: number;
-    let tp1Source: Tp1Source;
-    if (liq) {
-      tp1 = liq.price;
-      tp1Source = { kind: "LIQUIDITY", liquidityId: liq.id, price: liq.price };
-    } else {
-      tp1 = direction === "long" ? entry + 2 * risk : entry - 2 * risk;
-      tp1Source = { kind: "FALLBACK", fallback: "2R" };
-    }
+    // ── Targets ladder (TP1/TP2/TP3).
+    const targets: TargetSpec[] = pickTargets({
+      direction, entry, risk, minRR,
+      liquidity: ict.liquidity, primary, allocations: config.allocations,
+    });
+    const tp1 = targets[0]?.price ?? NaN;
+    const tp2 = targets[1]?.price ?? NaN;
+    const rr1 = targets[0]?.rr ?? 0;
+    const rr2 = targets[1]?.rr ?? 0;
+    const tp1Source: Tp1Source =
+      targets[0]?.source.kind === "LIQUIDITY"
+        ? { kind: "LIQUIDITY", liquidityId: targets[0].source.liquidityId, price: tp1 }
+        : { kind: "FALLBACK", fallback: "2R" };
+    const tp2Source = legacyTp2Source(targets[1]);
 
     // Gate 5: TP1 side.
     if (direction === "long" && !(tp1 > entry)) continue;
     if (direction === "short" && !(tp1 < entry)) continue;
 
-    // ── TP2: fib 1.618 explicit projection, else 3R.
-    let tp2: number;
-    let tp2Source: Tp2Source;
-    if (fibProj) {
-      const projected = evalFibProjection(fibProj, direction);
-      const beyondTp1 = direction === "long" ? projected > tp1 : projected < tp1;
-      if (Number.isFinite(projected) && beyondTp1) {
-        tp2 = projected;
-        tp2Source = fibProj;
-      } else {
-        tp2 = direction === "long" ? entry + 3 * risk : entry - 3 * risk;
-        tp2Source = { kind: "FALLBACK", fallback: "3R" };
-      }
-    } else {
-      tp2 = direction === "long" ? entry + 3 * risk : entry - 3 * risk;
-      tp2Source = { kind: "FALLBACK", fallback: "3R" };
-    }
-
-    const rr1 = Math.abs(tp1 - entry) / risk;
-    const rr2 = Math.abs(tp2 - entry) / risk;
     // Gate 7: RR.
     if (rr1 < minRR) continue;
 
     const { confluences, breakdown, score } = computeConfluence(
-      direction, primary, ict, cand.kind, candles.length,
+      direction, primary, ict, candKind, candles.length,
     );
-    // STRUCTURE_CONFIRMED comes from latest CONFIRMED event — make sure the
-    // structural confirmation gate appears in the audit.
     if (score < minScore) continue;
+
+    // Canonical 0..100 score + per-confluence audit.
+    const scoreCanon = computeScore({
+      direction, elliott, ict, poi,
+      weights: config.weights, recentBars: config.recentBars, candleCount: candles.length,
+    });
 
     const waveLabel = primary.currentWave;
 
@@ -499,13 +382,31 @@ export function detectSignals(
       `STRUCTURAL_CONFIRMATION:${conf.via}`,
     ];
 
+    const entryZone = { top: Math.max(poi.top, poi.bottom), bottom: Math.min(poi.top, poi.bottom) };
+    const trigger = deriveTrigger({
+      direction, orderType: cls.orderType, entry, entryZone, currentPrice: lastClose,
+    });
+
+    const nextAction = trigger.satisfied
+      ? `Ejecutar ${cls.orderType} en ${entry.toFixed(5)} con SL ${sl.toFixed(5)}.`
+      : trigger.description;
+
+    const invalidationReason =
+      slRes.reason === "ELLIOTT_INVALIDATION" ? "Invalidación Elliott rota"
+      : slRes.reason === "BEYOND_SWEEP" ? "Estructura del sweep rota"
+      : slRes.reason === "BEYOND_PROTECTED_SWING" ? "Swing protegido perforado"
+      : "Distal del POI perforado";
+
     const rationale = buildRationale(direction, primary, confluences, rr1);
+    const setupId = `${opts.symbol}-${opts.timeframe}-${poi.type}-${poi.sourceIds.join("_")}`;
     const setup: TradeSetupV2 = {
       schemaVersion: "canonical-setup-v2",
-      id: `${opts.symbol}-${opts.timeframe}-${cand.kind}-${cand.id}`,
+      id: setupId,
+      setupKey: setupId,
       symbol: opts.symbol,
       timeframe: opts.timeframe,
       direction,
+      directionUpper: direction === "long" ? "LONG" : "SHORT",
       orderType: cls.orderType,
       status: cls.status,
       entry,
@@ -514,27 +415,41 @@ export function detectSignals(
       tp2,
       rrToTp1: rr1,
       rrToTp2: rr2,
+      entryZone,
+      entryPolicy,
+      stopReason: slRes.reason,
+      targets,
+      selectedPoi: poi as SelectedPOI,
+      trigger,
       priceAtDetection,
       slBasis: basis,
       tp1Source,
       tp2Source,
-      poi: { kind: cand.kind, id: cand.id, proximal: cand.proximal, distal: cand.distal, state: cand.state },
+      poi: { kind: candKind, id: poi.sourceIds[0], proximal: poi.proximal, distal: poi.distal, state: poi.type },
       score,
+      scoreOut100: scoreCanon.score,
+      grade: scoreCanon.grade,
+      hardBlockers: [],
+      warnings: [],
       mlScore,
       modelVersion,
       breakdown,
       confluences,
+      confluencesDetail: scoreCanon.confluences,
       gatesPassed,
       waveLabel,
       rationale,
+      nextAction,
+      invalidation: { price: sl, reason: invalidationReason },
       detectedAt: Math.floor(Date.now() / 1000),
+      expiresAt: null,
     };
     // UI alias surface — operational score = canonical only.
     const signal: TradeSignal = {
       ...setup,
       finalScore: score,
-      poiKind: cand.kind,
-      poiId: cand.id,
+      poiKind: candKind,
+      poiId: poi.sourceIds[0],
     };
     setups.push(signal);
   }
