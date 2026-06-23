@@ -1,5 +1,10 @@
 import type { ElliottResultDTO } from "../elliott/types";
 import type { OperationalReport } from "../decision/types";
+import type { SelectedPOI } from "./poi-selector";
+import type { SetupTrigger } from "./trigger";
+import type { StopReason } from "./risk";
+import type { TargetSpec } from "./targets";
+import type { ConfluenceAudit } from "./scoring";
 
 export type SignalDirection = "long" | "short";
 
@@ -72,9 +77,12 @@ export interface PoiSnapshot {
 export interface TradeSetupV2 {
   schemaVersion: "canonical-setup-v2";
   id: string;
+  setupKey: string;
   symbol: string;
   timeframe: string;
   direction: SignalDirection;
+  /** Uppercase form per Phase-13 contract; mirrors `direction`. */
+  directionUpper: "LONG" | "SHORT";
 
   orderType: OrderType;
   status: SetupStatus;
@@ -86,6 +94,22 @@ export interface TradeSetupV2 {
   rrToTp1: number;
   rrToTp2: number;
 
+  /** Phase-9 entry policy. */
+  entryZone: { top: number; bottom: number };
+  entryPolicy: "POI_MIDPOINT" | "FVG_CE" | "OB_PROXIMAL" | "OB_FVG_INTERSECTION";
+
+  /** Phase-10 SL reason classification. */
+  stopReason: StopReason;
+
+  /** Phase-11 target ladder (TP1/TP2/TP3). */
+  targets: TargetSpec[];
+
+  /** Phase-6 POI snapshot — richer than legacy `poi`. */
+  selectedPoi: SelectedPOI | null;
+
+  /** Phase-7 explicit user-actionable trigger. */
+  trigger: SetupTrigger | null;
+
   /** Close of the last confirmed candle at detection — frozen on the snapshot. */
   priceAtDetection: number;
 
@@ -94,19 +118,33 @@ export interface TradeSetupV2 {
   tp2Source: Tp2Source;
   poi: PoiSnapshot;
 
-  /** 0..1 canonical score from confluences. */
+  /** Legacy 0..1 canonical score alias (= scoreOut100/100). */
   score: number;
+  /** Phase-12 canonical score 0..100. */
+  scoreOut100: number;
+  grade: "A+" | "A" | "B" | "C" | "WATCH" | "NO_TRADE";
+  hardBlockers: string[];
+  warnings: string[];
+
   /** 0..1 frozen legacy ML probability — ACTIVE BASELINE, diagnostic only. */
   mlScore: number | null;
   modelVersion: string | null;
 
   breakdown: ScoreBreakdown;
   confluences: SignalConfluence[];
+  /** Per-weight audit driving `scoreOut100`. */
+  confluencesDetail: ConfluenceAudit[];
   gatesPassed: string[];
 
   waveLabel: string | null;
   rationale: string;
+  /** Single-sentence user instruction (e.g. "Esperar barrido SSL 1.13820"). */
+  nextAction: string;
+  /** Setup invalidation level + human reason. */
+  invalidation: { price: number | null; reason: string | null };
   detectedAt: number;
+  /** Optional expiry timestamp (e.g. for pending limit orders). */
+  expiresAt: number | null;
 }
 
 /** UI alias — every consumer treats setups as immutable snapshots. */
