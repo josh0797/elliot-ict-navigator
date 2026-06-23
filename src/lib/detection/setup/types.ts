@@ -18,54 +18,103 @@ export interface ScoreBreakdown {
   confluence: number;
 }
 
-export interface TradeSignal {
+/**
+ * Canonical setup contract v2. Independent of the legacy `TradeSetup` shape;
+ * the legacy ML adapter consumes this through an explicit mapper.
+ */
+export type OrderType =
+  | "BUY_LIMIT" | "SELL_LIMIT"
+  | "BUY_STOP"  | "SELL_STOP"
+  | "MARKET_BUY" | "MARKET_SELL"
+  | "NO_ORDER";
+
+export type SetupStatus =
+  | "READY"
+  | "WAITING_RETRACE"
+  | "TRIGGERED"
+  | "INVALIDATED"
+  | "NO_SETUP";
+
+export interface SLBasis {
+  elliottInvalidation: number | null;
+  poiExtreme: number;
+  sweepExtreme: number | null;
+  protectedSwing: number | null;
+  atrBuffer: number;
+  /** Side of the aggregation: long → `min`, short → `max`. */
+  chosen: "max" | "min";
+}
+
+export type Tp1Source =
+  | { kind: "LIQUIDITY"; liquidityId: string; price: number }
+  | { kind: "FALLBACK"; fallback: "2R" };
+
+export type Tp2Source =
+  | {
+      kind: "FIB_EXTENSION";
+      wave: string;        // e.g. "3", "5", "C"
+      from: number;        // leg origin price
+      to: number;          // leg end price
+      projectedFrom: number;
+      ratio: 1.618;
+    }
+  | { kind: "FALLBACK"; fallback: "3R" };
+
+export interface PoiSnapshot {
+  kind: "ORDER_BLOCK" | "FVG";
+  id: string;
+  proximal: number;
+  distal: number;
+  state: string;
+}
+
+export interface TradeSetupV2 {
+  schemaVersion: "canonical-setup-v2";
   id: string;
   symbol: string;
   timeframe: string;
   direction: SignalDirection;
+
+  orderType: OrderType;
+  status: SetupStatus;
+
   entry: number;
   sl: number;
   tp1: number;
   tp2: number;
-  /** Same as `entry` — kept explicit for the legacy adapter contract. */
-  confirmationLevel: number;
-  /** Same as `sl` — kept explicit for the legacy adapter contract. */
-  invalidationLevel: number;
-  /**
-   * Target used as `fibTarget1` in the legacy extractor.
-   * Aligned with `rrToTp1` (same target as `rrRatio`) so the legacy feature
-   * vector stays internally consistent (f0 and f3 reference TP1).
-   */
-  fibTarget1: number;
   rrToTp1: number;
   rrToTp2: number;
-  /**
-   * Close of the last confirmed candle at the moment the signal was created.
-   * Frozen into the snapshot so re-scoring the same signal yields the same
-   * legacy probability regardless of live price drift.
-   */
+
+  /** Close of the last confirmed candle at detection — frozen on the snapshot. */
   priceAtDetection: number;
+
+  slBasis: SLBasis;
+  tp1Source: Tp1Source;
+  tp2Source: Tp2Source;
+  poi: PoiSnapshot;
+
   /** 0..1 canonical score from confluences. */
   score: number;
-  /**
-   * 0..1 frozen legacy ML probability, or null if unavailable.
-   * ACTIVE BASELINE — parallel diagnostic only, not an operational gate.
-   */
+  /** 0..1 frozen legacy ML probability — ACTIVE BASELINE, diagnostic only. */
   mlScore: number | null;
   modelVersion: string | null;
-  /**
-   * 0..1 operational score. Currently equal to canonical `score`; the legacy
-   * ML weight is 0 until backtest justifies a calibrated blend.
-   */
-  finalScore: number;
+
   breakdown: ScoreBreakdown;
   confluences: SignalConfluence[];
-  poiKind: "ORDER_BLOCK" | "FVG";
-  poiId: string;
+  gatesPassed: string[];
+
   waveLabel: string | null;
   rationale: string;
   detectedAt: number;
 }
+
+/** UI alias — every consumer treats setups as immutable snapshots. */
+export type TradeSignal = TradeSetupV2 & {
+  /** Legacy UI fields preserved as aliases. */
+  finalScore: number;
+  poiKind: "ORDER_BLOCK" | "FVG";
+  poiId: string;
+};
 
 export interface DetectSetupsResult {
   symbol: string;
