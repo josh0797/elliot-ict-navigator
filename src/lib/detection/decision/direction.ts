@@ -4,6 +4,8 @@ import type { DirectionBiasResult, DirectionVote, VoteDirection } from "./types"
 
 const RECENT_BARS = 10;
 const CONFLICT_TOLERANCE = 1.5;
+/** Minimum score required to fall back to a Elliott alternative count. */
+const MIN_ALTERNATIVE_SCORE = 0.4;
 
 function dirFromBias(b: "BULLISH" | "BEARISH" | "NEUTRAL"): VoteDirection {
   return b;
@@ -39,14 +41,23 @@ export function computeDirectionBias(
         });
       }
     }
-  } else if (elliott.alternatives.length > 0) {
-    const alt = elliott.alternatives[0];
-    votes.push({
-      source: "ELLIOTT_ALTERNATIVE",
-      direction: alt.direction === "long" ? "BULLISH" : "BEARISH",
-      weight: 1.0,
-      reason: `Primary invalidated — using alternative ${alt.pattern}`,
-    });
+  } else {
+    // Fall back to an alternative ONLY when it is valid AND has enough score.
+    // The first item is not implicitly trusted — alternatives can themselves
+    // be INVALIDATED or low-quality (the engine surfaces best-effort counts
+    // for diagnostics).
+    const validAlternative = elliott.alternatives
+      .filter((alt) => alt.state !== "INVALIDATED" && alt.state !== "NO_COUNT")
+      .filter((alt) => alt.score >= MIN_ALTERNATIVE_SCORE)
+      .sort((a, b) => b.score - a.score)[0];
+    if (validAlternative) {
+      votes.push({
+        source: "ELLIOTT_ALTERNATIVE",
+        direction: validAlternative.direction === "long" ? "BULLISH" : "BEARISH",
+        weight: 1.0,
+        reason: `Primary invalidated — using alternative ${validAlternative.pattern} (score ${(validAlternative.score * 100).toFixed(0)})`,
+      });
+    }
   }
 
   // 3. ICT market structure bias
@@ -80,15 +91,19 @@ export function computeDirectionBias(
     });
   }
 
-  // 6. Recent sweep (sell_side raid → bullish reaction expected; vice-versa)
+  // 6. Recent sweep — only a *complete* stop-hunt counts (wick beyond AND
+  // close back inside). A wick-only event can be a breakout in disguise and
+  // must NOT inject a reversal vote.
   const cutoff = candleCount - RECENT_BARS;
-  const sweep = [...ict.sweeps].reverse().find((s) => s.index >= cutoff && (s.wickBeyond || s.closeBack));
+  const sweep = [...ict.sweeps]
+    .reverse()
+    .find((s) => s.index >= cutoff && s.wickBeyond && s.closeBack);
   if (sweep) {
     votes.push({
       source: "ICT_SWEEP",
       direction: sweep.type === "sell_side" ? "BULLISH" : "BEARISH",
       weight: 1.5,
-      reason: `${sweep.type === "sell_side" ? "SSL" : "BSL"} sweep ${sweep.closeBack ? "with close-back" : ""}`,
+      reason: `${sweep.type === "sell_side" ? "SSL" : "BSL"} sweep with close-back`,
     });
   }
 

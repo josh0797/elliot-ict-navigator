@@ -77,8 +77,8 @@ function applyStateMachine(
         if (closedBeyond) {
           // Clean breakout: never enters SWEPT.
           level.state = "BROKEN";
-          level.sweptAtIndex = k;
-          level.sweptAtTime = c.time;
+          level.brokenAtIndex = k;
+          level.brokenAtTime = c.time;
           return;
         }
         if (wickPast) {
@@ -92,8 +92,8 @@ function applyStateMachine(
         const closedBeyond = c.close < level.price;
         if (closedBeyond) {
           level.state = "BROKEN";
-          level.sweptAtIndex = k;
-          level.sweptAtTime = c.time;
+          level.brokenAtIndex = k;
+          level.brokenAtTime = c.time;
           return;
         }
         if (wickPast) {
@@ -115,7 +115,7 @@ function applyStateMachine(
 
 function pushLevel(
   out: LiquidityLevel[],
-  base: Omit<LiquidityLevel, "state" | "sweptAtIndex" | "sweptAtTime" | "strength" | "provisional"> & { strength: number; provisional?: boolean },
+  base: Omit<LiquidityLevel, "state" | "sweptAtIndex" | "sweptAtTime" | "brokenAtIndex" | "brokenAtTime" | "strength" | "provisional"> & { strength: number; provisional?: boolean },
   candles: ReadonlyArray<CandleV2>,
   fromIndex: number,
 ): void {
@@ -124,6 +124,8 @@ function pushLevel(
     state: "ACTIVE",
     sweptAtIndex: null,
     sweptAtTime: null,
+    brokenAtIndex: null,
+    brokenAtTime: null,
     provisional: base.provisional ?? false,
   };
   applyStateMachine(lvl, candles, fromIndex);

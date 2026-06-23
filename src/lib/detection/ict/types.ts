@@ -62,6 +62,9 @@ export interface LiquidityLevel {
   state: LiquidityState;
   sweptAtIndex: number | null;
   sweptAtTime: number | null;
+  /** Set only when the level transitioned to BROKEN (clean breakout). */
+  brokenAtIndex: number | null;
+  brokenAtTime: number | null;
   /** 0..100 — number of touches + cluster width + recency. */
   strength: number;
   /**
