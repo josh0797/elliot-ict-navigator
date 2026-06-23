@@ -25,6 +25,24 @@ export interface DecisionEngineOptions {
   minRR?: number;
 }
 
+const DEFAULT_MIN_RR = 1.5;
+
+/** Defense-in-depth structural validation — never trust upstream alone. */
+function signalIsStructurallyValid(s: TradeSignal, minRR: number): boolean {
+  if (!Number.isFinite(s.entry) || !Number.isFinite(s.sl) || !Number.isFinite(s.tp1)) return false;
+  if (!Number.isFinite(s.rrToTp1) || s.rrToTp1 < minRR) return false;
+  if (s.direction === "long") {
+    if (!(s.sl < s.entry && s.entry < s.tp1)) return false;
+  } else {
+    if (!(s.tp1 < s.entry && s.entry < s.sl)) return false;
+  }
+  return true;
+}
+
+const PENDING_ORDER_TYPES = new Set([
+  "BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP",
+]);
+
 const MANDATORY_RULES = ["W2_ORIGIN", "W3_NOT_SHORTEST", "W4_OVERLAP"] as const;
 
 /**
@@ -50,10 +68,12 @@ function hasMandatoryFailure(invalidations: readonly string[]): boolean {
 function pickSignalForDirection(
   signals: ReadonlyArray<TradeSignal>,
   dir: "long" | "short",
+  minRR: number,
 ): TradeSignal | null {
   const matching = signals
     .filter((s) => s.direction === dir)
     .filter((s) => s.status !== "INVALIDATED" && s.status !== "NO_SETUP")
+    .filter((s) => signalIsStructurallyValid(s, minRR))
     .sort((a, b) => b.score - a.score);
   return matching[0] ?? null;
 }
@@ -61,7 +81,10 @@ function pickSignalForDirection(
 function statusFromSignal(signal: TradeSignal): OperationalSetupStatus {
   switch (signal.status) {
     case "TRIGGERED": return "TRIGGERED";
-    case "WAITING_RETRACE": return "ARMED";
+    case "WAITING_RETRACE":
+      // Only "armed" when a concrete pending order can be placed; otherwise
+      // the user is still waiting for the retrace to materialise.
+      return PENDING_ORDER_TYPES.has(signal.orderType) ? "ARMED" : "WAITING_FOR_RETRACE";
     case "READY": return "ARMED";
     case "INVALIDATED": return "INVALIDATED";
     case "NO_SETUP": return "NO_SETUP";
@@ -70,9 +93,15 @@ function statusFromSignal(signal: TradeSignal): OperationalSetupStatus {
 }
 
 function decisionFromSignal(signal: TradeSignal): OperationalDecision {
-  // Once a signal has cleared engine gates and has a defined entry+SL+TP,
-  // it is actionable — whether the entry is a pending order (ARMED) or
-  // already at-price (TRIGGERED).
+  // Actionable BUY/SELL only when:
+  //  - The market has already triggered the setup, OR
+  //  - The setup carries a concrete pending order type (LIMIT/STOP).
+  // A plain "WAITING_RETRACE" without a pending order means the trader has
+  // nothing to place yet — surface as WAIT, not BUY/SELL.
+  const actionable =
+    signal.status === "TRIGGERED" ||
+    PENDING_ORDER_TYPES.has(signal.orderType);
+  if (!actionable) return "WAIT";
   return signal.direction === "long" ? "BUY" : "SELL";
 }
 
@@ -95,8 +124,9 @@ export function decideOperation(
   ict: IctContext,
   signals: ReadonlyArray<TradeSignal>,
   candleCount: number,
-  _opts: DecisionEngineOptions = {},
+  opts: DecisionEngineOptions = {},
 ): OperationalReport {
+  const minRR = opts.minRR ?? DEFAULT_MIN_RR;
   const reasons: DecisionReasonCode[] = [];
   const missing: string[] = [];
 
@@ -185,7 +215,24 @@ export function decideOperation(
 
   // ── Match a signal to the dominant direction
   const dirSide = bias.dominant === "BULLISH" ? "long" : "short";
-  const signal = pickSignalForDirection(signals, dirSide);
+  const signal = pickSignalForDirection(signals, dirSide, minRR);
+
+  // If a directional candidate exists but failed RR/finite/side defense,
+  // surface explicitly instead of falling through to "no signal".
+  if (!signal && signals.some((s) => s.direction === dirSide)) {
+    const r: OperationalReport = {
+      decision: "WAIT",
+      status: "WATCHING",
+      template: "NO_VALID_TEMPLATE",
+      direction: bias.dominant,
+      bias,
+      primarySignal: null,
+      reasons: ["INSUFFICIENT_RR"],
+      summary: "",
+      missing: [`RR mínimo ${minRR}`],
+    };
+    return { ...r, summary: describe(r) };
+  }
 
   if (!signal) {
     // We have bias but no setup that cleared all hard gates yet.
@@ -240,11 +287,12 @@ export function decideOperation(
   const status = statusFromSignal(signal);
   const template = classifyTemplate(signal, elliott, ict, candleCount);
 
-  // ARMED with pending order is still actionable. TRIGGERED ⇒ market.
+  // BUY/SELL only when armed-with-pending-order or already triggered.
   const decision = decisionFromSignal(signal);
   const reasonCode: DecisionReasonCode =
     status === "TRIGGERED" ? "MARKET_TRIGGERED"
     : status === "ARMED" ? "WAITING_RETRACE"
+    : status === "WAITING_FOR_RETRACE" ? "WAITING_RETRACE"
     : "OK";
 
   const r: OperationalReport = {

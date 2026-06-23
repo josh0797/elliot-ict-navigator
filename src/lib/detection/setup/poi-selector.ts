@@ -22,6 +22,8 @@ export interface SelectedPOI {
   /** 0..100 composite quality (higher = better). */
   quality: number;
   sourceIds: string[];
+  /** Distance from current price to the proximal edge, in ATR multiples (null when unknown). */
+  distanceAtr?: number | null;
 }
 
 function overlap(a: { top: number; bottom: number }, b: { top: number; bottom: number }):
@@ -40,6 +42,24 @@ function fvgAligned(f: FVG, dir: SignalDirection): boolean {
   return dir === "long" ? f.type === "bullish" : f.type === "bearish";
 }
 
+/**
+ * Displacement evidence for an FVG: an aligned, non-invalidated Order Block
+ * with `displacementConfirmed === true` references this FVG via `fvgRef`.
+ * Without such evidence the FVG is treated as noise (no standalone setup).
+ */
+function fvgHasDisplacement(
+  f: FVG,
+  obs: ReadonlyArray<OrderBlock>,
+  dir: SignalDirection,
+): boolean {
+  return obs.some(
+    (ob) =>
+      ob.fvgRef === f.id &&
+      ob.displacementConfirmed &&
+      obAligned(ob, dir),
+  );
+}
+
 function proximalDistal(dir: SignalDirection, top: number, bottom: number) {
   return dir === "long"
     ? { proximal: top, distal: bottom }
@@ -50,13 +70,30 @@ function dirLabel(dir: SignalDirection): "BULLISH" | "BEARISH" {
   return dir === "long" ? "BULLISH" : "BEARISH";
 }
 
+export interface SelectPoisOptions {
+  /** Current price (last close). Required for distance gating. */
+  currentPrice?: number;
+  /** ATR at last bar — used to express distance in ATR multiples. */
+  atr?: number;
+  /** Drop POIs farther than this many ATRs from `currentPrice`. */
+  maxDistanceAtr?: number;
+}
+
 /**
- * Returns POI candidates ordered by priority + quality.
- * Caller is responsible for additional gating (price vs distal, RR, etc.).
+ * Returns POI candidates ordered by priority, distance and quality.
+ *
+ * Gating applied here (defense-in-depth — the engine still re-validates):
+ *  - Standalone FVG requires displacement evidence (parent OB).
+ *  - When `currentPrice` is provided, POIs already overshot by price (price
+ *    moved past the distal edge in the operational direction) are dropped.
+ *  - When `currentPrice` + `atr` are provided, POIs farther than
+ *    `maxDistanceAtr` are dropped.
+ * Caller still gates entry/SL/TP/RR.
  */
 export function selectPois(
   ict: IctContext,
   direction: SignalDirection,
+  opts: SelectPoisOptions = {},
 ): SelectedPOI[] {
   const obs = ict.orderBlocks.filter((ob) => obAligned(ob, direction));
   const fvgs = ict.fvgs.filter((f) => fvgAligned(f, direction));
@@ -100,10 +137,11 @@ export function selectPois(
     });
   }
 
-  // 4. Standalone FVGs (only when displacement evidence exists → has parent OB)
+  // 4. Standalone FVGs — only when displacement evidence exists.
   const usedFvgIds = new Set(out.flatMap((p) => p.sourceIds));
   for (const f of fvgs) {
     if (usedFvgIds.has(f.id)) continue;
+    if (!fvgHasDisplacement(f, ict.orderBlocks, direction)) continue;
     const { proximal, distal } = proximalDistal(direction, f.top, f.bottom);
     out.push({
       type: "FVG",
@@ -118,14 +156,41 @@ export function selectPois(
     });
   }
 
-  out.sort((a, b) => {
+  // Distance & overshoot gating.
+  const price = opts.currentPrice;
+  const atr = opts.atr;
+  const maxDist = opts.maxDistanceAtr;
+  const gated: SelectedPOI[] = [];
+  for (const p of out) {
+    if (price !== undefined && Number.isFinite(price)) {
+      // Drop POIs already overshot (price past the distal edge in the trade direction).
+      const past =
+        direction === "long" ? price < Math.min(p.proximal, p.distal)
+                              : price > Math.max(p.proximal, p.distal);
+      if (past) continue;
+      // Distance from price to proximal edge (0 when price is already inside the POI).
+      const lo = Math.min(p.top, p.bottom);
+      const hi = Math.max(p.top, p.bottom);
+      const distPrice = price >= lo && price <= hi ? 0 : Math.min(Math.abs(price - p.proximal), Math.abs(price - p.distal));
+      const distAtr = atr && atr > 0 ? distPrice / atr : null;
+      p.distanceAtr = distAtr;
+      if (maxDist !== undefined && distAtr !== null && distAtr > maxDist) continue;
+    }
+    gated.push(p);
+  }
+
+  gated.sort((a, b) => {
     const priority: Record<SelectedPOI["type"], number> = {
       OB_FVG_INTERSECTION: 3,
       OB: 2,
       FVG: 1,
     };
     if (priority[a.type] !== priority[b.type]) return priority[b.type] - priority[a.type];
+    // Prefer closer POIs when both have a finite distance.
+    const da = a.distanceAtr ?? null;
+    const db = b.distanceAtr ?? null;
+    if (da !== null && db !== null && da !== db) return da - db;
     return b.quality - a.quality;
   });
-  return out;
+  return gated;
 }

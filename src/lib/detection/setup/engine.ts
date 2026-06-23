@@ -34,6 +34,7 @@ const TOP_N = 3;
 const SWEEP_RECENT_BARS = 5;
 const SL_ATR_BUFFER = 0.1;
 const STRUCTURE_RECENT_BARS = 20;
+const POI_MAX_DISTANCE_ATR = 8;
 
 export interface SetupEngineOptions {
   symbol: string;
@@ -274,7 +275,11 @@ export function detectSignals(
   const protectedSwing = recentSwingExtreme(pivots, direction, candles.length);
 
   // ── Phase 6: ranked POI candidates from selector.
-  const pois = selectPois(ict, direction);
+  const pois = selectPois(ict, direction, {
+    currentPrice: lastClose,
+    atr: lastAtr,
+    maxDistanceAtr: POI_MAX_DISTANCE_ATR,
+  });
 
   const minScore = opts.minScore ?? MIN_SCORE;
   const minRR = opts.minRR ?? MIN_RR;
