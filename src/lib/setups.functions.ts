@@ -36,7 +36,7 @@ export const detectSetups = createServerFn({ method: "POST" })
     const pivots = detectPivots(lifted);
     const bias = currentBias(pivots);
     const analysis = analyzeElliott(pivots);
-    const ict = analyzeIct(lifted, pivots);
+    const ict = analyzeIct(lifted, pivots, { timeframe: data.interval });
     const signals = detectSignals(lifted, pivots, analysis, ict, {
       symbol: data.symbol,
       timeframe: data.interval,

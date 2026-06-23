@@ -9,9 +9,18 @@ import { currentKillzone } from "./killzones";
 import { computePdArray } from "./pdArray";
 import type { IctContext } from "./types";
 
-export function analyzeIct(candles: ReadonlyArray<CandleV2>, pivots: ReadonlyArray<PivotV2>): IctContext {
+export interface AnalyzeIctOptions {
+  /** Candle timeframe (e.g. "1h", "4h", "1d"). Required to gate intraday-only constructs. */
+  timeframe?: string;
+}
+
+export function analyzeIct(
+  candles: ReadonlyArray<CandleV2>,
+  pivots: ReadonlyArray<PivotV2>,
+  opts: AnalyzeIctOptions = {},
+): IctContext {
   const fvgs = detectFVGs(candles);
-  const liquidity = detectLiquidity(pivots, candles);
+  const liquidity = detectLiquidity(pivots, candles, { timeframe: opts.timeframe });
   // Structure needs candle closes; sweeps enrich CHoCH provenance.
   const provisionalSweeps = detectSweeps(candles, liquidity, []);
   const structure = detectStructure(pivots, candles, { sweeps: provisionalSweeps });

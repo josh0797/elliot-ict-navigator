@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import type { PivotV2 } from "../schemas/analysis";
 import { analyzeElliott, detectCorrective } from "../elliott/engine";
@@ -30,10 +30,17 @@ test("rules: R3 rejects wave 4 overlapping wave 1 (impulse only)", () => {
   assert.ok(!diag.invalidations.some((s) => s.startsWith("R3")));
 });
 
-test("rules: R2 rejects W3 shortest among 1/3/5", () => {
-  const r = checkImpulseRules({ direction: "long", pattern: "IMPULSE", p0: 100, p1: 120, p2: 110, p3: 115, p4: 113, p5: 140 });
-  // w1=20, w3=5, w5=27 → w3 shortest, R2 fires (R3 also fires since 115<120? No: R3 checks p4 vs p1; 113<=120 also triggers R3).
-  assert.ok(r.invalidations.length > 0);
+test("rules: R2 rejects W3 shortest among 1/3/5 (no R1/R3 collision)", () => {
+  // Long impulse: p2>p0 (no R1), p4>p1 (no R3 overlap), w3<w1 & w3<w5 (R2 fires).
+  // w1=20, w3=15, w5=39 → w3 is the shortest.
+  const r = checkImpulseRules({
+    direction: "long",
+    pattern: "IMPULSE",
+    p0: 100, p1: 120, p2: 110, p3: 125, p4: 121, p5: 160,
+  });
+  assert.ok(r.invalidations.some((s) => s.startsWith("R2")), `expected R2, got: ${r.invalidations.join(" | ")}`);
+  assert.ok(!r.invalidations.some((s) => s.startsWith("R1")));
+  assert.ok(!r.invalidations.some((s) => s.startsWith("R3")));
 });
 
 test("analyzeElliott: valid bullish impulse produces VALID/COMPLETED primary", () => {

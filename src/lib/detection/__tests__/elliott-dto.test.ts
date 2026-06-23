@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { toElliottResult } from "../elliott/dto";
 import type { ElliottAnalysis, ElliottCountV2, LabeledPivot, WaveLabel } from "../elliott/types";
