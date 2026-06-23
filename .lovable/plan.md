@@ -24,10 +24,22 @@ Objetivo: que la app deje de mostrar solo capas visuales y produzca **setups acc
      - `rationale` (string en español, lista de confluencias activas).
 
 2. **Conexión legacy → setup**
-   - En el engine, tras construir el setup, llamar `scoreLegacy(buildLegacyInput(setup, elliott))` y adjuntar:
-     - `setup.mlScore` (0..1)
-     - `setup.modelVersion = "legacy-pretrained-html-v1"`
-   - Helper `buildLegacyInput` en `src/lib/detection/setup/legacyAdapter.ts` que mapea `TradeSetupV2 + ElliottAnalysis` → `LegacyInput` con `confirmationLevel`, `invalidationLevel`, `fibTarget1`, `inKillzone`, `currentWave`, `hasAlternativeCount`, `price`.
+   - En el engine, tras construir el setup, llamar
+     `scoreSignalLegacy(buildLegacyInput(signal, elliott, priceAtDetection))`
+     y adjuntar:
+     - `signal.mlScore` (0..1) — ACTIVE BASELINE, diagnóstico paralelo.
+     - `signal.modelVersion = "legacy-pretrained-html-v1"`.
+   - Helper `buildLegacyInput` en `src/lib/detection/setup/legacyAdapter.ts`
+     mapea `(signal, elliott, currentPrice)` → `LegacyInput` con los **siete**
+     campos reales del contrato:
+     `confirmationLevel`, `invalidationLevel`, `fibTarget1`, `rrRatio`,
+     `hasAlternative`, `currentPriceApprox`, `waveLabel`.
+   - Invariante de contrato: `fibTarget1` y `rrRatio` deben referirse al
+     **mismo** objetivo (TP1) para mantener coherentes las features legacy
+     f0 (tp/sl) y f3 (rrNorm).
+   - `currentPriceApprox` se congela como `priceAtDetection` (cierre de la
+     última vela confirmada) y se guarda en el snapshot del signal, para que
+     re-puntuar el mismo setup sea determinista.
    - Sin tocar `src/lib/ml/legacy/*` ni `model.ts`.
 
 3. **Filtros y ranking de señales**
@@ -35,8 +47,12 @@ Objetivo: que la app deje de mostrar solo capas visuales y produzca **setups acc
      - RR (a TP1) < 1.0
      - Score canónico < 0.35
      - Elliott `state === "INVALIDATED"`
-   - Score final = `0.6 * canonicalScore + 0.4 * mlScore`.
-   - Devolver top-N (default 3) ordenados por score final.
+   - Score operativo (`finalScore`) = `canonicalScore`. El legacy NO pondera
+     decisiones operativas en esta fase: 52.86% accuracy vs 49.71% base no
+     justifica un peso fijo, y mezclar 40% podría degradar setups canónicos
+     buenos. Se mantendrá como ACTIVE BASELINE en paralelo hasta que un
+     backtest calibre un peso (máximo 0.1 inicialmente).
+   - Devolver top-N (default 3) ordenados por `finalScore`.
 
 4. **Server function**
    - Extender `src/lib/elliott.functions.ts` (o nueva `src/lib/setups.functions.ts`) con `detectSetups({ symbol, interval, outputsize })` que devuelve `{ setups: TradeSetupV2[], elliott, ict, provider }`.
@@ -84,6 +100,8 @@ Objetivo: que la app deje de mostrar solo capas visuales y produzca **setups acc
 ## Riesgo
 
 - El motor canónico hoy no expone `confirmationLevel`/`invalidationLevel` directamente; el adapter los deriva de `setup.entry` y `setup.sl`. Documentado en código.
-- `fibTarget1` se toma de `tp2` (extensión Fib). Si falta, el extractor legacy aplica fallback `tpSize = slSize * 2` — consistente con contrato congelado.
+- `fibTarget1` se toma de `tp1` (mismo target que `rrRatio`) para preservar
+  la coherencia interna del vector legacy. Si falta, el extractor aplica el
+  fallback congelado `tpSize = slSize * 2`.
 
 ¿Apruebas y procedo a implementar?

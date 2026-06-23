@@ -195,6 +195,13 @@ export function detectSignals(
   const lastAtr = Number.isFinite(lastAtrRaw) ? (lastAtrRaw as number) : lastClose * 0.005;
   if (!isFinitePositive(lastAtr) || !isFinitePositive(lastClose)) return [];
 
+  // Freeze the reference price at the last CONFIRMED candle. The most recent
+  // bar may still be forming, so fall back one bar when available. This value
+  // is stored on the signal so re-scoring is deterministic.
+  const priceAtDetection = candles.length >= 2
+    ? candles[candles.length - 2].close
+    : lastClose;
+
   const fibTp2 = fib1618Target(primary, direction);
 
   // Candidate POIs: OBs first (higher weight), then non-mitigated FVGs.
@@ -255,17 +262,20 @@ export function detectSignals(
 
     const confirmationLevel = cand.entry;
     const invalidationLevel = cand.sl;
-    const fibTarget1 = tp2;
+    // Coherent with `rrToTp1` — both reference TP1. This preserves the legacy
+    // training contract where f0 (tp/sl ratio) and f3 (rrNorm) share a target.
+    const fibTarget1 = tp1;
     const waveLabel = primary.currentWave;
 
-    // Frozen legacy ML score (shadow, no operational gating).
+    // Frozen legacy ML score — ACTIVE BASELINE, parallel diagnostic only.
+    // Computed against the frozen `priceAtDetection`, not the live `lastClose`.
     let mlScore: number | null = null;
     let modelVersion: string | null = null;
     try {
       const legacy = scoreSignalLegacy(buildLegacyInput(
         { confirmationLevel, invalidationLevel, fibTarget1, rrToTp1: rr1, waveLabel, entry: cand.entry },
         elliott,
-        lastClose,
+        priceAtDetection,
       ));
       mlScore = legacy.probability;
       modelVersion = legacy.schema;
@@ -273,7 +283,9 @@ export function detectSignals(
       mlScore = null;
     }
 
-    const finalScore = mlScore !== null ? 0.6 * score + 0.4 * mlScore : score;
+    // Operational score = canonical score only. Legacy ML stays as a parallel
+    // diagnostic until a backtest justifies a calibrated weight (≤0.1 max).
+    const finalScore = score;
     const rationale = buildRationale(direction, primary, confluences, rr1);
 
     signals.push({
@@ -290,6 +302,7 @@ export function detectSignals(
       fibTarget1,
       rrToTp1: rr1,
       rrToTp2: rr2,
+      priceAtDetection,
       score,
       mlScore,
       modelVersion,

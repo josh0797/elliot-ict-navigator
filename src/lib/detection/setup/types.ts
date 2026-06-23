@@ -31,16 +31,32 @@ export interface TradeSignal {
   confirmationLevel: number;
   /** Same as `sl` — kept explicit for the legacy adapter contract. */
   invalidationLevel: number;
-  /** Fib 1.618 target used as `fibTarget1` in the legacy extractor. */
+  /**
+   * Target used as `fibTarget1` in the legacy extractor.
+   * Aligned with `rrToTp1` (same target as `rrRatio`) so the legacy feature
+   * vector stays internally consistent (f0 and f3 reference TP1).
+   */
   fibTarget1: number;
   rrToTp1: number;
   rrToTp2: number;
+  /**
+   * Close of the last confirmed candle at the moment the signal was created.
+   * Frozen into the snapshot so re-scoring the same signal yields the same
+   * legacy probability regardless of live price drift.
+   */
+  priceAtDetection: number;
   /** 0..1 canonical score from confluences. */
   score: number;
-  /** 0..1 frozen legacy ML probability, or null if unavailable. */
+  /**
+   * 0..1 frozen legacy ML probability, or null if unavailable.
+   * ACTIVE BASELINE — parallel diagnostic only, not an operational gate.
+   */
   mlScore: number | null;
   modelVersion: string | null;
-  /** 0..1 blended score (0.6*score + 0.4*mlScore). */
+  /**
+   * 0..1 operational score. Currently equal to canonical `score`; the legacy
+   * ML weight is 0 until backtest justifies a calibrated blend.
+   */
   finalScore: number;
   breakdown: ScoreBreakdown;
   confluences: SignalConfluence[];
