@@ -94,7 +94,6 @@ export function deriveTrigger(args: {
       triggeredCandleIndex: hit ? hit.index : null,
       triggeredPrice: hit ? entry : null,
     };
-    void direction;
   }
 
   // Stop orders → require a CONFIRMED candle CLOSE beyond entry (no intrabar).
