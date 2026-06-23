@@ -1,5 +1,4 @@
-import { test } from "vitest";
-import assert from "node:assert/strict";
+import { describe, expect, it } from "vitest";
 import { detectPivots, isLastProvisional } from "../structure/pivots";
 import type { CandleV2 } from "../schemas/analysis";
 
@@ -17,25 +16,25 @@ function buildSeries(): CandleV2[] {
   return out;
 }
 
-test("detectPivots returns alternating HIGH/LOW pivots on synthetic sine", () => {
+it("detectPivots returns alternating HIGH/LOW pivots on synthetic sine", () => {
   const cs = buildSeries();
   const pivots = detectPivots(cs, { leftBars: 2, rightBars: 2, minAtrDistance: 0.1 });
-  assert.ok(pivots.length >= 4, `got ${pivots.length} pivots`);
+  expect(pivots.length >= 4).toBeTruthy();
   for (let i = 1; i < pivots.length; i++) {
-    assert.notEqual(pivots[i].type, pivots[i - 1].type, "consecutive pivots must alternate");
+    expect(pivots[i].type).not.toBe(pivots[i - 1].type);
   }
 });
 
-test("detectPivots last pivot may be provisional on truncated series", () => {
+it("detectPivots last pivot may be provisional on truncated series", () => {
   const cs = buildSeries().slice(0, 65); // cut mid-swing
   const pivots = detectPivots(cs, { leftBars: 2, rightBars: 3, minAtrDistance: 0.1 });
   // Not strictly required, but the helper must accept the call without throwing.
   void isLastProvisional(pivots);
-  assert.ok(pivots.length > 0);
+  expect(pivots.length > 0).toBeTruthy();
 });
 
-test("detectPivots assigns MAJOR strength to large swings", () => {
+it("detectPivots assigns MAJOR strength to large swings", () => {
   const cs = buildSeries();
   const pivots = detectPivots(cs, { leftBars: 2, rightBars: 2, minAtrDistance: 0.1, majorAtrThreshold: 1.5 });
-  assert.ok(pivots.some((p) => p.strength === "MAJOR"));
+  expect(pivots.some((p) => p.strength === "MAJOR")).toBeTruthy();
 });

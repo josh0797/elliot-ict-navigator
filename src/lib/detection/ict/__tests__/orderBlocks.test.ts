@@ -1,5 +1,4 @@
-import { test } from "vitest";
-import assert from "node:assert/strict";
+import { describe, expect, it } from "vitest";
 import { detectOrderBlocks } from "../orderBlocks";
 import { detectFVGs } from "../fvg";
 import type { CandleV2 } from "../../schemas/analysis";
@@ -9,17 +8,17 @@ function c(i: number, open: number, high: number, low: number, close: number, vo
   return { index: i, time: 1700000000 + i * 3600, open, high, low, close, volume };
 }
 
-test("OB Phase 5: rejects a lone opposite candle without displacement+BOS+FVG", () => {
+it("OB Phase 5: rejects a lone opposite candle without displacement+BOS+FVG", () => {
   // 25 flat candles, one bearish, no displacement.
   const candles: CandleV2[] = [];
   for (let i = 0; i < 25; i++) candles.push(c(i, 100, 101, 99, 100.5));
   candles[20] = c(20, 101, 101.2, 100.8, 100.9); // tiny bearish
   const fvgs = detectFVGs(candles);
   const obs = detectOrderBlocks(candles, fvgs, []);
-  assert.equal(obs.length, 0);
+  expect(obs.length).toBe(0);
 });
 
-test("OB Phase 5: emits bullish OB with displacement + BOS + FVG", () => {
+it("OB Phase 5: emits bullish OB with displacement + BOS + FVG", () => {
   const candles: CandleV2[] = [];
   // Stable ATR seed.
   for (let i = 0; i < 20; i++) candles.push(c(i, 100, 100.5, 99.5, 100));
@@ -44,18 +43,18 @@ test("OB Phase 5: emits bullish OB with displacement + BOS + FVG", () => {
     },
   ];
   const obs = detectOrderBlocks(candles, fvgs, bos);
-  assert.equal(obs.length, 1, "should emit exactly one OB");
+  expect(obs.length).toBe(1);
   const ob = obs[0];
-  assert.equal(ob.type, "BULLISH");
-  assert.equal(ob.displacementConfirmed, true);
-  assert.equal(ob.bosConfirmed, true);
-  assert.equal(ob.fvgAssociated, true);
-  assert.ok(ob.bosRef && ob.fvgRef);
-  assert.ok(ob.quality >= 75, `quality ${ob.quality} should be >= 75`);
-  assert.ok(["FRESH", "TOUCHED", "MITIGATED"].includes(ob.state));
+  expect(ob.type).toBe("BULLISH");
+  expect(ob.displacementConfirmed).toBe(true);
+  expect(ob.bosConfirmed).toBe(true);
+  expect(ob.fvgAssociated).toBe(true);
+  expect(ob.bosRef && ob.fvgRef).toBeTruthy();
+  expect(ob.quality >= 75).toBeTruthy();
+  expect(["FRESH", "TOUCHED", "MITIGATED"].includes(ob.state)).toBeTruthy();
 });
 
-test("OB lifecycle: invalidates when close pierces opposite side", () => {
+it("OB lifecycle: invalidates when close pierces opposite side", () => {
   const candles: CandleV2[] = [];
   for (let i = 0; i < 20; i++) candles.push(c(i, 100, 100.5, 99.5, 100));
   candles.push(c(20, 100, 100.2, 99.6, 99.7));     // bearish origin
@@ -75,6 +74,6 @@ test("OB lifecycle: invalidates when close pierces opposite side", () => {
     },
   ];
   const obs = detectOrderBlocks(candles, fvgs, bos);
-  assert.equal(obs.length, 1);
-  assert.ok(["INVALIDATED", "BREAKER"].includes(obs[0].state));
+  expect(obs.length).toBe(1);
+  expect(["INVALIDATED", "BREAKER"].includes(obs[0].state)).toBeTruthy();
 });

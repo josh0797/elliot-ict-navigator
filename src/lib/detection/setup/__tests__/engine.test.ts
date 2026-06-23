@@ -1,5 +1,4 @@
-import { test } from "vitest";
-import assert from "node:assert/strict";
+import { describe, expect, it } from "vitest";
 import { detectSignals } from "../engine";
 import type { CandleV2, PivotV2 } from "../../schemas/analysis";
 import type { ElliottAnalysis, ElliottCountV2 } from "../../elliott/types";
@@ -83,39 +82,39 @@ function bullishIct(currentIndex: number): IctContext {
 const candles = mkCandles(60, 104);
 const symbol = "TEST", timeframe = "1h";
 
-test("setup engine produces a long signal with positive RR when bullish confluences align", () => {
+it("setup engine produces a long signal with positive RR when bullish confluences align", () => {
   const elliott = bullishElliott();
   const ict = bullishIct(candles.length - 1);
   const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
-  assert.ok(out.length > 0, "expected at least one signal");
+  expect(out.length > 0).toBeTruthy();
   const s = out[0];
-  assert.equal(s.direction, "long");
-  assert.ok(s.rrToTp1 > 1, `RR>1 expected, got ${s.rrToTp1}`);
-  assert.ok(s.score > 0.5, `score>0.5 expected, got ${s.score}`);
-  assert.ok(s.confluences.includes("BIAS_ALIGN"));
-  assert.ok(s.confluences.includes("OB_CONFLUENCE"));
-  assert.notEqual(s.mlScore, null);
-  assert.equal(s.modelVersion, "legacy-pretrained-html-v1");
+  expect(s.direction).toBe("long");
+  expect(s.rrToTp1 > 1).toBeTruthy();
+  expect(s.score > 0.5).toBeTruthy();
+  expect(s.confluences.includes("BIAS_ALIGN")).toBeTruthy();
+  expect(s.confluences.includes("OB_CONFLUENCE")).toBeTruthy();
+  expect(s.mlScore).not.toBe(null);
+  expect(s.modelVersion).toBe("legacy-pretrained-html-v1");
 });
 
-test("setup engine returns no signals when Elliott is INVALIDATED", () => {
+it("setup engine returns no signals when Elliott is INVALIDATED", () => {
   const elliott = bullishElliott();
   elliott.primary!.state = "INVALIDATED";
   const ict = bullishIct(candles.length - 1);
   const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
-  assert.deepEqual(out, []);
+  expect(out).toEqual([]);
 });
 
-test("setup engine returns no signals when there are no matching POIs", () => {
+it("setup engine returns no signals when there are no matching POIs", () => {
   const elliott = bullishElliott();
   const ict = bullishIct(candles.length - 1);
   ict.orderBlocks = [];
   ict.fvgs = [];
   const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
-  assert.deepEqual(out, []);
+  expect(out).toEqual([]);
 });
 
-test("setup engine returns no signals when primary is null", () => {
+it("setup engine returns no signals when primary is null", () => {
   const out = detectSignals(candles, [], { primary: null, alternatives: [] }, bullishIct(candles.length - 1), { symbol, timeframe });
-  assert.deepEqual(out, []);
+  expect(out).toEqual([]);
 });

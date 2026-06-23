@@ -1,5 +1,4 @@
-import { test } from "vitest";
-import assert from "node:assert/strict";
+import { describe, expect, it } from "vitest";
 import { detectLiquidity } from "../liquidity";
 import { detectSweeps } from "../sweeps";
 import type { CandleV2, PivotV2 } from "../../schemas/analysis";
@@ -16,7 +15,7 @@ function pivProv(index: number, time: number, price: number, type: "HIGH" | "LOW
   return { id: `p-${index}`, index, time, price, type, strength: "MAJOR", atrDistance: 1, confirmed: false };
 }
 
-test("Phase 6 — clusters equal highs into a single BSL level", () => {
+it("Phase 6 — clusters equal highs into a single BSL level", () => {
     const t0 = 1_700_000_000;
     const step = 3600;
     const candles: CandleV2[] = Array.from({ length: 40 }, (_, i) => c(i, t0 + i * step, 100, 101, 99, 100));
@@ -27,13 +26,13 @@ test("Phase 6 — clusters equal highs into a single BSL level", () => {
     ];
     const levels = detectLiquidity(pivots, candles);
     const eqh = levels.find((l) => l.kind === "EQH");
-    assert.ok(eqh);
-    assert.equal(eqh!.touches, 3);
-    assert.equal(eqh!.side, "BSL");
-    assert.equal(eqh!.state, "ACTIVE");
+    expect(eqh).toBeTruthy();
+    expect(eqh!.touches).toBe(3);
+    expect(eqh!.side).toBe("BSL");
+    expect(eqh!.state).toBe("ACTIVE");
 });
 
-test("Phase 6 — marks a level SWEPT when wick exceeds it", () => {
+it("Phase 6 — marks a level SWEPT when wick exceeds it", () => {
     const t0 = 1_700_000_000;
     const step = 3600;
     const candles: CandleV2[] = [];
@@ -45,11 +44,11 @@ test("Phase 6 — marks a level SWEPT when wick exceeds it", () => {
     const pivots = [piv(20, candles[20].time, 110, "HIGH")];
     const levels = detectLiquidity(pivots, candles);
     const swing = levels.find((l) => l.kind === "SWING_HIGH" && l.price === 110);
-    assert.ok(swing);
-    assert.ok(swing!.state === "SWEPT" || swing!.state === "MITIGATED");
+    expect(swing).toBeTruthy();
+    expect(swing!.state === "SWEPT" || swing!.state === "MITIGATED").toBeTruthy();
 });
 
-test("Phase 6 — detectSweeps records stop-hunt with closeBack and target link", () => {
+it("Phase 6 — detectSweeps records stop-hunt with closeBack and target link", () => {
     const t0 = 1_700_000_000;
     const step = 3600;
     const candles: CandleV2[] = [];
@@ -62,14 +61,14 @@ test("Phase 6 — detectSweeps records stop-hunt with closeBack and target link"
     const sweeps = detectSweeps(candles, levels, []);
     const swing = levels.find((l) => l.kind === "SWING_HIGH" && l.price === 110)!;
     const sw = sweeps.find((s) => s.targetLiquidityId === swing.id);
-    assert.ok(sw);
-    assert.equal(sw!.wickBeyond, true);
-    assert.equal(sw!.closeBack, true);
-    assert.ok(sw!.targetLiquidityId.startsWith("liq-"));
-    assert.ok(sw!.quality > 50);
+    expect(sw).toBeTruthy();
+    expect(sw!.wickBeyond).toBe(true);
+    expect(sw!.closeBack).toBe(true);
+    expect(sw!.targetLiquidityId.startsWith("liq-")).toBeTruthy();
+    expect(sw!.quality > 50).toBeTruthy();
 });
 
-test("Phase 6 — EQH ignores provisional (unconfirmed) pivots", () => {
+it("Phase 6 — EQH ignores provisional (unconfirmed) pivots", () => {
   const t0 = 1_700_000_000;
   const step = 3600;
   const candles: CandleV2[] = Array.from({ length: 30 }, (_, i) => c(i, t0 + i * step, 100, 101, 99, 100));
@@ -78,10 +77,10 @@ test("Phase 6 — EQH ignores provisional (unconfirmed) pivots", () => {
     pivProv(15, candles[15].time, 110, "HIGH"),    // provisional → must NOT cluster
   ];
   const levels = detectLiquidity(pivots, candles);
-  assert.equal(levels.filter((l) => l.kind === "EQH").length, 0, "no EQH should form with one provisional pivot");
+  expect(levels.filter((l) => l.kind === "EQH").length).toBe(0);
 });
 
-test("Phase 6 — clean close beyond level marks BROKEN, not SWEPT", () => {
+it("Phase 6 — clean close beyond level marks BROKEN, not SWEPT", () => {
   const t0 = 1_700_000_000;
   const step = 3600;
   const candles: CandleV2[] = [];
@@ -93,10 +92,10 @@ test("Phase 6 — clean close beyond level marks BROKEN, not SWEPT", () => {
   const pivots = [piv(20, candles[20].time, 110, "HIGH")];
   const levels = detectLiquidity(pivots, candles);
   const swing = levels.find((l) => l.kind === "SWING_HIGH" && l.price === 110)!;
-  assert.equal(swing.state, "BROKEN");
+  expect(swing.state).toBe("BROKEN");
 });
 
-test("Phase 6 — wick past + close back marks SWEPT (stop hunt)", () => {
+it("Phase 6 — wick past + close back marks SWEPT (stop hunt)", () => {
   const t0 = 1_700_000_000;
   const step = 3600;
   const candles: CandleV2[] = [];
@@ -108,26 +107,26 @@ test("Phase 6 — wick past + close back marks SWEPT (stop hunt)", () => {
   const pivots = [piv(20, candles[20].time, 110, "HIGH")];
   const levels = detectLiquidity(pivots, candles);
   const swing = levels.find((l) => l.kind === "SWING_HIGH" && l.price === 110)!;
-  assert.ok(swing.state === "SWEPT" || swing.state === "MITIGATED", `expected SWEPT/MITIGATED, got ${swing.state}`);
+  expect(swing.state === "SWEPT" || swing.state === "MITIGATED").toBeTruthy();
 });
 
-test("Phase 6 — daily timeframe suppresses ASIA_* and SESSION_* levels", () => {
+it("Phase 6 — daily timeframe suppresses ASIA_* and SESSION_* levels", () => {
   const t0 = 1_700_000_000;
   const dayStep = 86400;
   // 5 daily bars, all stamped at 00:00 UTC.
   const candles: CandleV2[] = Array.from({ length: 5 }, (_, i) => c(i, t0 + i * dayStep, 100, 101, 99, 100));
   const daily = detectLiquidity([], candles, { timeframe: "1d" });
-  assert.equal(daily.filter((l) => l.kind === "ASIA_HIGH" || l.kind === "ASIA_LOW").length, 0);
-  assert.equal(daily.filter((l) => l.kind === "SESSION_HIGH" || l.kind === "SESSION_LOW").length, 0);
+  expect(daily.filter((l) => l.kind === "ASIA_HIGH" || l.kind === "ASIA_LOW").length).toBe(0);
+  expect(daily.filter((l) => l.kind === "SESSION_HIGH" || l.kind === "SESSION_LOW").length).toBe(0);
 });
 
-test("Phase 6 — current SESSION_HIGH/LOW is marked provisional", () => {
+it("Phase 6 — current SESSION_HIGH/LOW is marked provisional", () => {
   const t0 = Math.floor(Date.UTC(2024, 0, 8, 0, 0, 0) / 1000); // Mon 00:00 UTC
   const step = 3600;
   const candles: CandleV2[] = Array.from({ length: 6 }, (_, i) => c(i, t0 + i * step, 100, 101, 99, 100));
   const levels = detectLiquidity([], candles, { timeframe: "1h" });
   const sh = levels.find((l) => l.kind === "SESSION_HIGH");
   const sl = levels.find((l) => l.kind === "SESSION_LOW");
-  assert.ok(sh && sh.provisional, "session high must be provisional");
-  assert.ok(sl && sl.provisional, "session low must be provisional");
+  expect(sh && sh.provisional).toBeTruthy();
+  expect(sl && sl.provisional).toBeTruthy();
 });
