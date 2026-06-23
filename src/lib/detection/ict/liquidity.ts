@@ -6,21 +6,41 @@ import type { LiquidityKind, LiquidityLevel, LiquiditySide } from "./types";
  * Phase 6 canonical liquidity detection.
  *
  * Levels enumerated:
- *  - SWING_HIGH / SWING_LOW         (every confirmed pivot)
- *  - EQH / EQL                      (two or more pivots clustered within `tol`)
+ *  - SWING_HIGH / SWING_LOW         (only CONFIRMED pivots)
+ *  - EQH / EQL                      (only CONFIRMED pivots, clustered within tol)
  *  - PDH / PDL                      (previous UTC day extremes)
- *  - ASIA_HIGH / ASIA_LOW           (00:00–07:00 UTC of current day)
- *  - SESSION_HIGH / SESSION_LOW     (current UTC day extremes so far)
+ *  - PWH / PWL                      (previous ISO week extremes)
+ *  - ASIA_HIGH / ASIA_LOW           (00:00–07:00 UTC of current day, intraday TF only)
+ *  - SESSION_HIGH / SESSION_LOW     (current UTC day extremes so far, intraday TF only, PROVISIONAL)
  *
- * State machine (per level):
- *   ACTIVE     — price has not crossed beyond the level since creation.
- *   SWEPT      — a candle's wick exceeded the level (raid).
- *   MITIGATED  — after the sweep, price has retraced through the level (close on the
- *                opposite side of the sweep), i.e. the liquidity is consumed.
+ * State machine (per level), evaluated in this order on every candle after creation:
+ *   ACTIVE     — price has not interacted with the level.
+ *   SWEPT      — wick crossed the level BUT the candle closed back on the prior side
+ *                (true stop hunt / raid).
+ *   BROKEN     — candle closed beyond the level (clean break / breakout). Terminal.
+ *   MITIGATED  — after a SWEPT state, price retraces through the level
+ *                (close on the opposite side of the sweep). Terminal.
+ *
+ * In-candle classification: when the same candle both wicks past AND closes beyond,
+ * we classify as BROKEN (not SWEPT) — the rejection never materialised.
+ *
+ * Timeframe awareness: ASIA_*, SESSION_* and intraday-only constructs are skipped
+ * when the timeframe is daily or higher (a daily 00:00 UTC candle covers the full
+ * 24h and cannot be classified as "Asia session").
  */
 
 const DEFAULT_EQ_ATR_TOL = 0.25; // |Δprice| <= 0.25 * ATR considered "equal"
 const DEFAULT_EQ_REL_TOL = 0.0015; // 15 bps fallback when ATR is unavailable
+
+const INTRADAY_TIMEFRAMES = new Set([
+  "1m", "2m", "3m", "5m", "10m", "15m", "30m",
+  "45m", "60m", "1h", "2h", "3h", "4h", "6h", "8h", "12h",
+]);
+
+function isIntraday(tf: string | undefined): boolean {
+  if (!tf) return true; // back-compat: assume intraday when caller doesn't specify
+  return INTRADAY_TIMEFRAMES.has(tf.toLowerCase());
+}
 
 function strengthOf(touches: number, recencyBars: number, totalBars: number): number {
   const touchScore = Math.min(50, touches * 15);
@@ -58,24 +78,51 @@ function applyStateMachine(
   for (let k = fromIndex + 1; k < candles.length; k++) {
     const c = candles[k];
     if (level.state === "ACTIVE") {
-      const sweptHigh = level.side === "BSL" && c.high > level.price;
-      const sweptLow = level.side === "SSL" && c.low < level.price;
-      if (sweptHigh || sweptLow) {
-        level.state = "SWEPT";
-        level.sweptAtIndex = k;
-        level.sweptAtTime = c.time;
+      if (level.side === "BSL") {
+        const wickPast = c.high > level.price;
+        const closedBeyond = c.close > level.price;
+        if (closedBeyond) {
+          // Clean breakout: never enters SWEPT.
+          level.state = "BROKEN";
+          level.sweptAtIndex = k;
+          level.sweptAtTime = c.time;
+          return;
+        }
+        if (wickPast) {
+          // Wick past + close back on prior side → genuine stop-hunt.
+          level.state = "SWEPT";
+          level.sweptAtIndex = k;
+          level.sweptAtTime = c.time;
+        }
+      } else {
+        const wickPast = c.low < level.price;
+        const closedBeyond = c.close < level.price;
+        if (closedBeyond) {
+          level.state = "BROKEN";
+          level.sweptAtIndex = k;
+          level.sweptAtTime = c.time;
+          return;
+        }
+        if (wickPast) {
+          level.state = "SWEPT";
+          level.sweptAtIndex = k;
+          level.sweptAtTime = c.time;
+        }
       }
     } else if (level.state === "SWEPT") {
       const consumedHigh = level.side === "BSL" && c.close < level.price;
       const consumedLow = level.side === "SSL" && c.close > level.price;
-      if (consumedHigh || consumedLow) level.state = "MITIGATED";
+      if (consumedHigh || consumedLow) {
+        level.state = "MITIGATED";
+        return;
+      }
     }
   }
 }
 
 function pushLevel(
   out: LiquidityLevel[],
-  base: Omit<LiquidityLevel, "state" | "sweptAtIndex" | "sweptAtTime" | "strength"> & { strength: number },
+  base: Omit<LiquidityLevel, "state" | "sweptAtIndex" | "sweptAtTime" | "strength" | "provisional"> & { strength: number; provisional?: boolean },
   candles: ReadonlyArray<CandleV2>,
   fromIndex: number,
 ): void {
@@ -84,6 +131,7 @@ function pushLevel(
     state: "ACTIVE",
     sweptAtIndex: null,
     sweptAtTime: null,
+    provisional: base.provisional ?? false,
   };
   applyStateMachine(lvl, candles, fromIndex);
   out.push(lvl);
@@ -98,6 +146,12 @@ export interface DetectLiquidityOptions {
   emitSwings?: boolean;
   /** When true, only MAJOR pivots feed swing-high/low levels (defaults to false). */
   majorOnly?: boolean;
+  /**
+   * Timeframe of the candle series (e.g. "1m", "1h", "4h", "1d", "1w").
+   * When the timeframe is daily or higher, intraday-only constructs
+   * (ASIA_*, SESSION_*) are NOT emitted.
+   */
+  timeframe?: string;
 }
 
 export function detectLiquidity(
@@ -122,8 +176,10 @@ export function detectLiquidity(
     return Math.abs(a.price - b.price) / Math.max(a.price, 1) <= relTol;
   };
 
-  const highs = pivots.filter((p) => p.type === "HIGH");
-  const lows = pivots.filter((p) => p.type === "LOW");
+  // EQH/EQL must NEVER be built from provisional pivots — they would vanish on
+  // the next bar and corrupt the liquidity map.
+  const highs = pivots.filter((p) => p.confirmed && p.type === "HIGH");
+  const lows = pivots.filter((p) => p.confirmed && p.type === "LOW");
 
   // --- Equal highs / equal lows clusters ---
   const cluster = (xs: PivotV2[], side: LiquiditySide, kind: LiquidityKind) => {
@@ -180,6 +236,7 @@ export function detectLiquidity(
   }
 
   // --- Day / week extremes ---
+  const intraday = isIntraday(opts.timeframe);
   const last = candles[candles.length - 1];
   const lastDayKey = utcDayKey(last.time);
   const lastWeekKey = utcWeekKey(last.time);
@@ -239,7 +296,7 @@ export function detectLiquidity(
       strength: strengthOf(3, totalBars - prev.lo.index, totalBars),
     }, candles, prev.lo.index);
   }
-  if (lastDayIdx >= 0) {
+  if (intraday && lastDayIdx >= 0) {
     const [, cur] = days[lastDayIdx];
     pushLevel(out, {
       id: `liq-SH-${cur.hi.index}`,
@@ -247,6 +304,7 @@ export function detectLiquidity(
       price: cur.hi.high, time: cur.hi.time,
       originIndices: [cur.hi.index], touches: 1,
       strength: strengthOf(1, totalBars - cur.hi.index, totalBars),
+      provisional: true, // current session extremes can move on the next bar
     }, candles, cur.hi.index);
     pushLevel(out, {
       id: `liq-SL-${cur.lo.index}`,
@@ -254,11 +312,14 @@ export function detectLiquidity(
       price: cur.lo.low, time: cur.lo.time,
       originIndices: [cur.lo.index], touches: 1,
       strength: strengthOf(1, totalBars - cur.lo.index, totalBars),
+      provisional: true,
     }, candles, cur.lo.index);
   }
 
-  // --- Asia session of the last UTC day ---
-  const asiaCandles = candles.filter((c) => utcDayKey(c.time) === lastDayKey && isAsiaSession(c.time));
+  // --- Asia session of the last UTC day (intraday only) ---
+  const asiaCandles = intraday
+    ? candles.filter((c) => utcDayKey(c.time) === lastDayKey && isAsiaSession(c.time))
+    : [];
   if (asiaCandles.length > 0) {
     let aHi = asiaCandles[0], aLo = asiaCandles[0];
     for (const c of asiaCandles) { if (c.high > aHi.high) aHi = c; if (c.low < aLo.low) aLo = c; }
@@ -268,6 +329,8 @@ export function detectLiquidity(
       price: aHi.high, time: aHi.time,
       originIndices: [aHi.index], touches: 1,
       strength: strengthOf(2, totalBars - aHi.index, totalBars),
+      // Asia range is provisional while the Asia session is still open.
+      provisional: utcDayKey(last.time) === lastDayKey && isAsiaSession(last.time),
     }, candles, aHi.index);
     pushLevel(out, {
       id: `liq-AL-${aLo.index}`,
@@ -275,6 +338,7 @@ export function detectLiquidity(
       price: aLo.low, time: aLo.time,
       originIndices: [aLo.index], touches: 1,
       strength: strengthOf(2, totalBars - aLo.index, totalBars),
+      provisional: utcDayKey(last.time) === lastDayKey && isAsiaSession(last.time),
     }, candles, aLo.index);
   }
 
