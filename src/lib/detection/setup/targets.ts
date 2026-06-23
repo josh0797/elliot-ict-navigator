@@ -32,13 +32,27 @@ function fibProjection(
 ): Extract<TargetSpec["source"], { kind: "FIB" }> | null {
   const cw = count.currentWave;
   const sign = direction === "long" ? 1 : -1;
-  let from: number | undefined, to: number | undefined, wave = "";
-  if (cw === "2") { from = priceAtLabel(count, "0"); to = priceAtLabel(count, "1"); wave = "3"; }
-  else if (cw === "4") { from = priceAtLabel(count, "2"); to = priceAtLabel(count, "3"); wave = "5"; }
-  else if (cw === "B") { from = priceAtLabel(count, "0"); to = priceAtLabel(count, "A"); wave = "C"; }
-  if (from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) return null;
-  const leg = Math.abs(to - from);
-  const projectedFrom = to;
+  // Correct base-leg / projection anchor pairs:
+  //   W3 from W2 using |P1-P0|; W5 from W4 using |P3-P2|; WC from WB using |A-P5|.
+  let from: number | undefined, to: number | undefined, projectedFrom: number | undefined, wave = "";
+  if (cw === "2") {
+    from = priceAtLabel(count, "0");
+    to = priceAtLabel(count, "1");
+    projectedFrom = priceAtLabel(count, "2");
+    wave = "3";
+  } else if (cw === "4") {
+    from = priceAtLabel(count, "2");
+    to = priceAtLabel(count, "3");
+    projectedFrom = priceAtLabel(count, "4");
+    wave = "5";
+  } else if (cw === "B") {
+    from = priceAtLabel(count, "5") ?? priceAtLabel(count, "0");
+    to = priceAtLabel(count, "A");
+    projectedFrom = priceAtLabel(count, "B");
+    wave = "C";
+  }
+  if (from == null || to == null || projectedFrom == null) return null;
+  if (![from, to, projectedFrom].every((v) => Number.isFinite(v))) return null;
   // returned descriptor — caller evaluates price with same sign convention.
   void sign;
   return { kind: "FIB", wave, ratio, from, to, projectedFrom };
