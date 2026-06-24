@@ -87,3 +87,25 @@ describe("deriveTrigger — stop orders use confirmed CLOSE, not intrabar", () =
     expect(t.satisfied).toBe(true);
   });
 });
+
+describe("deriveTrigger — MARKET outside zone", () => {
+  it("MARKET_BUY: current price ABOVE the entry zone → NOT satisfied", () => {
+    const last = c(40, 110, 111, 109, 110);
+    const t = deriveTrigger({
+      direction: "long", orderType: "MARKET_BUY",
+      entry: 102, entryZone: { top: 103, bottom: 101 },
+      currentPrice: 110, lastConfirmedCandle: last,
+    });
+    expect(t.satisfied).toBe(false);
+    expect(t.notSatisfiedReason).toBe("PRICE_OUTSIDE_ZONE");
+  });
+  it("MARKET_BUY: current price INSIDE zone but confirmed close outside → NOT satisfied", () => {
+    const last = c(41, 100, 100.5, 99, 99.5); // close 99.5 outside zone
+    const t = deriveTrigger({
+      direction: "long", orderType: "MARKET_BUY",
+      entry: 102, entryZone: { top: 103, bottom: 101 },
+      currentPrice: 102, lastConfirmedCandle: last,
+    });
+    expect(t.satisfied).toBe(false);
+  });
+});

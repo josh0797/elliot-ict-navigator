@@ -350,6 +350,7 @@ function ChartPage() {
 
       <SignalsPanel
         signals={signals}
+        report={decision}
         selectedId={selectedSignalId}
         onSelect={setSelectedSignalId}
         pxFmt={px}

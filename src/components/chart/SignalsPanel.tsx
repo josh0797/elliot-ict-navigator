@@ -1,4 +1,5 @@
 import type { TradeSignal } from "@/lib/detection/setup/types";
+import type { OperationalReport } from "@/lib/detection/decision/types";
 
 const CONFLUENCE_LABELS: Record<string, string> = {
   BIAS_ALIGN: "Bias",
@@ -13,31 +14,40 @@ const CONFLUENCE_LABELS: Record<string, string> = {
 
 export function SignalsPanel({
   signals,
+  report,
   selectedId,
   onSelect,
   pxFmt,
 }: {
   signals: TradeSignal[];
+  report?: OperationalReport | null;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   pxFmt: (n: number) => string;
 }) {
+  const header = report ? <DecisionHeader report={report} pxFmt={pxFmt} /> : null;
+
   if (signals.length === 0) {
     return (
-      <div className="rounded-lg border border-border/60 bg-card p-4">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">Señales</div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Sin confluencia operativa en las velas recientes. El motor seguirá observando.
-        </p>
+      <div className="space-y-3">
+        {header}
+        <div className="rounded-lg border border-border/60 bg-card p-4">
+          <div className="text-xs uppercase tracking-widest text-muted-foreground">Señales (diagnóstico)</div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sin confluencia operativa en las velas recientes. El motor seguirá observando.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
+    <div className="space-y-3">
+      {header}
+      <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs uppercase tracking-widest text-muted-foreground">
-          Señales ({signals.length})
+          Señales — diagnóstico ({signals.length})
         </div>
         {selectedId && (
           <button
@@ -106,6 +116,91 @@ export function SignalsPanel({
             </button>
           );
         })}
+      </div>
+      </div>
+    </div>
+  );
+}
+
+const DECISION_STYLE: Record<OperationalReport["decision"], string> = {
+  BUY: "border-success/60 bg-success/10",
+  SELL: "border-destructive/60 bg-destructive/10",
+  WAIT: "border-amber-400/60 bg-amber-400/10",
+  NO_TRADE: "border-muted bg-muted/30",
+};
+const DECISION_TEXT: Record<OperationalReport["decision"], string> = {
+  BUY: "text-success",
+  SELL: "text-destructive",
+  WAIT: "text-amber-400",
+  NO_TRADE: "text-muted-foreground",
+};
+
+function DecisionHeader({
+  report,
+  pxFmt,
+}: {
+  report: OperationalReport;
+  pxFmt: (n: number) => string;
+}) {
+  const cls = DECISION_STYLE[report.decision];
+  const txt = DECISION_TEXT[report.decision];
+  const sig = report.primarySignal;
+  const isMarket = sig?.orderType === "MARKET_BUY" || sig?.orderType === "MARKET_SELL";
+  const isPending = sig && !isMarket && sig.orderType !== "NO_ORDER";
+  return (
+    <div className={`rounded-lg border p-4 ${cls}`}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className={`text-2xl font-extrabold tracking-tight font-mono ${txt}`}>
+          {report.decision === "BUY" ? "COMPRAR"
+            : report.decision === "SELL" ? "VENDER"
+            : report.decision === "WAIT" ? "ESPERAR" : "NO OPERAR"}
+        </span>
+        {sig && (report.decision === "BUY" || report.decision === "SELL") && (
+          <span className={`rounded border px-2 py-0.5 text-[10px] font-mono ${txt}`}>
+            {isMarket ? "MARKET (ejecutar ahora)" : isPending ? `ARMADO · ${sig.orderType.replace(/_/g, " ")}` : sig.orderType.replace(/_/g, " ")}
+          </span>
+        )}
+        <span className="rounded border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+          {report.status}
+        </span>
+        <span className="rounded border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+          {report.template.replace(/_/g, " ")}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-foreground/90">{report.summary}</p>
+
+      {(report.decision === "BUY" || report.decision === "SELL") && sig && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
+          <div><span className="text-muted-foreground">Entry </span>{pxFmt(sig.entry)}</div>
+          <div><span className="text-muted-foreground">SL </span><span className="text-destructive">{pxFmt(sig.sl)}</span></div>
+          <div><span className="text-muted-foreground">TP1 </span><span className="text-success">{pxFmt(sig.tp1)}</span></div>
+          <div><span className="text-muted-foreground">RR </span>{sig.rrToTp1.toFixed(2)}</div>
+        </div>
+      )}
+
+      {report.decision === "WAIT" && (
+        <div className="mt-2 space-y-1 text-xs">
+          {report.missing.length > 0 && (
+            <div><span className="text-muted-foreground">Falta: </span>{report.missing.join(" · ")}</div>
+          )}
+          {sig?.nextAction && (
+            <div><span className="text-muted-foreground">Próxima acción: </span>{sig.nextAction}</div>
+          )}
+          {sig?.invalidation?.price != null && (
+            <div><span className="text-muted-foreground">Invalidación: </span><span className="text-destructive">{pxFmt(sig.invalidation.price)}</span>{sig.invalidation.reason ? ` (${sig.invalidation.reason})` : ""}</div>
+          )}
+        </div>
+      )}
+
+      {report.decision === "NO_TRADE" && (
+        <div className="mt-2 text-xs">
+          <span className="text-muted-foreground">Blockers: </span>
+          <span className="font-mono">{report.reasons.join(" · ") || "NO_VALID_SETUP"}</span>
+        </div>
+      )}
+
+      <div className="mt-2 text-[10px] text-muted-foreground">
+        Modelo legacy: {sig?.mlScore != null ? `${Math.round(sig.mlScore * 100)}% (diagnóstico)` : "—"}
       </div>
     </div>
   );

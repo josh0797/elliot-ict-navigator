@@ -70,3 +70,27 @@ describe("targets — fib projections (correct anchor)", () => {
     expect(tp2.price).toBeCloseTo(116 - 1.618 * 12, 5);
   });
 });
+
+describe("targets — validation & category", () => {
+  it("throws on non-positive risk", () => {
+    expect(() => pickTargets({
+      direction: "long", entry: 100, risk: 0, minRR: 1,
+      liquidity: [], primary: null, allocations: { TP1: 50, TP2: 30, TP3: 20 },
+    })).toThrow();
+  });
+  it("throws when allocations do not sum to 100", () => {
+    expect(() => pickTargets({
+      direction: "long", entry: 100, risk: 1, minRR: 1,
+      liquidity: [], primary: null, allocations: { TP1: 40, TP2: 30, TP3: 20 },
+    })).toThrow();
+  });
+  it("with no liquidity & no primary → all targets are FALLBACK and monotonic for long", () => {
+    const ts = pickTargets({
+      direction: "long", entry: 100, risk: 1, minRR: 1,
+      liquidity: [], primary: null, allocations: { TP1: 50, TP2: 30, TP3: 20 },
+    });
+    expect(ts.map((t) => t.category)).toEqual(["FALLBACK", "FALLBACK", "FALLBACK"]);
+    expect(ts[0].price).toBeLessThan(ts[1].price);
+    expect(ts[1].price).toBeLessThan(ts[2].price);
+  });
+});

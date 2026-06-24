@@ -360,6 +360,14 @@ export function detectSignals(
       weights: config.weights, recentBars: config.recentBars, candleCount: candles.length,
     });
 
+    // Phase-11 guard: a setup whose entire TP ladder is synthetic (R-fallback)
+    // cannot graduate to Grade A — there is no structural objective to honour.
+    const allFallback = targets.every((t) => t.category === "FALLBACK");
+    const cappedGrade = allFallback && (scoreCanon.grade === "A+" || scoreCanon.grade === "A")
+      ? "B" : scoreCanon.grade;
+    const warnings: string[] = [];
+    if (allFallback) warnings.push("ALL_TARGETS_FALLBACK_GRADE_CAPPED_AT_B");
+
     const waveLabel = primary.currentWave;
 
     // Frozen legacy ML score — ACTIVE BASELINE, parallel diagnostic only.
@@ -458,9 +466,9 @@ export function detectSignals(
       poi: { kind: candKind, id: poi.sourceIds[0], proximal: poi.proximal, distal: poi.distal, state: poi.type },
       score,
       scoreOut100: scoreCanon.score,
-      grade: scoreCanon.grade,
+      grade: cappedGrade,
       hardBlockers: [],
-      warnings: [],
+      warnings,
       mlScore,
       modelVersion,
       breakdown,

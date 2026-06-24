@@ -15,6 +15,8 @@ export interface TargetSpec {
   rr: number;
   riskReward: number;
   allocationPct: number;
+  /** Whether the target is anchored on real structure (liquidity / fib) or a synthetic R fallback. */
+  category: "STRUCTURAL" | "FALLBACK";
   source:
     | { kind: "LIQUIDITY"; liquidityId: string }
     | { kind: "FIB"; wave: string; ratio: number; from: number; to: number; projectedFrom: number }
@@ -73,6 +75,14 @@ export function pickTargets(args: {
   allocations: TargetAllocations;
 }): TargetSpec[] {
   const { direction, entry, risk, minRR, liquidity, primary, allocations } = args;
+  // Input validation — fail loudly so the engine drops the candidate setup.
+  if (!Number.isFinite(entry)) throw new Error("pickTargets: entry must be finite");
+  if (!Number.isFinite(risk) || risk <= 0) throw new Error("pickTargets: risk must be > 0");
+  if (!Number.isFinite(minRR) || minRR <= 0) throw new Error("pickTargets: minRR must be > 0");
+  const allocSum = allocations.TP1 + allocations.TP2 + allocations.TP3;
+  if (Math.abs(allocSum - 100) > 0.01) {
+    throw new Error(`pickTargets: allocations must sum to 100 (got ${allocSum})`);
+  }
   const wantSide = direction === "long" ? "BSL" : "SSL";
   const isAhead = (price: number) => direction === "long" ? price > entry : price < entry;
 
@@ -89,13 +99,13 @@ export function pickTargets(args: {
     const rr = Math.abs(liq.price - entry) / risk;
     targets.push({
       name: "TP1", price: liq.price, reason: `Liquidez ${liq.kind} (${liq.side})`,
-      rr, riskReward: rr, allocationPct: allocations.TP1,
+      rr, riskReward: rr, allocationPct: allocations.TP1, category: "STRUCTURAL",
       source: { kind: "LIQUIDITY", liquidityId: liq.id },
     });
   } else {
     const price = direction === "long" ? entry + 2 * risk : entry - 2 * risk;
     targets.push({
-      name: "TP1", price, reason: "Fallback 2R", rr: 2, riskReward: 2, allocationPct: allocations.TP1,
+      name: "TP1", price, reason: "Fallback 2R", rr: 2, riskReward: 2, allocationPct: allocations.TP1, category: "FALLBACK",
       source: { kind: "FALLBACK", r: 2 },
     });
   }
@@ -108,7 +118,7 @@ export function pickTargets(args: {
     const rr = Math.abs(nextLiq.price - entry) / risk;
     targets.push({
       name: "TP2", price: nextLiq.price, reason: `Liquidez ${nextLiq.kind} (${nextLiq.side})`,
-      rr, riskReward: rr, allocationPct: allocations.TP2,
+      rr, riskReward: rr, allocationPct: allocations.TP2, category: "STRUCTURAL",
       source: { kind: "LIQUIDITY", liquidityId: nextLiq.id },
     });
   } else if (primary) {
@@ -119,7 +129,7 @@ export function pickTargets(args: {
         const rr = Math.abs(price - entry) / risk;
         targets.push({
           name: "TP2", price, reason: `Fib 1.618 W${fib.wave}`,
-          rr, riskReward: rr, allocationPct: allocations.TP2,
+          rr, riskReward: rr, allocationPct: allocations.TP2, category: "STRUCTURAL",
           source: fib,
         });
       }
@@ -128,7 +138,7 @@ export function pickTargets(args: {
   if (targets.length < 2) {
     const price = direction === "long" ? entry + 3 * risk : entry - 3 * risk;
     targets.push({
-      name: "TP2", price, reason: "Fallback 3R", rr: 3, riskReward: 3, allocationPct: allocations.TP2,
+      name: "TP2", price, reason: "Fallback 3R", rr: 3, riskReward: 3, allocationPct: allocations.TP2, category: "FALLBACK",
       source: { kind: "FALLBACK", r: 3 },
     });
   }
@@ -145,7 +155,7 @@ export function pickTargets(args: {
         const rr = Math.abs(price - entry) / risk;
         targets.push({
           name: "TP3", price, reason: `Fib 2.618 W${fib.wave}`,
-          rr, riskReward: rr, allocationPct: allocations.TP3,
+          rr, riskReward: rr, allocationPct: allocations.TP3, category: "STRUCTURAL",
           source: fib,
         });
         tp3Added = true;
@@ -155,11 +165,31 @@ export function pickTargets(args: {
   if (!tp3Added) {
     const price = direction === "long" ? entry + 5 * risk : entry - 5 * risk;
     targets.push({
-      name: "TP3", price, reason: "Fallback 5R", rr: 5, riskReward: 5, allocationPct: allocations.TP3,
+      name: "TP3", price, reason: "Fallback 5R", rr: 5, riskReward: 5, allocationPct: allocations.TP3, category: "FALLBACK",
       source: { kind: "FALLBACK", r: 5 },
     });
   }
 
+  // Order invariant: long → TP1 < TP2 < TP3; short → TP1 > TP2 > TP3.
+  // Synthesise a slightly more distant fallback when a structural target collides.
+  for (let i = 1; i < targets.length; i++) {
+    const prev = targets[i - 1].price;
+    const cur = targets[i].price;
+    const monotonic = direction === "long" ? cur > prev : cur < prev;
+    if (!monotonic) {
+      const r = i === 1 ? 3 : 5;
+      const price = direction === "long" ? entry + r * risk : entry - r * risk;
+      targets[i] = {
+        ...targets[i],
+        price,
+        rr: r,
+        riskReward: r,
+        reason: `Fallback ${r}R (orden corregido)`,
+        category: "FALLBACK",
+        source: { kind: "FALLBACK", r },
+      };
+    }
+  }
   return targets;
 }
 
