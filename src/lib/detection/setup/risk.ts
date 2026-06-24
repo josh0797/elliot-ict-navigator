@@ -11,14 +11,18 @@ export type StopReason =
   | "BEYOND_PROTECTED_SWING"
   | "ELLIOTT_INVALIDATION";
 
-export interface StopLossResult {
-  price: number;
-  basis: SLBasis;
-  reason: StopReason;
-}
+export type StopLossError = "NO_VALID_STRUCTURAL_STOP" | "INVALID_ATR" | "INVALID_INPUT" | "STOP_TOO_FAR";
+
+export type StopLossResult =
+  | { valid: true; price: number; basis: SLBasis; reason: StopReason }
+  | { valid: false; error: StopLossError };
+
+/** Maximum SL distance from entry in ATR units. */
+const MAX_STOP_DISTANCE_ATR = 12;
 
 export function computeStopLoss(args: {
   direction: SignalDirection;
+  entry: number;
   poiDistal: number;
   atr: number;
   atrBufferMultiplier: number;
@@ -26,21 +30,32 @@ export function computeStopLoss(args: {
   sweepExtreme: number | null;
   protectedSwing: number | null;
 }): StopLossResult {
-  const { direction, poiDistal, atr, atrBufferMultiplier } = args;
+  const { direction, entry, poiDistal, atr, atrBufferMultiplier } = args;
+  if (!Number.isFinite(atr) || atr <= 0) return { valid: false, error: "INVALID_ATR" };
+  if (!Number.isFinite(entry) || !Number.isFinite(poiDistal) || !Number.isFinite(atrBufferMultiplier)) {
+    return { valid: false, error: "INVALID_INPUT" };
+  }
   const buffer = atr * atrBufferMultiplier;
+  if (!Number.isFinite(buffer)) return { valid: false, error: "INVALID_INPUT" };
 
-  const parts: Array<{ key: StopReason; value: number }> = [
+  const raw: Array<{ key: StopReason; value: number }> = [
     { key: "BEYOND_ORDER_BLOCK", value: poiDistal },
   ];
   if (args.elliottInvalidation != null && Number.isFinite(args.elliottInvalidation)) {
-    parts.push({ key: "ELLIOTT_INVALIDATION", value: args.elliottInvalidation });
+    raw.push({ key: "ELLIOTT_INVALIDATION", value: args.elliottInvalidation });
   }
   if (args.sweepExtreme != null && Number.isFinite(args.sweepExtreme)) {
-    parts.push({ key: "BEYOND_SWEEP", value: args.sweepExtreme });
+    raw.push({ key: "BEYOND_SWEEP", value: args.sweepExtreme });
   }
   if (args.protectedSwing != null && Number.isFinite(args.protectedSwing)) {
-    parts.push({ key: "BEYOND_PROTECTED_SWING", value: args.protectedSwing });
+    raw.push({ key: "BEYOND_PROTECTED_SWING", value: args.protectedSwing });
   }
+
+  // Only keep structural levels on the correct side of entry.
+  const parts = raw.filter((p) =>
+    direction === "long" ? p.value < entry : p.value > entry,
+  );
+  if (parts.length === 0) return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
 
   // Pick the most conservative side.
   const ranked = parts.slice().sort((a, b) =>
@@ -48,7 +63,16 @@ export function computeStopLoss(args: {
   );
   const chosen = ranked[0];
   const sl = direction === "long" ? chosen.value - buffer : chosen.value + buffer;
+  if (!Number.isFinite(sl)) return { valid: false, error: "INVALID_INPUT" };
+  // Side sanity.
+  if (direction === "long" && !(sl < entry)) return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
+  if (direction === "short" && !(sl > entry)) return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
+  // Distance sanity.
+  if (Math.abs(entry - sl) > MAX_STOP_DISTANCE_ATR * atr) {
+    return { valid: false, error: "STOP_TOO_FAR" };
+  }
   return {
+    valid: true,
     price: sl,
     reason: chosen.key,
     basis: {
