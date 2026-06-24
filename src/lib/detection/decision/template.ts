@@ -24,7 +24,7 @@ export function classifyTemplate(
 
   const recentSweep = [...ict.sweeps]
     .reverse()
-    .find((s) => s.index >= cutoff && (s.wickBeyond || s.closeBack));
+    .find((s) => s.index >= cutoff && s.wickBeyond && s.closeBack);
   const recentChoch = [...ict.structure]
     .reverse()
     .find((e) => e.type === "CHoCH" && e.state === "CONFIRMED" && e.index >= cutoff);
