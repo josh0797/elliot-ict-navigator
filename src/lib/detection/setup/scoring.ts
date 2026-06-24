@@ -3,7 +3,7 @@
  * are NOT a points problem — engine handles them before this runs.
  */
 import type { ElliottAnalysis } from "../elliott/types";
-import type { IctContext } from "../ict/types";
+import type { IctContext, OrderBlock, FVG } from "../ict/types";
 import type { ScoreWeights } from "./config";
 import { gradeFromScore } from "./config";
 import type { SelectedPOI } from "./poi-selector";
@@ -17,9 +17,41 @@ export interface ConfluenceAudit {
 }
 
 export interface ScoreResult {
-  score: number;            // 0..100
+  /** Final clamped 0..100 score. */
+  score: number;
+  /** Raw unclamped sum of awarded weights (diagnostic). */
+  rawScore: number;
+  /** Sum of all enabled weights — the ceiling if every confluence fires. */
+  maxAvailableScore: number;
   grade: ReturnType<typeof gradeFromScore>;
   confluences: ConfluenceAudit[];
+}
+
+const SCORE_FLOOR = 0;
+const SCORE_CEIL = 100;
+
+function validateWeights(weights: ScoreWeights): number {
+  let max = 0;
+  for (const [k, v] of Object.entries(weights)) {
+    if (!Number.isFinite(v) || v < 0) {
+      throw new Error(`computeScore: invalid weight for ${k} (${v}); must be finite ≥ 0`);
+    }
+    max += v;
+  }
+  return max;
+}
+
+function obStillValid(ict: IctContext, ids: ReadonlyArray<string>): boolean {
+  return ids.some((id) => {
+    const ob: OrderBlock | undefined = ict.orderBlocks.find((o) => o.id === id);
+    return !!ob && (ob.state === "FRESH" || ob.state === "TOUCHED");
+  });
+}
+function fvgStillValid(ict: IctContext, ids: ReadonlyArray<string>): boolean {
+  return ids.some((id) => {
+    const f: FVG | undefined = ict.fvgs.find((x) => x.id === id);
+    return !!f && !f.mitigated;
+  });
 }
 
 export function computeScore(args: {
@@ -32,6 +64,7 @@ export function computeScore(args: {
   candleCount: number;
 }): ScoreResult {
   const { direction, elliott, ict, poi, weights, recentBars, candleCount } = args;
+  const maxAvailableScore = validateWeights(weights);
   const cutoff = candleCount - recentBars;
   const audit: ConfluenceAudit[] = [];
 
@@ -59,9 +92,14 @@ export function computeScore(args: {
   const lastBos = [...ict.structure].reverse().find((e) => e.type === "BOS" && e.state === "CONFIRMED" && e.index >= cutoff);
   add("BOS_DISPLACEMENT", !!lastBos && lastBos.direction === direction && lastBos.displacement, `BOS displacement ${lastBos?.direction ?? "?"}`);
 
-  add("OB_VALID", poi.type === "OB" || poi.type === "OB_FVG_INTERSECTION", "OB válido");
-  add("FVG_VALID", poi.type === "FVG" || poi.type === "OB_FVG_INTERSECTION", "FVG válido");
-  add("OB_FVG_INTERSECTION", poi.type === "OB_FVG_INTERSECTION", "Intersección OB+FVG");
+  // POI type alone is NOT enough — re-verify the source object is still active.
+  const obKind = poi.type === "OB" || poi.type === "OB_FVG_INTERSECTION";
+  const fvgKind = poi.type === "FVG" || poi.type === "OB_FVG_INTERSECTION";
+  const obAlive = obKind && obStillValid(ict, poi.sourceIds);
+  const fvgAlive = fvgKind && fvgStillValid(ict, poi.sourceIds);
+  add("OB_VALID", obAlive, obAlive ? "OB activo (FRESH/TOUCHED)" : "OB no activo");
+  add("FVG_VALID", fvgAlive, fvgAlive ? "FVG activo (no mitigado)" : "FVG no activo");
+  add("OB_FVG_INTERSECTION", poi.type === "OB_FVG_INTERSECTION" && obAlive && fvgAlive, "Intersección OB+FVG");
 
   if (ict.pdArray) {
     const aligned = (direction === "long" && ict.pdArray.zone === "DISCOUNT")
@@ -74,6 +112,7 @@ export function computeScore(args: {
   add("KILLZONE_ACTIVE", !!ict.killzone, ict.killzone ? `Killzone ${ict.killzone.name}` : "Sin killzone");
   add("HTF_ALIGNED", false, "HTF no integrado todavía");
 
-  const score = audit.reduce((s, a) => s + a.points, 0);
-  return { score, grade: gradeFromScore(score), confluences: audit };
+  const rawScore = audit.reduce((s, a) => s + a.points, 0);
+  const score = Math.max(SCORE_FLOOR, Math.min(SCORE_CEIL, rawScore));
+  return { score, rawScore, maxAvailableScore, grade: gradeFromScore(score), confluences: audit };
 }
