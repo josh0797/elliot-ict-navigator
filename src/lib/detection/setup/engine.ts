@@ -307,6 +307,7 @@ export function detectSignals(
     // ── SL aggregation across structural levels + ATR buffer.
     const slRes = computeStopLoss({
       direction,
+      entry,
       poiDistal: poi.distal,
       atr: lastAtr,
       atrBufferMultiplier: config.slAtrBufferMultiplier,
@@ -314,8 +315,10 @@ export function detectSignals(
       sweepExtreme,
       protectedSwing,
     });
+    if (!slRes.valid) continue;
     const sl = slRes.price;
     const basis = slRes.basis;
+    const slReason = slRes.reason;
 
     // Gate 3/4/6: finite + side + risk.
     if (!isFinitePositive(entry) || !Number.isFinite(sl)) continue;
@@ -419,9 +422,9 @@ export function detectSignals(
       : trigger.description;
 
     const invalidationReason =
-      slRes.reason === "ELLIOTT_INVALIDATION" ? "Invalidación Elliott rota"
-      : slRes.reason === "BEYOND_SWEEP" ? "Estructura del sweep rota"
-      : slRes.reason === "BEYOND_PROTECTED_SWING" ? "Swing protegido perforado"
+      slReason === "ELLIOTT_INVALIDATION" ? "Invalidación Elliott rota"
+      : slReason === "BEYOND_SWEEP" ? "Estructura del sweep rota"
+      : slReason === "BEYOND_PROTECTED_SWING" ? "Swing protegido perforado"
       : "Distal del POI perforado";
 
     const rationale = buildRationale(direction, primary, confluences, rr1);
@@ -444,7 +447,7 @@ export function detectSignals(
       rrToTp2: rr2,
       entryZone,
       entryPolicy,
-      stopReason: slRes.reason,
+      stopReason: slReason,
       targets,
       selectedPoi: poi as SelectedPOI,
       trigger,

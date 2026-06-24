@@ -50,7 +50,7 @@ export function computeScore(args: {
 
   const wantSweep = direction === "long" ? "sell_side" : "buy_side";
   add("SWEEP_OPPOSITE_RECENT",
-    ict.sweeps.some((s) => s.type === wantSweep && s.index >= cutoff && (s.wickBeyond || s.closeBack)),
+    ict.sweeps.some((s) => s.type === wantSweep && s.index >= cutoff && s.wickBeyond && s.closeBack),
     "Sweep opuesto reciente");
 
   const lastChoch = [...ict.structure].reverse().find((e) => e.type === "CHoCH" && e.state === "CONFIRMED" && e.index >= cutoff);
