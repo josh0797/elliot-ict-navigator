@@ -29,6 +29,13 @@ export interface SetupTrigger {
   triggeredAt?: number | null;
   triggeredCandleIndex?: number | null;
   triggeredPrice?: number | null;
+  /** Reason the trigger is NOT satisfied (when relevant). */
+  notSatisfiedReason?:
+    | "PRICE_OUTSIDE_ZONE"
+    | "NO_CONFIRMED_CANDLE"
+    | "AWAITING_RETRACE"
+    | "AWAITING_CLOSE"
+    | null;
 }
 
 /**
@@ -55,16 +62,29 @@ export function deriveTrigger(args: {
 
   // Market entry → already triggered.
   if (orderType === "MARKET_BUY" || orderType === "MARKET_SELL") {
+    const lo = entryZone.bottom;
+    const hi = entryZone.top;
+    const priceInside = currentPrice >= lo && currentPrice <= hi;
+    const confClose = lastConfirmedCandle?.close;
+    const haveConfirmed = typeof confClose === "number" && Number.isFinite(confClose);
+    const confInside = haveConfirmed && confClose! >= lo && confClose! <= hi;
+    const satisfied = priceInside && confInside;
+    let notSatisfiedReason: SetupTrigger["notSatisfiedReason"] = null;
+    if (!haveConfirmed) notSatisfiedReason = "NO_CONFIRMED_CANDLE";
+    else if (!priceInside || !confInside) notSatisfiedReason = "PRICE_OUTSIDE_ZONE";
     return {
       type: "PRICE_TOUCH",
       price: entry,
       zone: entryZone,
-      description: `Precio ${currentPrice.toFixed(5)} dentro de la zona ${entryZone.bottom.toFixed(5)}–${entryZone.top.toFixed(5)}. Entrada activa.`,
-      satisfied: true,
+      description: satisfied
+        ? `Precio ${currentPrice.toFixed(5)} dentro de la zona ${lo.toFixed(5)}–${hi.toFixed(5)}. Entrada activa.`
+        : `Precio ${currentPrice.toFixed(5)} fuera de la zona ${lo.toFixed(5)}–${hi.toFixed(5)}. Esperar retorno al POI.`,
+      satisfied,
       triggerPolicy: "MARKET_INSIDE_ZONE",
-      triggeredAt: lastConfirmedCandle?.time ?? null,
-      triggeredCandleIndex: lastConfirmedCandle?.index ?? null,
-      triggeredPrice: currentPrice,
+      triggeredAt: satisfied ? (lastConfirmedCandle?.time ?? null) : null,
+      triggeredCandleIndex: satisfied ? (lastConfirmedCandle?.index ?? null) : null,
+      triggeredPrice: satisfied ? currentPrice : null,
+      notSatisfiedReason,
     };
   }
 
