@@ -142,20 +142,20 @@ describe("decision/engine", () => {
     expect(bias.conflict).toBe(false);
   });
 
-  it("flags DIRECTION_CONFLICT when close vote has no live Elliott primary to break the tie", () => {
-    // No primary count → alternatives kick in (or nothing) and the tie-break
-    // has nothing to lean on, so we stay NEUTRAL and report the conflict.
+  it("stays NEUTRAL on a close vote when no live Elliott primary can break the tie", () => {
+    // Bullish ICT_STRUCTURE (2.0) vs bearish ICT_BOS (1.5) + PD PREMIUM (1.0) = 2.5.
+    // Diff 0.5 / total 4.5 = 11% < 15% → tie. No primary → NEUTRAL, conflict reported.
     const elliott: ElliottAnalysis = { primary: null, alternatives: [] };
-    const ctx = ict("BEARISH", {
+    const ctx = ict("BULLISH", {
       structure: [
         { id: "s1", type: "BOS", direction: "short", price: 1.0, time: 0, index: 95,
           state: "CONFIRMED", brokenPivotId: "p", breakIndex: 95, breakPrice: 1.0,
           closeBeyondAtr: 1, displacement: true },
       ],
+      pdArray: { high: 2, low: 1, midpoint: 1.5, currentPrice: 1.9, zone: "PREMIUM", position: 0.9 },
     });
-    // Inject a synthetic bullish counter-vote via PD DISCOUNT to force a tie.
-    ctx.pdArray = { high: 2, low: 1, midpoint: 1.5, currentPrice: 1.1, zone: "DISCOUNT", position: 0.1 };
     const bias = computeDirectionBias(elliott, ctx, 100);
-    expect(bias.dominant === "NEUTRAL" || bias.conflict).toBe(true);
+    expect(bias.dominant).toBe("NEUTRAL");
+    expect(bias.conflict).toBe(true);
   });
 });
