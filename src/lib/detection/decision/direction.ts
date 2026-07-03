@@ -1,5 +1,6 @@
 import type { ElliottAnalysis } from "../elliott/types";
 import type { IctContext } from "../ict/types";
+import type { DiagonalPattern } from "../elliott/diagonal";
 import type { DirectionBiasResult, DirectionVote, VoteDirection } from "./types";
 
 const RECENT_BARS = 10;
@@ -21,6 +22,7 @@ export function computeDirectionBias(
   elliott: ElliottAnalysis,
   ict: IctContext,
   candleCount: number,
+  diagonal: DiagonalPattern | null = null,
 ): DirectionBiasResult {
   const votes: DirectionVote[] = [];
 
@@ -120,6 +122,17 @@ export function computeDirectionBias(
     } else if (ict.pdArray.zone === "DISCOUNT") {
       votes.push({ source: "PD_ARRAY", direction: "BULLISH", weight: 1.0, reason: "Price in DISCOUNT" });
     }
+  }
+
+  // 8. Ending diagonal (highest-conviction reversal when broken out).
+  if (diagonal) {
+    const dir: VoteDirection = diagonal.reversalDirection === "long" ? "BULLISH" : "BEARISH";
+    votes.push({
+      source: "ELLIOTT_DIAGONAL",
+      direction: dir,
+      weight: diagonal.brokenOut ? 2.5 : 1.2,
+      reason: `Ending diagonal ${diagonal.brokenOut ? "broken out" : "completing"} (Q${diagonal.quality})`,
+    });
   }
 
   let bullScore = 0;
