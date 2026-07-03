@@ -75,12 +75,17 @@ export function detectEndingDiagonal(
   opts: DetectDiagonalOptions = {},
 ): DiagonalPattern | null {
   const lookback = opts.lookbackPivots ?? 30;
-  const confirmed = pivots.filter((p) => p.confirmed).slice(-lookback);
-  if (confirmed.length < 5 || candles.length < 10) return null;
+  // Accept the provisional tail pivot for wave-5: when the breakout already
+  // closed beyond the 2-4 line, waiting for the right-bar confirmation window
+  // would miss the trade. Waves 1-4 are still required to be confirmed.
+  const scan = pivots.slice(-lookback);
+  if (scan.length < 5 || candles.length < 10) return null;
 
   // Try the most recent window first: scan backwards over 5-pivot windows.
-  for (let end = confirmed.length - 1; end >= 4; end--) {
-    const w = confirmed.slice(end - 4, end + 1);
+  for (let end = scan.length - 1; end >= 4; end--) {
+    const w = scan.slice(end - 4, end + 1);
+    // Require w1..w4 confirmed; w5 may be provisional (validated by breakout).
+    if (!w[0].confirmed || !w[1].confirmed || !w[2].confirmed || !w[3].confirmed) continue;
 
     const bearish = tryDiagonal(w, candles, "long", opts);   // falling wedge → LONG reversal
     if (bearish) return bearish;
