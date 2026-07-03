@@ -161,6 +161,10 @@ function tryDiagonal(
   const lastIdx = candles.length - 1;
   const breakoutLevel = valueAt(line24, lastIdx);
 
+  // Provisional wave-5 is only accepted when the breakout has already closed
+  // beyond the 2-4 line — otherwise the pattern is unconfirmed by structure.
+  if (!p5.confirmed && !brokenOut) return null;
+
   // Quality: base 55, +15 throw-over, +15 contraction, +15 tight convergence.
   const spreadStart = Math.abs(valueAt(line24, p1.index) - valueAt(line13, p1.index));
   const spreadEnd   = Math.abs(valueAt(line24, p5.index) - valueAt(line13, p5.index));
