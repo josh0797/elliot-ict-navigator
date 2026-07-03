@@ -1,5 +1,6 @@
 import type { ElliottAnalysis } from "../elliott/types";
 import type { IctContext } from "../ict/types";
+import type { DiagonalPattern } from "../elliott/diagonal";
 import type { TradeSignal } from "../setup/types";
 import type { SetupTemplate } from "./types";
 
@@ -17,10 +18,21 @@ export function classifyTemplate(
   elliott: ElliottAnalysis,
   ict: IctContext,
   candleCount: number,
+  diagonal: DiagonalPattern | null = null,
 ): SetupTemplate {
   if (!signal) return "NO_VALID_TEMPLATE";
   const dir = signal.direction;
   const cutoff = candleCount - RECENT_BARS;
+
+  // 0. Ending diagonal breakout — highest precedence when aligned.
+  if (
+    diagonal?.brokenOut &&
+    diagonal.reversalDirection === dir &&
+    diagonal.breakoutIndex !== null &&
+    candleCount - diagonal.breakoutIndex <= RECENT_BARS
+  ) {
+    return "ENDING_DIAGONAL_REVERSAL";
+  }
 
   const recentSweep = [...ict.sweeps]
     .reverse()

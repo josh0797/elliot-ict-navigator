@@ -10,6 +10,7 @@ import { toElliottResult } from "./detection/elliott/dto";
 import { detectSignals } from "./detection/setup/engine";
 import type { DetectSetupsResult } from "./detection/setup/types";
 import { decideOperation } from "./detection/decision/engine";
+import { detectEndingDiagonal } from "./detection/elliott/diagonal";
 
 const Input = z.object({
   symbol: z.string().min(2),
@@ -81,18 +82,20 @@ export const detectSetups = createServerFn({ method: "POST" })
     const bias = currentBias(pivots);
     const analysis = analyzeElliott(pivots);
     const ict = analyzeIct(lifted, pivots, { timeframe: data.interval });
+    const diagonal = detectEndingDiagonal(pivots, lifted);
     const signals = detectSignals(lifted, pivots, analysis, ict, {
       symbol: data.symbol,
       timeframe: data.interval,
       topN: data.topN,
     });
-    const decision = decideOperation(analysis, ict, signals, lifted.length);
+    const decision = decideOperation(analysis, ict, signals, lifted.length, diagonal);
     return {
       symbol: data.symbol,
       timeframe: data.interval,
       signals,
       elliott: toElliottResult(analysis, bias),
       decision,
+      diagonal,
       provider,
     };
   });
@@ -141,6 +144,9 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
     const ltfLifted = liftCandles(ltfRes.candles);
     const ltfPivots = detectPivots(ltfLifted);
     const ict = analyzeIct(ltfLifted, ltfPivots, { timeframe: data.interval });
+    // Diagonal detected on the LTF (execution timeframe) where the wedge
+    // and its breakout live.
+    const diagonal = detectEndingDiagonal(ltfPivots, ltfLifted);
 
     // HTF may fail independently — degrade gracefully to LTF-only Elliott.
     let analysis;
@@ -160,7 +166,7 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
       timeframe: data.interval,
       topN: data.topN,
     });
-    const decision = decideOperation(analysis, ict, signals, ltfLifted.length);
+    const decision = decideOperation(analysis, ict, signals, ltfLifted.length, diagonal);
 
     return {
       symbol: data.symbol,
@@ -169,6 +175,7 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
       signals,
       elliott: toElliottResult(analysis, elliottBias),
       decision,
+      diagonal,
       provider: ltfRes.provider,
     };
   });

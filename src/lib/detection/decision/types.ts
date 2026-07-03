@@ -31,6 +31,7 @@ export type SetupTemplate =
   | "ELLIOTT_WAVE_3_ENTRY"
   | "ELLIOTT_WAVE_5_ENTRY"
   | "ABC_COMPLETION_REVERSAL"
+  | "ENDING_DIAGONAL_REVERSAL"
   | "NO_VALID_TEMPLATE";
 
 export type VoteDirection = "BULLISH" | "BEARISH" | "NEUTRAL";

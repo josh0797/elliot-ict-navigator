@@ -1,5 +1,6 @@
 import type { ElliottResultDTO } from "../elliott/types";
 import type { OperationalReport } from "../decision/types";
+import type { DiagonalPattern } from "../elliott/diagonal";
 import type { SelectedPOI } from "./poi-selector";
 import type { SetupTrigger } from "./trigger";
 import type { StopReason } from "./risk";
@@ -161,6 +162,7 @@ export interface DetectSetupsResult {
   signals: TradeSignal[];
   elliott: ElliottResultDTO;
   decision: OperationalReport;
+  diagonal?: DiagonalPattern | null;
   provider?: "polygon" | "twelvedata" | "none";
   error?: string;
 }
