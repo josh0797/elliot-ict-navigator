@@ -3,7 +3,13 @@ import type { IctContext } from "../ict/types";
 import type { DirectionBiasResult, DirectionVote, VoteDirection } from "./types";
 
 const RECENT_BARS = 10;
-const CONFLICT_TOLERANCE = 1.5;
+/**
+ * Relative conflict tolerance: NEUTRAL is only declared when the winning
+ * side leads by less than `CONFLICT_TOLERANCE_REL` of the total vote mass.
+ * This keeps 4.0/4.5 (real tie) neutral while letting 10.0/11.0 resolve
+ * cleanly.
+ */
+const CONFLICT_TOLERANCE_REL = 0.15;
 /** Minimum score required to fall back to a Elliott alternative count. */
 const MIN_ALTERNATIVE_SCORE = 0.4;
 
@@ -124,12 +130,25 @@ export function computeDirectionBias(
   }
 
   let dominant: VoteDirection = "NEUTRAL";
-  if (bullScore === 0 && bearScore === 0) dominant = "NEUTRAL";
-  else if (Math.abs(bullScore - bearScore) < CONFLICT_TOLERANCE) dominant = "NEUTRAL";
-  else dominant = bullScore > bearScore ? "BULLISH" : "BEARISH";
+  const diff = Math.abs(bullScore - bearScore);
+  const total = bullScore + bearScore;
+  const relDiff = total > 0 ? diff / total : 0;
+  const isTie = total > 0 && relDiff < CONFLICT_TOLERANCE_REL;
+  const elliottPrimaryVote = votes.find((v) => v.source === "ELLIOTT_PRIMARY");
 
-  const conflict =
-    bullScore >= 2 && bearScore >= 2 && Math.abs(bullScore - bearScore) < CONFLICT_TOLERANCE;
+  if (total === 0) {
+    dominant = "NEUTRAL";
+  } else if (isTie) {
+    // Tie-break: if the HTF Elliott primary count is alive, its direction
+    // wins the desempate. Otherwise fall back to NEUTRAL.
+    dominant = elliottPrimaryVote ? elliottPrimaryVote.direction : "NEUTRAL";
+  } else {
+    dominant = bullScore > bearScore ? "BULLISH" : "BEARISH";
+  }
+
+  // Still report the conflict, but suppress it when a live macro Elliott
+  // count is available to break the tie.
+  const conflict = bullScore >= 2 && bearScore >= 2 && isTie && !elliottPrimaryVote;
 
   return { dominant, bullScore, bearScore, conflict, votes };
 }
