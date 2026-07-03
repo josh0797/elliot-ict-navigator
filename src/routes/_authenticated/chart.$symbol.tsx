@@ -3,7 +3,7 @@ import { z } from "zod";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeSymbol } from "@/lib/elliott.functions";
-import { detectSetups } from "@/lib/setups.functions";
+import { detectSetupsMTF } from "@/lib/setups.functions";
 import { fetchOhlcv } from "@/lib/marketData.functions";
 import type { Candle } from "@/lib/twelvedata.functions";
 import { detectSetup } from "@/lib/detection/engine";
@@ -79,7 +79,7 @@ function ChartPage() {
   const decoded = decodeSymbolParam(symbol);
   const fetch = useServerFn(fetchOhlcv);
   const analyze = useServerFn(analyzeSymbol);
-  const findSetups = useServerFn(detectSetups);
+  const findSetups = useServerFn(detectSetupsMTF);
 
   const [candles, setCandles] = useState<Candle[]>([]);
   const [setup, setSetup] = useState<TradeSetup | null>(null);
