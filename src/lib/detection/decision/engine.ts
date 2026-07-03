@@ -66,6 +66,17 @@ function hasMandatoryFailure(invalidations: readonly string[]): boolean {
   );
 }
 
+function hasMandatoryFailureExcept(
+  invalidations: readonly string[],
+  waive: readonly (typeof MANDATORY_RULES)[number][],
+): boolean {
+  return MANDATORY_RULES.filter((code) => !waive.includes(code)).some((code) =>
+    MANDATORY_RULE_ALIASES[code].some((alias) =>
+      invalidations.some((v) => v.includes(alias)),
+    ),
+  );
+}
+
 function pickSignalForDirection(
   signals: ReadonlyArray<TradeSignal>,
   dir: "long" | "short",
