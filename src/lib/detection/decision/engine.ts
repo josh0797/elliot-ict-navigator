@@ -10,6 +10,7 @@
  */
 import type { ElliottAnalysis } from "../elliott/types";
 import type { IctContext } from "../ict/types";
+import type { DiagonalPattern } from "../elliott/diagonal";
 import type { TradeSignal } from "../setup/types";
 import { computeDirectionBias } from "./direction";
 import { classifyTemplate } from "./template";
@@ -124,6 +125,7 @@ export function decideOperation(
   ict: IctContext,
   signals: ReadonlyArray<TradeSignal>,
   candleCount: number,
+  diagonal: DiagonalPattern | null = null,
   opts: DecisionEngineOptions = {},
 ): OperationalReport {
   const minRR = opts.minRR ?? DEFAULT_MIN_RR;
@@ -164,7 +166,11 @@ export function decideOperation(
 
   // ── Gate C: mandatory Elliott rule FAILed → NO_TRADE unless an alternative is valid.
   const primaryRules = (elliott.primary?.invalidations ?? []) as readonly string[];
-  const mandatoryFailed = hasMandatoryFailure(primaryRules);
+  // Ending diagonals REQUIRE wave-4 overlap by definition — waive W4_OVERLAP
+  // when a valid diagonal pattern is present.
+  const mandatoryFailed = diagonal
+    ? hasMandatoryFailureExcept(primaryRules, ["W4_OVERLAP"])
+    : hasMandatoryFailure(primaryRules);
   if (mandatoryFailed && elliott.alternatives.length === 0) {
     const r: OperationalReport = {
       decision: "NO_TRADE",
@@ -181,7 +187,7 @@ export function decideOperation(
   }
 
   // ── Direction arbitration
-  const bias = computeDirectionBias(elliott, ict, candleCount);
+  const bias = computeDirectionBias(elliott, ict, candleCount, diagonal);
 
   if (bias.conflict) {
     const r: OperationalReport = {
@@ -285,7 +291,7 @@ export function decideOperation(
   }
 
   const status = statusFromSignal(signal);
-  const template = classifyTemplate(signal, elliott, ict, candleCount);
+  const template = classifyTemplate(signal, elliott, ict, candleCount, diagonal);
 
   // BUY/SELL only when armed-with-pending-order or already triggered.
   const decision = decisionFromSignal(signal);
