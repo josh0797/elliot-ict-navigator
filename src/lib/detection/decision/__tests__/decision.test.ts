@@ -129,14 +129,33 @@ describe("decision/engine", () => {
     expect(r.status === "WAITING_FOR_SWEEP" || r.status === "WAITING_FOR_STRUCTURE_SHIFT" || r.status === "WATCHING").toBe(true);
   });
 
-  it("flags DIRECTION_CONFLICT when bull and bear votes are close", () => {
+  it("breaks a close bull/bear tie in favor of the live HTF Elliott primary", () => {
+    // Bullish Elliott primary + wave (3.2) vs bearish ICT structure + PREMIUM (~3.0).
+    // Relative diff is well under 15% → tie-break kicks in and Elliott wins.
     const elliott: ElliottAnalysis = { primary: bullishCount(), alternatives: [] };
     const ctx = ict("BEARISH", {
       pdArray: { high: 2, low: 1, midpoint: 1.5, currentPrice: 1.9, zone: "PREMIUM", position: 0.9 },
     });
     const bias = computeDirectionBias(elliott, ctx, 100);
-    expect(bias.conflict || bias.dominant === "NEUTRAL").toBe(true);
-    const r = decideOperation(elliott, ctx, [], 100);
-    expect(r.decision === "WAIT" || r.decision === "NO_TRADE").toBe(true);
+    expect(bias.dominant).toBe("BULLISH");
+    // Macro count present → conflict is suppressed even though scores are close.
+    expect(bias.conflict).toBe(false);
+  });
+
+  it("flags DIRECTION_CONFLICT when close vote has no live Elliott primary to break the tie", () => {
+    // No primary count → alternatives kick in (or nothing) and the tie-break
+    // has nothing to lean on, so we stay NEUTRAL and report the conflict.
+    const elliott: ElliottAnalysis = { primary: null, alternatives: [] };
+    const ctx = ict("BEARISH", {
+      structure: [
+        { id: "s1", type: "BOS", direction: "short", price: 1.0, time: 0, index: 95,
+          state: "CONFIRMED", brokenPivotId: "p", breakIndex: 95, breakPrice: 1.0,
+          closeBeyondAtr: 1, displacement: true },
+      ],
+    });
+    // Inject a synthetic bullish counter-vote via PD DISCOUNT to force a tie.
+    ctx.pdArray = { high: 2, low: 1, midpoint: 1.5, currentPrice: 1.1, zone: "DISCOUNT", position: 0.1 };
+    const bias = computeDirectionBias(elliott, ctx, 100);
+    expect(bias.dominant === "NEUTRAL" || bias.conflict).toBe(true);
   });
 });
