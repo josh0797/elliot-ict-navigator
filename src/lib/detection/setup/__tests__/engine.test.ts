@@ -198,3 +198,21 @@ it("SL policy: slBasis records every contributing structural level", () => {
   expect(sb.chosen).toBe("min");
   expect(out[0].sl < out[0].entry).toBeTruthy();
 });
+
+it("anticipation: wave-2 + fresh sweep + POI produces ARMED BUY_LIMIT even without BOS", () => {
+  const elliott = bullishElliott(); // currentWave = "2"
+  const priceAtDet = candles[candles.length - 2].close;
+  // POI sits BELOW price → BUY_LIMIT candidate.
+  const ict = bullishIct(candles.length - 1, { obTop: priceAtDet - 1, obBottom: priceAtDet - 2 });
+  ict.structure = []; // no BOS/CHoCH confirmed
+  // Keep the sweep on sell_side (opposite side for a long) fresh; drop displacement
+  // so the structuralConfirmation SWEEP_DISPLACEMENT path also fails.
+  ict.sweeps = ict.sweeps.map((s) => ({ ...s, displacementAfter: false }));
+  const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
+  expect(out.length).toBeGreaterThan(0);
+  const s = out[0];
+  expect(s.orderType).toBe("BUY_LIMIT");
+  expect(s.status).toBe("WAITING_RETRACE");
+  expect(s.warnings).toContain("ANTICIPATION_NO_STRUCTURAL_CONFIRMATION");
+  expect(s.gatesPassed).toContain("ANTICIPATION_MODE");
+});

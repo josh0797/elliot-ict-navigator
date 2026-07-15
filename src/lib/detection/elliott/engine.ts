@@ -176,9 +176,7 @@ export function detectCorrective(
 }
 
 export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis {
-  // Prefer MAJOR pivots, fall back to all if insufficient.
-  const major = pivots.filter((p) => p.strength === "MAJOR");
-  const pool = major.length >= 4 ? major : pivots.slice();
+  const pool = selectElliottPool(pivots);
 
   const cands = generateCandidates(pool);
   if (cands.length === 0) return { primary: null, alternatives: [] };
@@ -212,4 +210,45 @@ export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis 
   }
 
   return { primary, alternatives };
+}
+
+/**
+ * Pool selection for macro counts.
+ *
+ * 1. Prefer MAJOR pivots; fall back to ALL pivots if fewer than 4 majors.
+ * 2. When the pool is large (long HTF windows on trending markets), the
+ *    candidate generator saturates on noisy MINOR-like sequences and often
+ *    returns short DEVELOPING counts (0-1-2) that outrank longer completed
+ *    impulses. Cap the working pool to the `MAX_POOL_SIZE` most prominent
+ *    pivots by ATR distance, keeping the most recent pivot always so the
+ *    live edge of the market is never dropped, then re-enforce type
+ *    alternation after the filter.
+ */
+/**
+ * Recency-based cap: the count is anchored at the live edge, so preserve the
+ * last `MAX_POOL_SIZE` pivots. Older prominent swings do not help — they
+ * add candidates that spuriously outrank the current impulse.
+ */
+const MAX_POOL_SIZE = 15;
+
+function selectElliottPool(pivots: ReadonlyArray<PivotV2>): PivotV2[] {
+  const major = pivots.filter((p) => p.strength === "MAJOR");
+  const base: PivotV2[] = major.length >= 4 ? major.slice() : pivots.slice();
+  if (base.length <= MAX_POOL_SIZE) return base;
+  const tail = base.slice(base.length - MAX_POOL_SIZE);
+  return dedupeAlt(tail);
+}
+
+function dedupeAlt(pivots: PivotV2[]): PivotV2[] {
+  const out: PivotV2[] = [];
+  for (const p of pivots) {
+    const prev = out[out.length - 1];
+    if (prev && prev.type === p.type) {
+      const keepNew = p.type === "HIGH" ? p.price > prev.price : p.price < prev.price;
+      if (keepNew) out[out.length - 1] = p;
+      continue;
+    }
+    out.push(p);
+  }
+  return out;
 }
