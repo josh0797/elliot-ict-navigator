@@ -21,7 +21,22 @@ export interface AnalyzeResponse {
   ict: IctContext | null;
   provider?: "polygon" | "twelvedata" | "none";
   error?: string;
+  /** Timeframe the Elliott count actually ran on (HTF when available). */
+  countTimeframe?: string;
+  /** Timeframe used for ICT + execution. */
+  executionTimeframe?: string;
 }
+
+/**
+ * LTF (execution / ICT) → HTF (macro Elliott count). Kept in sync with the
+ * MTF pipeline in `setups.functions.ts`.
+ */
+const HTF_MAP: Record<string, string> = {
+  "1m": "15min", "5min": "1h", "5m": "1h",
+  "15min": "4h", "15m": "4h", "30min": "4h", "30m": "4h",
+  "1h": "1day", "2h": "1day", "4h": "1day",
+  "1day": "1week", "1d": "1week",
+};
 
 function emptyElliott(): ElliottResultDTO {
   return {
@@ -41,14 +56,41 @@ function emptyElliott(): ElliottResultDTO {
 export const analyzeSymbol = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<AnalyzeResponse> => {
-    const { candles, provider, error } = await fetchOhlcv({ data });
+    const htfInterval = HTF_MAP[data.interval];
+    const [ltfRes, htfRes] = await Promise.all([
+      fetchOhlcv({ data }),
+      htfInterval
+        ? fetchOhlcv({ data: { ...data, interval: htfInterval, outputsize: 300 } })
+        : Promise.resolve(null),
+    ]);
+    const { candles, provider, error } = ltfRes;
     if (error || candles.length === 0) {
-      return { elliott: emptyElliott(), ict: null, provider, error: error ?? "No candles" };
+      return {
+        elliott: emptyElliott(), ict: null, provider,
+        error: error ?? "No candles",
+        executionTimeframe: data.interval,
+        countTimeframe: data.interval,
+      };
     }
-    const lifted = liftCandles(candles);
-    const pivots = detectPivots(lifted);
-    const bias = currentBias(pivots);
-    const analysis = analyzeElliott(pivots);
-    const ict = analyzeIct(lifted, pivots, { timeframe: data.interval });
-    return { elliott: toElliottResult(analysis, bias), ict, provider };
+    const ltfLifted = liftCandles(candles);
+    const ltfPivots = detectPivots(ltfLifted);
+    const ict = analyzeIct(ltfLifted, ltfPivots, { timeframe: data.interval });
+
+    // Prefer HTF pivots for the macro Elliott count; degrade to LTF if the
+    // HTF fetch failed or returned nothing usable.
+    let countPivots = ltfPivots;
+    let countTf = data.interval;
+    if (htfRes && !htfRes.error && htfRes.candles.length > 0) {
+      countPivots = detectPivots(liftCandles(htfRes.candles));
+      countTf = htfInterval!;
+    }
+    const analysis = analyzeElliott(countPivots);
+    const bias = currentBias(countPivots);
+    return {
+      elliott: toElliottResult(analysis, bias),
+      ict,
+      provider,
+      countTimeframe: countTf,
+      executionTimeframe: data.interval,
+    };
   });
