@@ -224,26 +224,19 @@ export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis 
  *    live edge of the market is never dropped, then re-enforce type
  *    alternation after the filter.
  */
+/**
+ * Recency-based cap: the count is anchored at the live edge, so preserve the
+ * last `MAX_POOL_SIZE` pivots. Older prominent swings do not help — they
+ * add candidates that spuriously outrank the current impulse.
+ */
 const MAX_POOL_SIZE = 15;
 
 function selectElliottPool(pivots: ReadonlyArray<PivotV2>): PivotV2[] {
   const major = pivots.filter((p) => p.strength === "MAJOR");
-  let base: PivotV2[] = major.length >= 4 ? major.slice() : pivots.slice();
+  const base: PivotV2[] = major.length >= 4 ? major.slice() : pivots.slice();
   if (base.length <= MAX_POOL_SIZE) return base;
-
-  const last = base[base.length - 1];
-  const keep = new Set<string>([last.id]);
-  const byProminence = base
-    .slice(0, -1)
-    .slice()
-    .sort((a, b) => b.atrDistance - a.atrDistance)
-    .slice(0, MAX_POOL_SIZE - 1);
-  for (const p of byProminence) keep.add(p.id);
-
-  base = base.filter((p) => keep.has(p.id));
-  // Dropping intermediate pivots can produce same-type neighbours; re-dedupe
-  // keeping the more extreme one to preserve strict H/L alternation.
-  return dedupeAlt(base);
+  const tail = base.slice(base.length - MAX_POOL_SIZE);
+  return dedupeAlt(tail);
 }
 
 function dedupeAlt(pivots: PivotV2[]): PivotV2[] {
