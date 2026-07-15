@@ -263,8 +263,22 @@ export function detectSignals(
     : lastClose;
 
   // ── Gate 10: structural confirmation is required (BOS/CHoCH or sweep+displacement).
+  // Gate 10 (relaxed): structural confirmation elevates a setup to a
+  // market-executable state, but its ABSENCE no longer blocks anticipation
+  // setups. When the primary count is in an entry wave (2 or 4) AND a fresh
+  // sweep on the opposite side has printed, we allow LIMIT setups to be
+  // ARMED — the trader places a pending order, and only price triggering it
+  // (already handled downstream by `deriveTrigger`) elevates to TRIGGERED.
   const conf = structuralConfirmation(ict, direction, candles.length);
-  if (!conf.ok) return [];
+  const wave = primary.currentWave;
+  const inAnticipationWave = wave === "2" || wave === "4";
+  const recentSweepCutoffAll = candles.length - SWEEP_RECENT_BARS;
+  const wantSweep = direction === "long" ? "sell_side" : "buy_side";
+  const hasRecentSweep = ict.sweeps.some(
+    (s) => s.index >= recentSweepCutoffAll && s.type === wantSweep,
+  );
+  const anticipation = !conf.ok && inAnticipationWave && hasRecentSweep;
+  if (!conf.ok && !anticipation) return [];
 
   const elliottInv = elliottInvalidationLevel(primary, direction);
 
@@ -395,8 +409,14 @@ export function detectSignals(
       `RR_GE_${minRR}`,
       "POI_NOT_INVALIDATED",
       "CONFIRMED_PIVOTS",
-      `STRUCTURAL_CONFIRMATION:${conf.via}`,
+      conf.ok ? `STRUCTURAL_CONFIRMATION:${conf.via}` : "ANTICIPATION_MODE",
     ];
+    if (anticipation) warnings.push("ANTICIPATION_NO_STRUCTURAL_CONFIRMATION");
+
+    // Anticipation setups must never be executed at market: force LIMIT.
+    if (anticipation && (cls.orderType === "MARKET_BUY" || cls.orderType === "MARKET_SELL")) {
+      continue;
+    }
 
     const entryZone = { top: Math.max(poi.top, poi.bottom), bottom: Math.min(poi.top, poi.bottom) };
     // Last *confirmed* (closed) candle = the bar before the live one when ≥2 exist.
