@@ -5,6 +5,7 @@
 
 import type { PivotV2 } from "../schemas/analysis";
 import { generateCandidates, type PivotCandidate } from "./candidates";
+import { degreePool, type ElliottDegree } from "./degrees";
 import { checkImpulseRules, isTruncation } from "./rules";
 import {
   alternationScore,
@@ -209,8 +210,12 @@ export function detectCorrective(
   };
 }
 
-export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis {
-  const pool = selectElliottPool(pivots);
+export function analyzeElliott(
+  pivots: ReadonlyArray<PivotV2>,
+  opts: { degree?: ElliottDegree } = {},
+): ElliottAnalysis {
+  const degree = opts.degree ?? "INTERMEDIATE";
+  const pool = selectElliottPool(pivots, degree);
 
   const cands = generateCandidates(pool);
   if (cands.length === 0) return { primary: null, alternatives: [] };
@@ -227,6 +232,8 @@ export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis 
   }
 
   const primary = evaluated[0];
+  // Primary and alternatives come from the SAME structural pool, so they
+  // differ by interpretation and not by an arbitrary history window.
   const alternatives = evaluated.slice(1, 4);
 
   // Wave-4 discipline: a wave 4 is only "done" while price has not violated it
@@ -249,7 +256,18 @@ export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis 
     }
   }
 
-  return { primary, alternatives };
+  return { primary, alternatives, degree, pivotsUsed: pool.length };
+}
+
+/** Counts for every degree, computed from the same full pivot set. */
+export function analyzeElliottDegrees(
+  pivots: ReadonlyArray<PivotV2>,
+): Record<ElliottDegree, ElliottAnalysis> {
+  return {
+    MAJOR: analyzeElliott(pivots, { degree: "MAJOR" }),
+    INTERMEDIATE: analyzeElliott(pivots, { degree: "INTERMEDIATE" }),
+    MINOR: analyzeElliott(pivots, { degree: "MINOR" }),
+  };
 }
 
 function enforceWave4Discipline(count: ElliottCountV2, pool: ReadonlyArray<PivotV2>): void {
@@ -283,42 +301,11 @@ function enforceWave4Discipline(count: ElliottCountV2, pool: ReadonlyArray<Pivot
 }
 
 /**
- * Pool selection for macro counts.
- *
- * 1. Prefer MAJOR pivots; fall back to ALL pivots if fewer than 4 majors.
- * 2. When the pool is large (long HTF windows on trending markets), the
- *    candidate generator saturates on noisy MINOR-like sequences and often
- *    returns short DEVELOPING counts (0-1-2) that outrank longer completed
- *    impulses. Cap the working pool to the `MAX_POOL_SIZE` most prominent
- *    pivots by ATR distance, keeping the most recent pivot always so the
- *    live edge of the market is never dropped, then re-enforce type
- *    alternation after the filter.
+ * Pool selection is now degree-driven and spans the FULL pivot history:
+ * importance-ranked structural swings instead of `pivots.slice(-15)`.
  */
-/**
- * Recency-based cap: the count is anchored at the live edge, so preserve the
- * last `MAX_POOL_SIZE` pivots. Older prominent swings do not help — they
- * add candidates that spuriously outrank the current impulse.
- */
-const MAX_POOL_SIZE = 15;
-
-function selectElliottPool(pivots: ReadonlyArray<PivotV2>): PivotV2[] {
-  const major = pivots.filter((p) => p.strength === "MAJOR");
-  const base: PivotV2[] = major.length >= 4 ? major.slice() : pivots.slice();
-  if (base.length <= MAX_POOL_SIZE) return base;
-  const tail = base.slice(base.length - MAX_POOL_SIZE);
-  return dedupeAlt(tail);
-}
-
-function dedupeAlt(pivots: PivotV2[]): PivotV2[] {
-  const out: PivotV2[] = [];
-  for (const p of pivots) {
-    const prev = out[out.length - 1];
-    if (prev && prev.type === p.type) {
-      const keepNew = p.type === "HIGH" ? p.price > prev.price : p.price < prev.price;
-      if (keepNew) out[out.length - 1] = p;
-      continue;
-    }
-    out.push(p);
-  }
-  return out;
+function selectElliottPool(pivots: ReadonlyArray<PivotV2>, degree: ElliottDegree): PivotV2[] {
+  const pool = degreePool(pivots, degree);
+  if (pool.length >= 3) return pool;
+  return pivots.slice();
 }

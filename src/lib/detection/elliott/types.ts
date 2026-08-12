@@ -1,4 +1,7 @@
 import type { PivotV2 } from "../schemas/analysis";
+import type { ElliottDegree } from "./degrees";
+
+export type { ElliottDegree };
 
 export type WaveLabel =
   | "0" | "1" | "2" | "3" | "4" | "5"
@@ -51,6 +54,10 @@ export interface ElliottCountV2 {
 export interface ElliottAnalysis {
   primary: ElliottCountV2 | null;
   alternatives: ElliottCountV2[];
+  /** Degree the count was computed at. */
+  degree?: ElliottDegree;
+  /** Number of pivots in the structural pool (diagnostics). */
+  pivotsUsed?: number;
 }
 
 // ─── DTO (Phase 3 contract) ──────────────────────────────────────────────────
@@ -115,6 +122,12 @@ export interface ElliottResultDTO {
   fibTargets?: FibTargetDTO[];
   /** Timeframe the count was computed on. */
   timeframe?: string;
+  /** Elliott degree of this count. */
+  degree?: ElliottDegree;
+  /** Pivots used by the structural pool (diagnostics). */
+  pivotsUsed?: number;
+  /** Internal subdivision of a lower degree (diagnostic view). */
+  internal?: ElliottResultDTO | null;
   completion: number;       // 0..1
   confidence: number;       // 0..100
   invalidationLevel: number | null;
