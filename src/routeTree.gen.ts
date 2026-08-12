@@ -19,6 +19,7 @@ import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedChartSymbolRouteImport } from './routes/_authenticated/chart.$symbol'
 import { Route as ApiPublicHooksScanAndAlertRouteImport } from './routes/api/public/hooks/scan-and-alert'
 import { Route as ApiPublicHooksEvaluateResultsRouteImport } from './routes/api/public/hooks/evaluate-results'
+import { Route as ApiPublicDiagAlpacaRouteImport } from './routes/api/public/diag/alpaca'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -72,6 +73,11 @@ const ApiPublicHooksEvaluateResultsRoute =
     path: '/api/public/hooks/evaluate-results',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicDiagAlpacaRoute = ApiPublicDiagAlpacaRouteImport.update({
+  id: '/api/public/diag/alpaca',
+  path: '/api/public/diag/alpaca',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/training': typeof AuthenticatedTrainingRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/diag/alpaca': typeof ApiPublicDiagAlpacaRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/training': typeof AuthenticatedTrainingRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/diag/alpaca': typeof ApiPublicDiagAlpacaRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/training': typeof AuthenticatedTrainingRoute
   '/_authenticated/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/diag/alpaca': typeof ApiPublicDiagAlpacaRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
 }
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/training'
     | '/chart/$symbol'
+    | '/api/public/diag/alpaca'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
   fileRoutesByTo: FileRoutesByTo
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/training'
     | '/chart/$symbol'
+    | '/api/public/diag/alpaca'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
   id:
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/training'
     | '/_authenticated/chart/$symbol'
+    | '/api/public/diag/alpaca'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
   fileRoutesById: FileRoutesById
@@ -149,6 +161,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiPublicDiagAlpacaRoute: typeof ApiPublicDiagAlpacaRoute
   ApiPublicHooksEvaluateResultsRoute: typeof ApiPublicHooksEvaluateResultsRoute
   ApiPublicHooksScanAndAlertRoute: typeof ApiPublicHooksScanAndAlertRoute
 }
@@ -225,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksEvaluateResultsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/diag/alpaca': {
+      id: '/api/public/diag/alpaca'
+      path: '/api/public/diag/alpaca'
+      fullPath: '/api/public/diag/alpaca'
+      preLoaderRoute: typeof ApiPublicDiagAlpacaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -251,6 +271,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiPublicDiagAlpacaRoute: ApiPublicDiagAlpacaRoute,
   ApiPublicHooksEvaluateResultsRoute: ApiPublicHooksEvaluateResultsRoute,
   ApiPublicHooksScanAndAlertRoute: ApiPublicHooksScanAndAlertRoute,
 }
