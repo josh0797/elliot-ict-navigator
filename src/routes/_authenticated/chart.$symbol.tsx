@@ -21,6 +21,8 @@ import { ScenariosPanel } from "@/components/chart/ScenariosPanel";
 import { DecisionBanner } from "@/components/chart/DecisionBanner";
 import type { OperationalReport } from "@/lib/detection/decision/types";
 import { HISTORY_PRESETS } from "@/lib/symbols";
+import { cached, chartKey, Timings, invalidate } from "@/lib/chart/cache";
+import type { ElliottDegree } from "@/lib/detection/elliott/degrees";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,73 +95,152 @@ function ChartPage() {
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<PivotTooltip | null>(null);
   const [loading, setLoading] = useState(true);
+  const [phase, setPhase] = useState<string | null>("Loading market data...");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
+  const [horizon, setHorizon] = useState<{ candles: number; pivots: number; pivotsUsed: number } | null>(null);
+  const [degreePref, setDegreePref] = useState<"auto" | ElliottDegree>("auto");
   const [interval, setInterval] = useState(tf);
   const [outputsize, setOutputsize] = useState(bars);
   const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
   const [viewMode, setViewMode] = useState<ChartViewMode>("operational");
   const latestRequestRef = useRef(0);
+  const prevSymbolRef = useRef(decoded);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("chart-layers", JSON.stringify(layers));
   }, [layers]);
 
-  async function load() {
+  /**
+   * Staged pipeline — candles never wait for Elliott/ICT:
+   *   A) 200-bar OHLC → render candles
+   *   B) full history (lazy) → re-render candles
+   *   C) pivots + Elliott (multi-degree) + ICT
+   *   D) MTF setups + decision
+   * Every stage is cached and deduplicated by symbol|tf|bars.
+   */
+  async function load(opts: { force?: boolean } = {}) {
     const requestId = ++latestRequestRef.current;
-    const requestedSymbol = decoded;
-    const requestedInterval = interval;
+    const alive = () => requestId === latestRequestRef.current;
+    const sym = decoded;
+    const ivl = interval;
+    const t = new Timings();
+    if (opts.force) invalidate(chartKey(["ohlc", sym, ivl]));
     setLoading(true);
+    setErrorMsg(null);
+    setPhase("Loading market data...");
+
     try {
-      const [res, ana, sigs] = await Promise.all([
-        fetch({ data: { symbol: requestedSymbol, interval: requestedInterval, outputsize } }),
-        analyze({ data: { symbol: requestedSymbol, interval: requestedInterval, outputsize } }),
-        findSetups({ data: { symbol: requestedSymbol, interval: requestedInterval, outputsize, topN: 3 } }),
-      ]);
-      // Discard stale responses if the user switched symbol/timeframe meanwhile.
-      if (requestId !== latestRequestRef.current) return;
-      if (res.candles.length) {
-        setCandles(res.candles);
-        setSetup(detectSetup(requestedSymbol, requestedInterval, res.candles));
-      } else {
-        setCandles([]);
-        setSetup(null);
+      // ── Stage A: fast first paint (200 bars) ──────────────────────────────
+      const quickBars = Math.min(200, outputsize);
+      const quick = await t.measureAsync("apiFetchMs", () =>
+        cached(chartKey(["ohlc", sym, ivl, quickBars]), () =>
+          fetch({ data: { symbol: sym, interval: ivl, outputsize: quickBars } }),
+        ),
+      );
+      if (!alive()) return;
+      if (quick.candles.length) {
+        setCandles(quick.candles);
+        setProvider(quick.provider);
+        t.mark("firstPaintMs");
       }
+
+      // ── Stage B: extended history (lazy, non-blocking for first paint) ────
+      let full = quick;
+      if (outputsize > quickBars) {
+        setPhase("Loading extended history...");
+        full = await t.measureAsync("historyFetchMs", () =>
+          cached(chartKey(["ohlc", sym, ivl, outputsize]), () =>
+            fetch({ data: { symbol: sym, interval: ivl, outputsize } }),
+          ),
+        );
+        if (!alive()) return;
+        if (full.candles.length) {
+          setCandles(full.candles);
+          setProvider(full.provider);
+        } else {
+          full = quick;
+        }
+      }
+
+      if (!full.candles.length) {
+        setErrorMsg(full.error ?? quick.error ?? "No market data returned by any provider");
+        setPhase(null);
+        return;
+      }
+      setSetup(detectSetup(sym, ivl, full.candles));
+
+      // ── Stage C: Elliott (multi-degree) + ICT ─────────────────────────────
+      setPhase("Calculating Elliott structure...");
+      const lastTime = full.candles[full.candles.length - 1]?.time ?? 0;
+      const ana = await t.measureAsync("elliottMs", () =>
+        cached(chartKey(["ana", sym, ivl, outputsize, degreePref, lastTime]), () =>
+          analyze({
+            data: {
+              symbol: sym,
+              interval: ivl,
+              outputsize,
+              degree: degreePref === "auto" ? undefined : degreePref,
+              candles: full.candles,
+              includeMacro: true,
+            },
+          }),
+        ),
+      );
+      if (!alive()) return;
       setElliott(ana.elliott);
       setMacro(ana.macro);
-      setProvider(res.provider);
       setIct(ana.ict);
+      setHorizon(ana.horizon ?? null);
+
+      // ── Stage D: setups + operational decision ────────────────────────────
+      setPhase("Scanning setups...");
+      const sigs = await t.measureAsync("setupsMs", () =>
+        cached(chartKey(["setups", sym, ivl, outputsize, lastTime]), () =>
+          findSetups({ data: { symbol: sym, interval: ivl, outputsize, topN: 3 } }),
+        ),
+      );
+      if (!alive()) return;
       setSignals(sigs.signals);
       setDecision(sigs.decision);
       setSelectedSignalId((prev) =>
         prev && sigs.signals.some((s) => s.id === prev) ? prev : sigs.signals[0]?.id ?? null,
       );
+      setPhase(null);
+      setMetrics(t.snapshot());
     } catch (err) {
-      if (requestId === latestRequestRef.current) {
+      if (alive()) {
         console.error("[chart] load failed", err);
+        setErrorMsg((err as Error).message || "Failed to load market data");
+        setPhase(null);
       }
     } finally {
-      if (requestId === latestRequestRef.current) setLoading(false);
+      if (alive()) setLoading(false);
     }
   }
 
   useEffect(() => {
-    // Reset symbol-derived state immediately so the previous instrument's
-    // overlays never bleed into the new one.
     latestRequestRef.current++;
-    setCandles([]);
-    setSetup(null);
-    setElliott(null);
-    setMacro(null);
-    setIct(null);
-    setSignals([]);
-    setDecision(null);
-    setSelectedSignalId(null);
-    setTooltip(null);
+    // Only a symbol switch wipes the canvas; timeframe/bars/degree changes keep
+    // the previous drawing visible until fresh data arrives.
+    if (prevSymbolRef.current !== decoded) {
+      prevSymbolRef.current = decoded;
+      setCandles([]);
+      setSetup(null);
+      setElliott(null);
+      setMacro(null);
+      setIct(null);
+      setSignals([]);
+      setDecision(null);
+      setSelectedSignalId(null);
+      setTooltip(null);
+    }
     load();
     const id = window.setInterval(load, 60_000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [decoded, interval, outputsize]);
+  }, [decoded, interval, outputsize, degreePref]);
 
   const dirColor = setup?.direction === "long" ? "text-success" : "text-destructive";
 
