@@ -91,7 +91,7 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
     const reqBase = { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize };
     const [ltfRes, htfRes] = await Promise.all([
       data.candles && data.candles.length > 0
-        ? Promise.resolve({ candles: data.candles as Candle[], provider: "fmp" as const, error: undefined })
+        ? Promise.resolve({ candles: data.candles as Candle[], provider: "none" as const, error: undefined })
         : fetchOhlcv({ data: reqBase }),
       htfInterval
         ? fetchOhlcv({ data: { ...reqBase, interval: htfInterval, outputsize: 300 } })
