@@ -44,6 +44,7 @@ function emptyElliott(): ElliottResultDTO {
     bias: "NEUTRAL",
     pattern: "IMPULSE",
     currentWave: null,
+    nextWave: null,
     completion: 0,
     confidence: 0,
     invalidationLevel: null,
