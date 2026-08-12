@@ -139,6 +139,8 @@ export const Route = createFileRoute("/api/public/diag/alpaca")({
           ),
         );
 
+        results.push(await probe("control_stocks_iex_AAPL", "https://data.alpaca.markets/v2/stocks/AAPL/bars/latest?feed=iex", headers));
+
         return Response.json({ ranAt: new Date().toISOString(), results }, { headers: { "cache-control": "no-store" } });
       },
     },
