@@ -128,7 +128,7 @@ function PairCard({ row, tf }: { row: Row; tf: string }) {
     <Link
       to="/chart/$symbol"
       params={{ symbol: row.symbol }}
-      search={{ tf }}
+      search={{ tf, bars: 500 }}
       className="group"
     >
       <Card className="border-border/60 hover:border-primary/50 transition-colors">

@@ -1,6 +1,9 @@
 import type { PivotV2 } from "../schemas/analysis";
 
-export type WaveLabel = "0" | "1" | "2" | "3" | "4" | "5" | "A" | "B" | "C";
+export type WaveLabel =
+  | "0" | "1" | "2" | "3" | "4" | "5"
+  | "A" | "B" | "C"
+  | "W" | "X" | "Y" | "Z";
 
 export type WavePattern =
   | "IMPULSE"
@@ -8,6 +11,8 @@ export type WavePattern =
   | "ENDING_DIAGONAL"
   | "ZIGZAG"
   | "FLAT"
+  | "DOUBLE_ZIGZAG"
+  | "TRIPLE_ZIGZAG"
   | "SIMPLE_CORRECTION"
   | "UNKNOWN_CORRECTION";
 
@@ -78,6 +83,14 @@ export interface ElliottWaveDTO {
   confirmed: boolean;
 }
 
+export interface FibTargetDTO {
+  /** Human label, e.g. "W3 1.618" or "W2 0.618 retr". */
+  label: string;
+  ratio: number;
+  price: number;
+  kind: "RETRACEMENT" | "EXTENSION" | "PROJECTION";
+}
+
 export interface ConfidenceBreakdown {
   mandatoryRules: number;   // 0..25
   alternation: number;      // 0..20
@@ -92,6 +105,16 @@ export interface ElliottResultDTO {
   bias: Bias;
   pattern: WavePattern;
   currentWave: WaveLabel | null;
+  /** Wave the market is expected to develop next (null when unknown). */
+  nextWave: WaveLabel | null;
+  /** Narrative of what the count implies and what confirms/kills it. */
+  scenario?: string;
+  /** Price that confirms the next wave (break of the relevant extreme). */
+  confirmationLevel?: number | null;
+  /** Fibonacci projections/retracements for the active wave. */
+  fibTargets?: FibTargetDTO[];
+  /** Timeframe the count was computed on. */
+  timeframe?: string;
   completion: number;       // 0..1
   confidence: number;       // 0..100
   invalidationLevel: number | null;

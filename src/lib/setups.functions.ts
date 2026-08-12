@@ -45,6 +45,7 @@ function emptyElliottDto() {
     bias: "NEUTRAL" as const,
     pattern: "IMPULSE" as const,
     currentWave: null,
+    nextWave: null,
     completion: 0,
     confidence: 0,
     invalidationLevel: null,

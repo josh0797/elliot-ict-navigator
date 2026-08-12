@@ -17,11 +17,17 @@ const Input = z.object({
 });
 
 export interface AnalyzeResponse {
+  /**
+   * Count computed on the DISPLAYED timeframe. Its wave indices/times map
+   * 1:1 to the candles the chart renders, so it can always be drawn.
+   */
   elliott: ElliottResultDTO;
+  /** Macro count on the higher timeframe (context / bias). */
+  macro: ElliottResultDTO | null;
   ict: IctContext | null;
-  provider?: "polygon" | "twelvedata" | "none";
+  provider?: "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
   error?: string;
-  /** Timeframe the Elliott count actually ran on (HTF when available). */
+  /** Timeframe the macro count ran on. */
   countTimeframe?: string;
   /** Timeframe used for ICT + execution. */
   executionTimeframe?: string;
@@ -44,6 +50,7 @@ function emptyElliott(): ElliottResultDTO {
     bias: "NEUTRAL",
     pattern: "IMPULSE",
     currentWave: null,
+    nextWave: null,
     completion: 0,
     confidence: 0,
     invalidationLevel: null,
@@ -66,7 +73,7 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
     const { candles, provider, error } = ltfRes;
     if (error || candles.length === 0) {
       return {
-        elliott: emptyElliott(), ict: null, provider,
+        elliott: emptyElliott(), macro: null, ict: null, provider,
         error: error ?? "No candles",
         executionTimeframe: data.interval,
         countTimeframe: data.interval,
@@ -76,18 +83,25 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
     const ltfPivots = detectPivots(ltfLifted);
     const ict = analyzeIct(ltfLifted, ltfPivots, { timeframe: data.interval });
 
-    // Prefer HTF pivots for the macro Elliott count; degrade to LTF if the
-    // HTF fetch failed or returned nothing usable.
-    let countPivots = ltfPivots;
+    // Count on the displayed timeframe — this is what gets drawn.
+    const localAnalysis = analyzeElliott(ltfPivots);
+    const localBias = currentBias(ltfPivots);
+    const local = toElliottResult(localAnalysis, localBias);
+    local.timeframe = data.interval;
+    for (const alt of local.alternatives) alt.timeframe = data.interval;
+
+    // Macro count on the higher timeframe (context only).
+    let macro: ElliottResultDTO | null = null;
     let countTf = data.interval;
     if (htfRes && !htfRes.error && htfRes.candles.length > 0) {
-      countPivots = detectPivots(liftCandles(htfRes.candles));
+      const htfPivots = detectPivots(liftCandles(htfRes.candles));
+      macro = toElliottResult(analyzeElliott(htfPivots), currentBias(htfPivots));
       countTf = htfInterval!;
+      macro.timeframe = countTf;
     }
-    const analysis = analyzeElliott(countPivots);
-    const bias = currentBias(countPivots);
     return {
-      elliott: toElliottResult(analysis, bias),
+      elliott: local,
+      macro,
       ict,
       provider,
       countTimeframe: countTf,

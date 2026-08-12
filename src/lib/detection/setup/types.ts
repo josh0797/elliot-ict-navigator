@@ -163,6 +163,6 @@ export interface DetectSetupsResult {
   elliott: ElliottResultDTO;
   decision: OperationalReport;
   diagonal?: DiagonalPattern | null;
-  provider?: "polygon" | "twelvedata" | "none";
+  provider?: "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
   error?: string;
 }

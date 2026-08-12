@@ -19,10 +19,10 @@ describe("XAU/USD 1D macro Elliott count", () => {
     expect(analysis.primary).not.toBeNull();
     const p = analysis.primary!;
     expect(p.state).toBe("COMPLETED");
-    // Impulse must span all 6 labels; corrective A/B/C may append.
+    // Impulse must span all 6 labels; a corrective A/B/C or complex W/X/Y/Z may append.
     const labels = p.labeled.map((l) => l.label).join("-");
     expect(labels.startsWith("0-1-2-3-4-5")).toBe(true);
-    expect(["5", "A", "B", "C"]).toContain(p.currentWave);
+    expect(["5", "A", "B", "C", "W", "X", "Y", "Z"]).toContain(p.currentWave);
     expect(p.invalidations).toEqual([]);
   });
 });
