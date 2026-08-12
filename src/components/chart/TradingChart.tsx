@@ -50,6 +50,12 @@ const SEGMENT_COLORS: Record<string, string> = {
   "5-A": "#ef4444",
   "A-B": "#eab308",
   "B-C": "#fb7185",
+  "5-W": "#ef4444",
+  "3-W": "#ef4444",
+  "W-X": "#eab308",
+  "X-Y": "#fb7185",
+  "Y-X": "#eab308",
+  "X-Z": "#f472b6",
 };
 
 function segmentColor(a: string, b: string): string {
@@ -186,6 +192,24 @@ export function TradingChart({
     if (candleData.length === 0) return;
 
     const validTimes = new Set(chartCandles.map((c) => c.time));
+    const sortedTimes = chartCandles.map((c) => c.time);
+    /**
+     * Snap an arbitrary timestamp (e.g. an HTF pivot time) to the closest
+     * rendered candle time. Without this, wave anchors whose exact time is not
+     * a candle open silently disappear and nothing is drawn.
+     */
+    const snapTime = (t: number | null): number | null => {
+      if (t === null || sortedTimes.length === 0) return null;
+      if (validTimes.has(t)) return t;
+      if (t < sortedTimes[0] || t > sortedTimes[sortedTimes.length - 1]) return null;
+      let lo = 0;
+      let hi = sortedTimes.length - 1;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (sortedTimes[mid] <= t) lo = mid; else hi = mid;
+      }
+      return t - sortedTimes[lo] <= sortedTimes[hi] - t ? sortedTimes[lo] : sortedTimes[hi];
+    };
     const chartMarkers: SeriesMarker<Time>[] = [];
     const pushMarker = (marker: SeriesMarker<Time>) => {
       const t = Number(marker.time);
@@ -193,20 +217,19 @@ export function TradingChart({
       chartMarkers.push(marker);
     };
 
-    const renderCount = (waves: ElliottWaveDTO[], opacity: number) => {
+    const renderCount = (waves: ElliottWaveDTO[], opacity: number, showLines: boolean, showLabels: boolean) => {
       if (waves.length < 2) return;
       // Segmented lines, one series per pair.
-      if (layers.elliottLines) {
+      if (showLines) {
         for (let i = 1; i < waves.length; i++) {
           const a = waves[i - 1];
           const b = waves[i];
-          const ta = waveTime(a, candles);
-          const tb = waveTime(b, candles);
+          const ta = snapTime(waveTime(a, candles));
+          const tb = snapTime(waveTime(b, candles));
           if (
             ta === null ||
             tb === null ||
-            !validTimes.has(ta) ||
-            !validTimes.has(tb) ||
+            ta === tb ||
             !isFiniteNumber(a.price) ||
             !isFiniteNumber(b.price)
           ) continue;
@@ -225,10 +248,10 @@ export function TradingChart({
           overlaysRef.current.push(s);
         }
       }
-      if (layers.elliottLabels) {
+      if (showLabels) {
         const wavePoints = waves
-          .map((w) => ({ t: waveTime(w, candles), w }))
-          .filter((p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && validTimes.has(p.t) && isFiniteNumber(p.w.price));
+          .map((w) => ({ t: snapTime(waveTime(w, candles)), w }))
+          .filter((p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && isFiniteNumber(p.w.price));
         for (const { t, w } of wavePoints) {
           pushMarker({
             id: `elliott-${w.label}-${t}-${opacity}`,
@@ -244,12 +267,15 @@ export function TradingChart({
 
     const isDiag = viewMode === "diagnostic";
 
-    if (isDiag && elliott) {
-      renderCount(elliott.waves, 1);
-      if (layers.alternativeCount && elliott.alternatives.length > 0) {
-        renderCount(elliott.alternatives[0].waves, 0.4);
+    if (elliott) {
+      // The primary count is always drawn (both views): it is the core reading.
+      renderCount(elliott.waves, 1, isDiag ? layers.elliottLines : true, isDiag ? layers.elliottLabels : true);
+      if (isDiag && layers.alternativeCount && elliott.alternatives.length > 0) {
+        renderCount(elliott.alternatives[0].waves, 0.4, true, true);
       }
+    }
 
+    if (isDiag && elliott) {
       // Invalidation line.
       if (layers.invalidation && isFiniteNumber(elliott.invalidationLevel)) {
         const failRule = elliott.rules.find((r) => r.status === "FAIL");
@@ -265,8 +291,23 @@ export function TradingChart({
         priceLinesRef.current.push(pl);
       }
 
-      // Fibonacci Elliott: 0.382/0.5/0.618 retracements of W1 + 1.0/1.618 extensions of W3.
+      // Fibonacci Elliott — engine-computed targets for the active wave, with a
+      // geometric fallback derived from the labeled pivots.
       if (layers.fibonacciElliott) {
+        const engineTargets = elliott.fibTargets ?? [];
+        for (const t of engineTargets) {
+          if (!isFiniteNumber(t.price)) continue;
+          priceLinesRef.current.push(series.createPriceLine({
+            price: t.price,
+            color: t.kind === "RETRACEMENT" ? "rgba(56,189,248,0.6)" : "rgba(168,85,247,0.55)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: t.label,
+          }));
+        }
+      }
+      if (layers.fibonacciElliott && (elliott.fibTargets ?? []).length === 0) {
         const p0 = priceOf("0", elliott.waves);
         const p1 = priceOf("1", elliott.waves);
         const p3 = priceOf("3", elliott.waves);
