@@ -21,6 +21,7 @@ import type {
   ElliottRuleResult,
   ElliottStatus,
   ElliottWaveDTO,
+  FibTargetDTO,
   LabeledPivot,
   WaveLabel,
 } from "./types";
@@ -239,7 +240,7 @@ function statusFor(count: ElliottCountV2): ElliottStatus {
 function completionFor(count: ElliottCountV2): number {
   const labels = new Set(count.labeled.map((l) => l.label));
   const impulse = ["0", "1", "2", "3", "4", "5"].filter((l) => labels.has(l as WaveLabel)).length;
-  const corrective = ["A", "B", "C"].filter((l) => labels.has(l as WaveLabel)).length;
+  const corrective = ["A", "B", "C", "W", "X", "Y", "Z"].filter((l) => labels.has(l as WaveLabel)).length;
   if (corrective > 0) return Math.min(1, (impulse - 1 + corrective) / 8);
   return Math.min(1, Math.max(0, (impulse - 1) / 5));
 }
@@ -251,8 +252,99 @@ function invalidationLevelFor(count: ElliottCountV2): number | null {
   if (cw === "1" || cw === "2" || cw === "3") return p("0") ?? null;
   if (cw === "4") return p("1") ?? null;
   if (cw === "5") return p("4") ?? null;
-  // A/B/C: invalidation is the end of wave 5.
-  return p("5") ?? null;
+  // Corrective legs (A/B/C, W/X/Y/Z): invalidation is the origin of the
+  // correction — the end of wave 5 (or wave 3 when 4 is still unfolding).
+  return p("5") ?? p("3") ?? null;
+}
+
+const IMPULSE_NEXT: Partial<Record<WaveLabel, WaveLabel>> = {
+  "0": "1", "1": "2", "2": "3", "3": "4", "4": "5", "5": "A",
+  A: "B", B: "C", C: "1",
+  W: "X", X: "Y", Y: "Z", Z: "1",
+};
+
+function nextWaveFor(count: ElliottCountV2): WaveLabel | null {
+  if (!count.currentWave) return null;
+  if (count.state === "INVALIDATED") return null;
+  return IMPULSE_NEXT[count.currentWave] ?? null;
+}
+
+/**
+ * Confirmation level for the wave in progress: the price whose break
+ * validates continuation (e.g. breaking wave-3 high confirms wave 5).
+ */
+function confirmationLevelFor(count: ElliottCountV2): number | null {
+  const p = (label: WaveLabel) => priceAt(count.labeled, label);
+  switch (count.currentWave) {
+    case "1": return p("1") ?? null;
+    case "2": return p("1") ?? null;
+    case "3": return p("3") ?? null;
+    case "4": return p("3") ?? null;
+    case "5": return p("5") ?? null;
+    case "A": case "B": case "C": return p("A") ?? null;
+    case "W": case "X": case "Y": case "Z": return p("W") ?? null;
+    default: return null;
+  }
+}
+
+/** Fibonacci projections anchored correctly (extension measured from the retracement end). */
+function fibTargetsFor(count: ElliottCountV2): FibTargetDTO[] {
+  const p = (label: WaveLabel) => priceAt(count.labeled, label);
+  const out: FibTargetDTO[] = [];
+  const p0 = p("0"), p1 = p("1"), p2 = p("2"), p3 = p("3"), p4 = p("4"), p5 = p("5");
+  const cw = count.currentWave;
+
+  if (cw === "2" && p0 !== undefined && p1 !== undefined) {
+    for (const r of [0.382, 0.5, 0.618, 0.786]) {
+      out.push({ label: `W2 ${(r * 100).toFixed(1)}% retr`, ratio: r, price: p1 - (p1 - p0) * r, kind: "RETRACEMENT" });
+    }
+  }
+  if ((cw === "2" || cw === "3") && p0 !== undefined && p1 !== undefined && p2 !== undefined) {
+    for (const r of [1.0, 1.618, 2.618]) {
+      out.push({ label: `W3 ${r}× W1`, ratio: r, price: p2 + (p1 - p0) * r, kind: "EXTENSION" });
+    }
+  }
+  if (cw === "4" && p2 !== undefined && p3 !== undefined) {
+    for (const r of [0.236, 0.382, 0.5]) {
+      out.push({ label: `W4 ${(r * 100).toFixed(1)}% retr`, ratio: r, price: p3 - (p3 - p2) * r, kind: "RETRACEMENT" });
+    }
+  }
+  if ((cw === "4" || cw === "5") && p0 !== undefined && p3 !== undefined && p4 !== undefined) {
+    for (const r of [0.618, 1.0, 1.618]) {
+      out.push({ label: `W5 ${r}× W1`, ratio: r, price: p4 + (p1 !== undefined && p0 !== undefined ? (p1 - p0) : (p3 - p0)) * r, kind: "PROJECTION" });
+    }
+  }
+  if ((cw === "A" || cw === "B" || cw === "C") && p5 !== undefined) {
+    const a = priceAt(count.labeled, "A");
+    const b = priceAt(count.labeled, "B");
+    if (a !== undefined && b !== undefined) {
+      for (const r of [0.618, 1.0, 1.618]) {
+        out.push({ label: `WC ${r}× WA`, ratio: r, price: b + (a - p5) * r, kind: "PROJECTION" });
+      }
+    }
+  }
+  if ((cw === "W" || cw === "X" || cw === "Y" || cw === "Z")) {
+    const w = priceAt(count.labeled, "W");
+    const x = priceAt(count.labeled, "X");
+    const origin = p5 ?? p3;
+    if (w !== undefined && x !== undefined && origin !== undefined) {
+      for (const r of [1.0, 1.618]) {
+        out.push({ label: `WY ${r}× WW`, ratio: r, price: x + (w - origin) * r, kind: "PROJECTION" });
+      }
+    }
+  }
+  return out.filter((t) => Number.isFinite(t.price));
+}
+
+function scenarioText(count: ElliottCountV2, next: WaveLabel | null): string {
+  const dir = count.direction === "long" ? "alcista" : "bajista";
+  const cw = count.currentWave ?? "?";
+  const pat = count.pattern.replace(/_/g, " ").toLowerCase();
+  if (count.state === "INVALIDATED") {
+    return `Conteo ${dir} invalidado (${count.invalidations.join("; ") || "reglas no cumplidas"}). Se requiere recuento.`;
+  }
+  const base = `Estructura ${pat} ${dir}: onda ${cw} en curso`;
+  return next ? `${base}; siguiente esperada: onda ${next}.` : `${base}.`;
 }
 
 function biasFor(count: ElliottCountV2): Bias {
@@ -284,6 +376,7 @@ export function toElliottResult(
       bias: "NEUTRAL",
       pattern: "IMPULSE",
       currentWave: null,
+      nextWave: null,
       completion: 0,
       confidence: 0,
       invalidationLevel: null,
@@ -296,11 +389,16 @@ export function toElliottResult(
   const toDTO = (count: ElliottCountV2, withAlts: boolean): ElliottResultDTO => {
     const { confidence, breakdown } = computeConfidence(count, structureBias);
     const rules = [...mandatoryRules(count), ...softRules(count)];
+    const nextWave = nextWaveFor(count);
     return {
       status: statusFor(count),
       bias: biasFor(count),
       pattern: count.pattern,
       currentWave: count.currentWave,
+      nextWave,
+      scenario: scenarioText(count, nextWave),
+      confirmationLevel: confirmationLevelFor(count),
+      fibTargets: fibTargetsFor(count),
       completion: round(completionFor(count)),
       confidence,
       invalidationLevel: invalidationLevelFor(count),
