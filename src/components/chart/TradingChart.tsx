@@ -459,7 +459,7 @@ export function TradingChart({
 
     // Crosshair tooltip — track nearest pivot.
     if (!onPivotHover) return;
-    const waves = isDiag ? (elliott?.waves ?? []) : [];
+    const waves = elliott?.waves ?? [];
     const handler = (param: MouseEventParams<Time>) => {
       if (!param.point || param.time === undefined || waves.length === 0) {
         onPivotHover(null);
