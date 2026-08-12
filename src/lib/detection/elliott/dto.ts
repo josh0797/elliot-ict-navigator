@@ -399,6 +399,8 @@ export function toElliottResult(
       scenario: scenarioText(count, nextWave),
       confirmationLevel: confirmationLevelFor(count),
       fibTargets: fibTargetsFor(count),
+      degree: analysis.degree,
+      pivotsUsed: analysis.pivotsUsed,
       completion: round(completionFor(count)),
       confidence,
       invalidationLevel: invalidationLevelFor(count),
