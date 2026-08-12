@@ -17,6 +17,7 @@ import { ChartViewToggle } from "@/components/chart/ChartViewToggle";
 import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
 import { SymbolPicker } from "@/components/chart/SymbolPicker";
 import { SignalsPanel } from "@/components/chart/SignalsPanel";
+import { ScenariosPanel } from "@/components/chart/ScenariosPanel";
 import { DecisionBanner } from "@/components/chart/DecisionBanner";
 import type { OperationalReport } from "@/lib/detection/decision/types";
 import { HISTORY_PRESETS } from "@/lib/symbols";
@@ -84,6 +85,8 @@ function ChartPage() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [setup, setSetup] = useState<TradeSetup | null>(null);
   const [elliott, setElliott] = useState<ElliottResultDTO | null>(null);
+  const [macro, setMacro] = useState<ElliottResultDTO | null>(null);
+  const [provider, setProvider] = useState<string | null>(null);
   const [ict, setIct] = useState<IctContext | null>(null);
   const [signals, setSignals] = useState<TradeSignal[]>([]);
   const [decision, setDecision] = useState<OperationalReport | null>(null);
@@ -122,6 +125,8 @@ function ChartPage() {
         setSetup(null);
       }
       setElliott(ana.elliott);
+      setMacro(ana.macro);
+      setProvider(res.provider);
       setIct(ana.ict);
       setSignals(sigs.signals);
       setDecision(sigs.decision);
@@ -144,6 +149,7 @@ function ChartPage() {
     setCandles([]);
     setSetup(null);
     setElliott(null);
+    setMacro(null);
     setIct(null);
     setSignals([]);
     setDecision(null);
@@ -183,6 +189,7 @@ function ChartPage() {
           </Button>
           <SymbolPicker symbol={decoded} tf={interval} bars={outputsize} />
           <Badge variant="outline" className="font-mono">{interval}</Badge>
+          {provider && <Badge variant="secondary" className="font-mono text-[10px]">{provider}</Badge>}
           {elliott && elliott.status !== "NO_COUNT" && (
             <Badge variant="outline" className={`font-mono ${elliott.bias === "BULLISH" ? "text-success" : elliott.bias === "BEARISH" ? "text-destructive" : ""}`}>
               {elliott.bias} · W{elliott.currentWave ?? "?"} · {elliott.confidence}
@@ -265,6 +272,7 @@ function ChartPage() {
               </div>
             )}
             <InvalidationLegend elliott={elliott} />
+            <ScenariosPanel elliott={elliott} macro={macro} pxFmt={px} />
             <div>
               <div className="text-xs uppercase tracking-widest text-muted-foreground">Setup</div>
               {setup ? (
