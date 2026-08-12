@@ -85,6 +85,7 @@ function priceOf(label: string, waves: ElliottWaveDTO[]): number | undefined {
 export function TradingChart({
   candles,
   elliott,
+  internal,
   ict,
   layers,
   signal,
@@ -93,6 +94,8 @@ export function TradingChart({
 }: {
   candles: Candle[];
   elliott: ElliottResultDTO | null;
+  /** Lower-degree subdivision drawn alongside the primary count (diagnostic). */
+  internal?: ElliottResultDTO | null;
   ict: IctContext | null;
   layers: LayerToggles;
   signal?: TradeSignal | null;
@@ -105,6 +108,7 @@ export function TradingChart({
   const overlaysRef = useRef<ISeriesApi<"Line">[]>([]);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const fitKeyRef = useRef<string>("");
 
   // Init chart once.
   useEffect(() => {
@@ -275,6 +279,12 @@ export function TradingChart({
       }
     }
 
+    // Internal (lower-degree) subdivision: drawn in Diagnostic on top of the
+    // major structure so 3-4-5 and W-X-Y coexist instead of replacing each other.
+    if (isDiag && internal && internal.waves.length >= 2) {
+      renderCount(internal.waves, 0.55, layers.elliottLines, layers.elliottLabels);
+    }
+
     if (isDiag && elliott) {
       // Invalidation line.
       if (layers.invalidation && isFiniteNumber(elliott.invalidationLevel)) {
@@ -386,7 +396,13 @@ export function TradingChart({
         });
     }
 
-    chart.timeScale().fitContent();
+    // Only refit when the dataset itself changed — layer toggles and view-mode
+    // switches must not reset the user's zoom/pan.
+    const fitKey = `${candleData.length}:${candleData[0]?.time}:${candleData[candleData.length - 1]?.time}`;
+    if (fitKeyRef.current !== fitKey) {
+      fitKeyRef.current = fitKey;
+      chart.timeScale().fitContent();
+    }
 
     // Active trade signal overlay (entry / SL / TP1 / TP2).
     if (signal) {
@@ -491,7 +507,7 @@ export function TradingChart({
     return () => chart.unsubscribeCrosshairMove(handler);
     // ICT overlays are intentionally minimal: the legend panel surfaces them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, elliott, ict, layers, signal, viewMode]);
+  }, [candles, elliott, internal, ict, layers, signal, viewMode]);
 
   return <div ref={containerRef} className="h-[520px] w-full" />;
 }

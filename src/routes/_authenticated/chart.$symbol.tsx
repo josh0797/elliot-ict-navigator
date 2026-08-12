@@ -302,7 +302,19 @@ function ChartPage() {
               </button>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+          <div className="flex rounded-md border border-border bg-card overflow-hidden text-xs">
+            {(["auto", "MAJOR", "INTERMEDIATE", "MINOR"] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDegreePref(d)}
+                title={`Elliott degree: ${d}`}
+                className={`px-2 py-1.5 font-mono ${degreePref === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {d === "auto" ? "Auto" : d.slice(0, 3)}
+              </button>
+            ))}
+          </div>
+          <Button size="sm" variant="outline" onClick={() => load({ force: true })} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -315,9 +327,24 @@ function ChartPage() {
       <div className="grid lg:grid-cols-[1fr_320px] gap-4">
         <Card className="border-border/60">
           <CardContent className="p-2 relative">
+            {(phase || errorMsg) && (
+              <div className="absolute right-4 top-4 z-20 max-w-[60%] rounded border border-border bg-popover/95 px-2 py-1 text-xs font-mono shadow">
+                {errorMsg ? (
+                  <span className="text-destructive">Data error: {errorMsg}</span>
+                ) : (
+                  <span className="text-muted-foreground">{phase}</span>
+                )}
+              </div>
+            )}
+            {candles.length === 0 && !errorMsg && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center text-xs font-mono text-muted-foreground">
+                {phase ?? "Loading market data..."}
+              </div>
+            )}
             <TradingChart
               candles={candles}
               elliott={elliott}
+              internal={viewMode === "diagnostic" ? elliott?.internal ?? null : null}
               ict={ict}
               layers={layers}
               signal={activeSignal}
@@ -353,6 +380,20 @@ function ChartPage() {
               </div>
             )}
             <InvalidationLegend elliott={elliott} />
+            {(horizon || (import.meta.env.DEV && metrics)) && (
+              <div className="rounded border border-border/60 p-2 text-[11px] font-mono text-muted-foreground space-y-0.5">
+                {horizon && (
+                  <div>
+                    horizon: {horizon.candles} candles · {horizon.pivots} pivots · pool {horizon.pivotsUsed} ·{" "}
+                    degree {elliott?.degree ?? "—"}
+                  </div>
+                )}
+                {import.meta.env.DEV && metrics &&
+                  Object.entries(metrics).map(([k, v]) => (
+                    <div key={k}>{k}: {v}ms</div>
+                  ))}
+              </div>
+            )}
             <ScenariosPanel elliott={elliott} macro={macro} pxFmt={px} />
             <div>
               <div className="text-xs uppercase tracking-widest text-muted-foreground">Setup</div>
