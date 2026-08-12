@@ -127,6 +127,40 @@ export function detectCorrective(
   if (impulseDirection === "long" && a.price >= impulseEnd.price) return null;
   if (impulseDirection === "short" && a.price <= impulseEnd.price) return null;
 
+  // ── Complex corrections (W-X-Y / W-X-Y-X-Z) ───────────────────────────────
+  // Four or more alternating corrective pivots cannot be a single zigzag/flat:
+  // label them as a double (W-X-Y) or triple (W-X-Y-X-Z) combination.
+  const alternating = (): PivotV2[] => {
+    const seq: PivotV2[] = [a];
+    for (let i = 1; i < after.length; i++) {
+      if (after[i].type === seq[seq.length - 1].type) break;
+      seq.push(after[i]);
+    }
+    return seq;
+  };
+  const seq = alternating();
+  if (seq.length >= 4) {
+    const COMPLEX: WaveLabel[] = ["W", "X", "Y", "X", "Z"];
+    const used = seq.slice(0, 5);
+    const complexLabeled: LabeledPivot[] = [
+      { pivot: impulseEnd, label: "5" },
+      ...used.map((p, i) => ({ pivot: p, label: COMPLEX[i] })),
+    ];
+    const isTriple = used.length >= 5;
+    return {
+      direction: correctiveDir,
+      pattern: isTriple ? "TRIPLE_ZIGZAG" : "DOUBLE_ZIGZAG",
+      state: isTriple ? "COMPLETED" : "DEVELOPING",
+      labeled: complexLabeled,
+      currentWave: complexLabeled[complexLabeled.length - 1].label,
+      score: isTriple ? 0.6 : 0.5,
+      fibScores: { wave2Retracement: null, wave3Extension: null, wave4Retracement: null, wave5Projection: null },
+      alternation: null,
+      invalidations: [],
+      notes: [isTriple ? "triple combination W-X-Y-X-Z" : "double zigzag W-X-Y"],
+    };
+  }
+
   const labeled: LabeledPivot[] = [{ pivot: impulseEnd, label: "5" }, { pivot: a, label: "A" }];
   let pattern: WavePattern = "SIMPLE_CORRECTION";
   let state: CountState = "DEVELOPING";
@@ -195,6 +229,12 @@ export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis 
   const primary = evaluated[0];
   const alternatives = evaluated.slice(1, 4);
 
+  // Wave-4 discipline: a wave 4 is only "done" while price has not violated it
+  // again. If pivots after the labeled wave 5 push beyond wave 4 against the
+  // trend, wave 5 never happened — the correction labeled 4 is still unfolding
+  // as a complex W-X-Y structure from wave 3.
+  enforceWave4Discipline(primary, pool);
+
   // Try to attach a corrective A-B-C if the primary is completed and pivots remain after it.
   if (primary.state === "COMPLETED" && primary.labeled.length === 6) {
     const lastImpulseIdx = primary.labeled[5].pivot.index;
@@ -210,6 +250,36 @@ export function analyzeElliott(pivots: ReadonlyArray<PivotV2>): ElliottAnalysis 
   }
 
   return { primary, alternatives };
+}
+
+function enforceWave4Discipline(count: ElliottCountV2, pool: ReadonlyArray<PivotV2>): void {
+  const four = count.labeled.find((l) => l.label === "4");
+  const five = count.labeled.find((l) => l.label === "5");
+  const three = count.labeled.find((l) => l.label === "3");
+  if (!four || !five || !three) return;
+
+  const violated = pool.some((p) =>
+    p.index > five.pivot.index &&
+    (count.direction === "long" ? p.price < four.pivot.price : p.price > four.pivot.price),
+  );
+  if (!violated) return;
+
+  // Re-label: keep 0-1-2-3 and treat everything after wave 3 as a developing
+  // complex correction (wave 4 in progress).
+  const afterThree = pool.filter((p) => p.index > three.pivot.index);
+  const COMPLEX: WaveLabel[] = ["W", "X", "Y", "X", "Z"];
+  const corrective: LabeledPivot[] = [];
+  for (let i = 0; i < afterThree.length && i < COMPLEX.length; i++) {
+    const prev = corrective[corrective.length - 1]?.pivot ?? three.pivot;
+    if (afterThree[i].type === prev.type) break;
+    corrective.push({ pivot: afterThree[i], label: COMPLEX[i] });
+  }
+  count.labeled = [...count.labeled.filter((l) => ["0", "1", "2", "3"].includes(l.label)), ...corrective];
+  count.currentWave = corrective.length ? corrective[corrective.length - 1].label : "3";
+  count.state = "DEVELOPING";
+  count.pattern = corrective.length >= 3 ? "DOUBLE_ZIGZAG" : "SIMPLE_CORRECTION";
+  count.score = Math.min(count.score, 0.55);
+  count.notes.push("wave 4 still unfolding (price re-entered wave-4 territory) → labeled as W-X-Y");
 }
 
 /**
