@@ -19,7 +19,7 @@ const Input = z.object({
 export interface AnalyzeResponse {
   elliott: ElliottResultDTO;
   ict: IctContext | null;
-  provider?: MarketProvider;
+  provider?: "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
   error?: string;
   /** Timeframe the Elliott count actually ran on (HTF when available). */
   countTimeframe?: string;
