@@ -88,6 +88,9 @@ function evaluateCandidate(cand: PivotCandidate): ElliottCountV2 {
     state = "NO_COUNT";
     score = 0;
   }
+  // Coverage bonus: prefer counts that describe more structure over 3-pivot
+  // fragments anchored at the live edge.
+  if (score > 0) score += 0.05 * Math.min(1, (seq.length - 3) / 3);
 
   const labeled = labelImpulse(seq);
   const currentWave = labeled.length ? labeled[labeled.length - 1].label : null;
