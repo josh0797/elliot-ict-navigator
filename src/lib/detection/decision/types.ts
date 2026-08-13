@@ -4,6 +4,7 @@
  * for the trader. Pure data; no I/O.
  */
 import type { TradeSignal } from "../setup/types";
+import type { BiasSplit } from "./bias-split";
 
 export type OperationalDecision = "BUY" | "SELL" | "WAIT" | "NO_TRADE";
 
@@ -63,6 +64,8 @@ export type DecisionReasonCode =
   | "WAITING_FOR_SWEEP"
   | "INSUFFICIENT_RR"
   | "NO_DOMINANT_BIAS"
+  | "ELLIOTT_ICT_CONFLICT"
+  | "SCENARIO_STALE"
   | "OK";
 
 export interface OperationalReport {
@@ -71,6 +74,8 @@ export interface OperationalReport {
   template: SetupTemplate;
   direction: VoteDirection;
   bias: DirectionBiasResult;
+  /** Elliott vs ICT score split; drives the MIXED/CONFLICT final bias. */
+  biasSplit?: BiasSplit;
   /** The signal driving the decision, when actionable. */
   primarySignal: TradeSignal | null;
   reasons: DecisionReasonCode[];

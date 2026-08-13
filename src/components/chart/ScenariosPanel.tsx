@@ -2,10 +2,18 @@ import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
 import { Badge } from "@/components/ui/badge";
 
 function statusTone(status: string): string {
-  if (status === "INVALIDATED") return "text-destructive";
-  if (status === "COMPLETED" || status === "VALID") return "text-success";
+  if (status === "INVALIDATED" || status === "STALE") return "text-destructive";
+  if (status === "COMPLETED") return "text-success";
+  if (status === "NEAR_COMPLETION") return "text-amber-400";
   return "text-foreground";
 }
+
+const TARGET_TONE: Record<string, string> = {
+  HIT: "text-success line-through decoration-success/60",
+  ACTIVE: "text-primary font-bold",
+  NEXT: "text-foreground",
+  PENDING: "text-muted-foreground",
+};
 
 function Scenario({
   title,
@@ -40,6 +48,12 @@ function Scenario({
         <span className="text-right">{dto.confirmationLevel != null ? pxFmt(dto.confirmationLevel) : "—"}</span>
         <span className="text-muted-foreground">Invalidación</span>
         <span className="text-right text-destructive">{dto.invalidationLevel != null ? pxFmt(dto.invalidationLevel) : "—"}</span>
+        <span className="text-muted-foreground">Objetivo activo</span>
+        <span className="text-right text-primary">{dto.activeTarget ? pxFmt(dto.activeTarget.price) : "—"}</span>
+        <span className="text-muted-foreground">Siguiente</span>
+        <span className="text-right">{dto.nextTarget ? pxFmt(dto.nextTarget.price) : "—"}</span>
+        <span className="text-muted-foreground">Alcanzados</span>
+        <span className="text-right text-success">{(dto.hitTargets ?? []).length}</span>
         <span className="text-muted-foreground">Completado</span>
         <span className="text-right">{Math.round(dto.completion * 100)}%</span>
       </div>
@@ -48,12 +62,25 @@ function Scenario({
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Objetivos Fibonacci</div>
           <ul className="text-xs font-mono space-y-0.5">
             {(dto.fibTargets ?? []).slice(0, 6).map((t) => (
-              <li key={t.label} className="flex justify-between gap-2">
-                <span className="text-muted-foreground">{t.label}</span>
-                <span>{pxFmt(t.price)}</span>
+              <li key={t.label} className={`flex justify-between gap-2 ${TARGET_TONE[t.state ?? "PENDING"]}`}>
+                <span className="truncate">{t.label}</span>
+                <span className="whitespace-nowrap">
+                  {pxFmt(t.price)}
+                  {t.state && t.state !== "PENDING" ? ` · ${t.state}` : ""}
+                </span>
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {dto.consistency && dto.consistency.exhaustion.length > 0 && (
+        <div className="text-[10px] font-mono text-muted-foreground">
+          Agotamiento ({dto.consistency.exhaustion.length}/2): {dto.consistency.exhaustion.join(" · ")}
+        </div>
+      )}
+      {dto.consistency?.corrected && (
+        <div className="text-[10px] font-mono text-amber-400">
+          Corregido: {dto.consistency.issues.join(" · ")}
         </div>
       )}
     </div>

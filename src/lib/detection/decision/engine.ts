@@ -13,6 +13,7 @@ import type { IctContext } from "../ict/types";
 import type { DiagonalPattern } from "../elliott/diagonal";
 import type { TradeSignal } from "../setup/types";
 import { computeDirectionBias } from "./direction";
+import { computeBiasSplit } from "./bias-split";
 import { classifyTemplate } from "./template";
 import type {
   DecisionReasonCode,
@@ -24,6 +25,12 @@ import type {
 
 export interface DecisionEngineOptions {
   minRR?: number;
+  /**
+   * Primary Elliott scenario retired by `scenarioConsistencyCheck` (targets
+   * exceeded or invalidation breached). It stops voting and can never produce
+   * BUY/SELL on its own.
+   */
+  primaryRetired?: boolean;
 }
 
 const DEFAULT_MIN_RR = 1.5;
@@ -198,7 +205,29 @@ export function decideOperation(
   }
 
   // ── Direction arbitration
-  const bias = computeDirectionBias(elliott, ict, candleCount, diagonal);
+  const bias = computeDirectionBias(elliott, ict, candleCount, diagonal, {
+    primaryRetired: opts.primaryRetired,
+  });
+  const biasSplit = computeBiasSplit(bias);
+
+  // ── Elliott vs ICT reconciliation: never impose one side when they diverge.
+  if (biasSplit.finalBias === "MIXED") {
+    const r: OperationalReport = {
+      decision: "WAIT",
+      status: "WATCHING",
+      template: "NO_VALID_TEMPLATE",
+      direction: "NEUTRAL",
+      bias,
+      biasSplit,
+      primarySignal: null,
+      reasons: ["ELLIOTT_ICT_CONFLICT"],
+      summary: biasSplit.explanation,
+      missing: ["alineación Elliott/ICT (confirmación estructural)"],
+    };
+    return r;
+  }
+
+  if (opts.primaryRetired) reasons.push("SCENARIO_STALE");
 
   if (bias.conflict) {
     const r: OperationalReport = {
@@ -207,6 +236,7 @@ export function decideOperation(
       template: "NO_VALID_TEMPLATE",
       direction: "NEUTRAL",
       bias,
+      biasSplit,
       primarySignal: null,
       reasons: ["DIRECTION_CONFLICT"],
       summary: "",
@@ -222,6 +252,7 @@ export function decideOperation(
       template: "NO_VALID_TEMPLATE",
       direction: "NEUTRAL",
       bias,
+      biasSplit,
       primarySignal: null,
       reasons: ["NO_DOMINANT_BIAS"],
       summary: "",
@@ -243,6 +274,7 @@ export function decideOperation(
       template: "NO_VALID_TEMPLATE",
       direction: bias.dominant,
       bias,
+      biasSplit,
       primarySignal: null,
       reasons: ["INSUFFICIENT_RR"],
       summary: "",
@@ -277,6 +309,7 @@ export function decideOperation(
       template: "NO_VALID_TEMPLATE",
       direction: bias.dominant,
       bias,
+      biasSplit,
       primarySignal: null,
       reasons,
       summary: "",
@@ -293,6 +326,7 @@ export function decideOperation(
       template: "NO_VALID_TEMPLATE",
       direction: bias.dominant,
       bias,
+      biasSplit,
       primarySignal: null,
       reasons: ["DIRECTION_CONFLICT"],
       summary: "",
@@ -318,8 +352,9 @@ export function decideOperation(
     template,
     direction: bias.dominant,
     bias,
+    biasSplit,
     primarySignal: signal,
-    reasons: [reasonCode],
+    reasons: [...reasons, reasonCode],
     summary: "",
     missing: [],
   };
