@@ -114,6 +114,8 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
     const ltfLifted = liftCandles(candles);
     const ltfPivots = detectPivots(ltfLifted);
     const ict = analyzeIct(ltfLifted, ltfPivots, { timeframe: data.interval });
+    const currentPrice = ltfLifted[ltfLifted.length - 1].close;
+    const consistencyCtx = { currentPrice, candles: ltfLifted, ict };
 
     // Multi-degree count on the displayed timeframe — this is what gets drawn.
     const localBias = currentBias(ltfPivots);
@@ -135,18 +137,31 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
     // Fall back to the next lower degree when the chosen one has no count.
     const order: ElliottDegree[] = [chosen, ...(lowerDegree(chosen) ? [lowerDegree(chosen)!] : []), "MINOR"];
     const effective = order.find((d) => degrees[d].status !== "NO_COUNT") ?? chosen;
-    const local: ElliottResultDTO = { ...degrees[effective] };
+    let local: ElliottResultDTO = { ...degrees[effective] };
     const sub = lowerDegree(effective);
     local.internal = sub && degrees[sub].status !== "NO_COUNT" ? degrees[sub] : null;
+
+    // ── Central coherence rule: reconcile count state, Fibonacci targets and
+    // invalidation against the live price BEFORE the DTO is rendered.
+    local = scenarioConsistencyCheck(local, consistencyCtx).scenario;
+    for (const deg of Object.keys(degrees) as ElliottDegree[]) {
+      degrees[deg] = scenarioConsistencyCheck(degrees[deg], consistencyCtx).scenario;
+    }
 
     // Macro count on the higher timeframe (context only).
     let macro: ElliottResultDTO | null = null;
     let countTf = data.interval;
     if (htfRes && !htfRes.error && htfRes.candles.length > 0) {
-      const htfPivots = detectPivots(liftCandles(htfRes.candles));
+      const htfLifted = liftCandles(htfRes.candles);
+      const htfPivots = detectPivots(htfLifted);
       macro = toElliottResult(analyzeElliott(htfPivots, { degree: "MAJOR" }), currentBias(htfPivots));
       countTf = htfInterval!;
       macro.timeframe = countTf;
+      macro = scenarioConsistencyCheck(macro, {
+        currentPrice,
+        candles: htfLifted,
+        ict: null,
+      }).scenario;
     }
     return {
       elliott: local,
