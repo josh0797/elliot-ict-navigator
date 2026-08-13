@@ -18,16 +18,25 @@ function dirFromBias(b: "BULLISH" | "BEARISH" | "NEUTRAL"): VoteDirection {
   return b;
 }
 
+export interface DirectionBiasOptions {
+  /**
+   * The primary count was retired by `scenarioConsistencyCheck` (STALE or
+   * INVALIDATED after the latest price). It MUST NOT vote.
+   */
+  primaryRetired?: boolean;
+}
+
 export function computeDirectionBias(
   elliott: ElliottAnalysis,
   ict: IctContext,
   candleCount: number,
   diagonal: DiagonalPattern | null = null,
+  opts: DirectionBiasOptions = {},
 ): DirectionBiasResult {
   const votes: DirectionVote[] = [];
 
   // 1. Elliott primary bias
-  const primary = elliott.primary;
+  const primary = opts.primaryRetired ? null : elliott.primary;
   if (primary && primary.state !== "INVALIDATED") {
     votes.push({
       source: "ELLIOTT_PRIMARY",
