@@ -62,7 +62,14 @@ export interface ElliottAnalysis {
 
 // ─── DTO (Phase 3 contract) ──────────────────────────────────────────────────
 
-export type ElliottStatus = "VALID" | "DEVELOPING" | "INVALIDATED" | "NO_COUNT" | "COMPLETED";
+export type ElliottStatus =
+  | "VALID"
+  | "DEVELOPING"
+  | "NEAR_COMPLETION"
+  | "INVALIDATED"
+  | "NO_COUNT"
+  | "COMPLETED"
+  | "STALE";
 export type Bias = "BULLISH" | "BEARISH" | "NEUTRAL";
 export type RuleStatus = "PASS" | "FAIL" | "PENDING";
 
@@ -96,6 +103,44 @@ export interface FibTargetDTO {
   ratio: number;
   price: number;
   kind: "RETRACEMENT" | "EXTENSION" | "PROJECTION";
+  /**
+   * Lifecycle relative to the current price, assigned by
+   * `scenarioConsistencyCheck`. HIT = reached/exceeded, ACTIVE = the nearest
+   * unreached target, NEXT = the one after it, PENDING = further away.
+   */
+  state?: "HIT" | "ACTIVE" | "NEXT" | "PENDING";
+}
+
+/** Exhaustion evidence used to confirm the end of wave 5 (needs >= 2). */
+export type ExhaustionSignalCode =
+  | "FIB_TARGET_REACHED"
+  | "RSI_DIVERGENCE"
+  | "MACD_DIVERGENCE"
+  | "MOMENTUM_LOSS"
+  | "STRUCTURAL_REJECTION"
+  | "COUNTER_BOS_CHOCH"
+  | "INTERNAL_SWING_BREAK"
+  | "FIVE_SUBWAVES";
+
+export type ConsistencyIssueCode =
+  | "INVALIDATION_BREACHED"
+  | "ALL_TARGETS_EXCEEDED"
+  | "TARGET_BELOW_PRICE"
+  | "COMPLETED_WITHOUT_EVIDENCE"
+  | "STATUS_TEXT_MISMATCH"
+  | "STALE_SCENARIO"
+  | "ALTERNATIVE_PROMOTED";
+
+export interface ScenarioConsistency {
+  /** Issues detected and already corrected before rendering. */
+  issues: ConsistencyIssueCode[];
+  corrected: boolean;
+  /** Exhaustion evidence collected for the wave in progress. */
+  exhaustion: ExhaustionSignalCode[];
+  /** True when the scenario was retired (targets exceeded / invalidated). */
+  stale: boolean;
+  /** Price used to evaluate the scenario. */
+  priceAtCheck: number;
 }
 
 export interface ConfidenceBreakdown {
@@ -135,4 +180,12 @@ export interface ElliottResultDTO {
   waves: ElliottWaveDTO[];
   alternatives: ElliottResultDTO[];
   breakdown?: ConfidenceBreakdown;
+  /** Result of `scenarioConsistencyCheck` (set once price is known). */
+  consistency?: ScenarioConsistency;
+  /** Active Fibonacci target (nearest unreached), when any. */
+  activeTarget?: FibTargetDTO | null;
+  /** Target after the active one. */
+  nextTarget?: FibTargetDTO | null;
+  /** Targets already reached/exceeded by price. */
+  hitTargets?: FibTargetDTO[];
 }
