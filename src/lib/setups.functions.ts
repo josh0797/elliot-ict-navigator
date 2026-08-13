@@ -90,12 +90,20 @@ export const detectSetups = createServerFn({ method: "POST" })
       timeframe: data.interval,
       topN: data.topN,
     });
-    const decision = decideOperation(analysis, ict, signals, lifted.length, diagonal);
+    const currentPrice = lifted[lifted.length - 1].close;
+    const check = scenarioConsistencyCheck(toElliottResult(analysis, bias), {
+      currentPrice,
+      candles: lifted,
+      ict,
+    });
+    const decision = decideOperation(analysis, ict, signals, lifted.length, diagonal, {
+      primaryRetired: check.primaryRetired,
+    });
     return {
       symbol: data.symbol,
       timeframe: data.interval,
       signals,
-      elliott: toElliottResult(analysis, bias),
+      elliott: check.scenario,
       decision,
       diagonal,
       provider,
@@ -168,14 +176,22 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
       timeframe: data.interval,
       topN: data.topN,
     });
-    const decision = decideOperation(analysis, ict, signals, ltfLifted.length, diagonal);
+    const currentPrice = ltfLifted[ltfLifted.length - 1].close;
+    const check = scenarioConsistencyCheck(toElliottResult(analysis, elliottBias), {
+      currentPrice,
+      candles: ltfLifted,
+      ict,
+    });
+    const decision = decideOperation(analysis, ict, signals, ltfLifted.length, diagonal, {
+      primaryRetired: check.primaryRetired,
+    });
 
     return {
       symbol: data.symbol,
       timeframe: data.interval,
       htf: htfInterval,
       signals,
-      elliott: toElliottResult(analysis, elliottBias),
+      elliott: check.scenario,
       decision,
       diagonal,
       provider: ltfRes.provider,
