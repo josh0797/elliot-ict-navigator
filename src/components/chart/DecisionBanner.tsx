@@ -51,6 +51,28 @@ export function DecisionBanner({
           BIAS · {report.direction} · 🐂{report.bias.bullScore.toFixed(1)} / 🐻{report.bias.bearScore.toFixed(1)}
         </Badge>
       </div>
+      {report.biasSplit && (
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-mono">
+          <span>
+            <span className="text-muted-foreground">Elliott: </span>
+            <span className={report.biasSplit.elliottBias === "BULLISH" ? "text-success" : report.biasSplit.elliottBias === "BEARISH" ? "text-destructive" : "text-muted-foreground"}>
+              {report.biasSplit.elliottBias} {report.biasSplit.elliottScore > 0 ? "+" : ""}{report.biasSplit.elliottScore.toFixed(1)}
+            </span>
+          </span>
+          <span>
+            <span className="text-muted-foreground">ICT: </span>
+            <span className={report.biasSplit.ictBias === "BULLISH" ? "text-success" : report.biasSplit.ictBias === "BEARISH" ? "text-destructive" : "text-muted-foreground"}>
+              {report.biasSplit.ictBias} {report.biasSplit.ictScore > 0 ? "+" : ""}{report.biasSplit.ictScore.toFixed(1)}
+            </span>
+          </span>
+          <span>
+            <span className="text-muted-foreground">Final: </span>
+            <span className={report.biasSplit.finalBias === "MIXED" ? "text-amber-400 font-bold" : "text-foreground font-bold"}>
+              {report.biasSplit.finalBias}
+            </span>
+          </span>
+        </div>
+      )}
       <p className="mt-2 text-sm text-foreground/90">{report.summary}</p>
 
       {sig && (report.decision === "BUY" || report.decision === "SELL") && (
