@@ -7,6 +7,7 @@ import { currentBias } from "./detection/structure/market-structure";
 import { analyzeElliott } from "./detection/elliott/engine";
 import { analyzeIct } from "./detection/ict/engine";
 import { toElliottResult } from "./detection/elliott/dto";
+import { scenarioConsistencyCheck } from "./detection/consistency/scenario";
 import { detectSignals } from "./detection/setup/engine";
 import type { DetectSetupsResult } from "./detection/setup/types";
 import { decideOperation } from "./detection/decision/engine";

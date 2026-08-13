@@ -9,6 +9,7 @@ import { analyzeElliottDegrees } from "./detection/elliott/engine";
 import { autoDegree, lowerDegree, type ElliottDegree } from "./detection/elliott/degrees";
 import { analyzeIct } from "./detection/ict/engine";
 import { toElliottResult } from "./detection/elliott/dto";
+import { scenarioConsistencyCheck } from "./detection/consistency/scenario";
 import type { ElliottResultDTO } from "./detection/elliott/types";
 import type { IctContext } from "./detection/ict/types";
 import type { Candle } from "./twelvedata.functions";
