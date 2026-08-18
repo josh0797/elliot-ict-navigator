@@ -18,6 +18,8 @@ import type {
   FibTargetDTO,
 } from "../elliott/types";
 import { collectExhaustion, isTerminationConfirmed } from "./exhaustion";
+import { evaluateTruncation } from "../elliott/truncation";
+import { atr14 } from "../indicators/atr";
 
 export interface ConsistencyContext {
   currentPrice: number;
@@ -131,6 +133,35 @@ function checkOne(dto: ElliottResultDTO, ctx: ConsistencyContext): ElliottResult
   });
   const confirmed = isTerminationConfirmed(exhaustion);
 
+  // ── Truncated fifth: re-evaluated with internal subwaves + exhaustion ─────
+  let truncation = out.truncation ?? null;
+  if (truncation) {
+    const priceOf = (label: string) => out.waves.find((w) => w.label === label)?.price;
+    const failed = out.rules.filter((r) => r.status === "FAIL").map((r) => r.code);
+    const invalidations = [
+      ...(failed.includes("W2_ORIGIN") ? ["R1: wave 2 past origin"] : []),
+      ...(failed.includes("W3_NOT_SHORTEST") ? ["R2: wave 3 shortest"] : []),
+      ...(failed.includes("W4_OVERLAP") ? ["R3: wave 4 overlap"] : []),
+    ];
+    const atrSeries = ctx.candles && ctx.candles.length >= 15 ? atr14(ctx.candles) : null;
+    const atr = atrSeries ? atrSeries[atrSeries.length - 1] : undefined;
+    truncation = evaluateTruncation({
+      direction,
+      pattern: out.pattern,
+      p0: priceOf("0"), p1: priceOf("1"), p2: priceOf("2"),
+      p3: priceOf("3"), p4: priceOf("4"), p5: priceOf("5"),
+      invalidations,
+      internalLabels: (out.internal?.waves ?? []).map((w) => w.label),
+      exhaustion,
+      invalidationBreached: breached,
+      atr: Number.isFinite(atr) ? atr : undefined,
+    });
+    out.truncation = truncation;
+    if (truncation.verdict === "CONFIRMED") out.scenarioKind = "TRUNCATED_FIFTH";
+    else if (truncation.verdict === "UNCONFIRMED") out.scenarioKind = "UNCONFIRMED";
+  }
+  const truncationUnconfirmed = truncation?.verdict === "UNCONFIRMED";
+
   // ── Status normalisation ───────────────────────────────────────────────────
   let status = out.status;
   if (breached) {
@@ -139,11 +170,11 @@ function checkOne(dto: ElliottResultDTO, ctx: ConsistencyContext): ElliottResult
   } else if (ann.allExceeded && !confirmed) {
     issues.push("STALE_SCENARIO");
     status = "STALE";
-  } else if (status === "COMPLETED" && !confirmed) {
+  } else if (status === "COMPLETED" && (!confirmed || truncationUnconfirmed)) {
     issues.push("COMPLETED_WITHOUT_EVIDENCE");
     status = ann.hit.length > 0 ? "NEAR_COMPLETION" : "DEVELOPING";
   } else if (status === "VALID" || status === "DEVELOPING") {
-    if (confirmed && ann.hit.length > 0) status = "COMPLETED";
+    if (confirmed && ann.hit.length > 0 && !truncationUnconfirmed) status = "COMPLETED";
     else if (ann.hit.length > 0 || exhaustion.length >= 1) status = "NEAR_COMPLETION";
     else status = "DEVELOPING";
   }
@@ -155,6 +186,11 @@ function checkOne(dto: ElliottResultDTO, ctx: ConsistencyContext): ElliottResult
 
   const prevScenario = out.scenario;
   out.scenario = narrative(out);
+  if (truncation?.verdict === "CONFIRMED") {
+    out.scenario = `TRUNCATED FIFTH — ${out.scenario}`;
+  } else if (truncationUnconfirmed) {
+    out.scenario = `POSSIBLE TRUNCATED FIFTH — UNCONFIRMED. ${out.scenario}`;
+  }
   if (prevScenario && prevScenario !== out.scenario && (status === "COMPLETED" || dead)) {
     issues.push("STATUS_TEXT_MISMATCH");
   }

@@ -16,10 +16,15 @@ import {
 } from "lightweight-charts";
 import type { Candle } from "@/lib/twelvedata.functions";
 import type { ElliottResultDTO, ElliottWaveDTO } from "@/lib/detection/elliott/types";
+import { degreeColor, displayWaveLabel, type DisplayDegree } from "@/lib/detection/elliott/display";
 import type { IctContext } from "@/lib/detection/ict/types";
 import type { TradeSignal } from "@/lib/detection/setup/types";
 
 export interface LayerToggles {
+  /** Primary (highest-priority) Elliott count. */
+  primaryCount: boolean;
+  /** Lower-degree internal subdivision. */
+  internalWaves: boolean;
   elliottLines: boolean;
   elliottLabels: boolean;
   alternativeCount: boolean;
@@ -41,26 +46,8 @@ export interface PivotTooltip {
   confirmed: boolean;
 }
 
-const SEGMENT_COLORS: Record<string, string> = {
-  "0-1": "#06b6d4",
-  "1-2": "#a855f7",
-  "2-3": "#22c55e",
-  "3-4": "#f97316",
-  "4-5": "#ec4899",
-  "5-A": "#ef4444",
-  "A-B": "#eab308",
-  "B-C": "#fb7185",
-  "5-W": "#ef4444",
-  "3-W": "#ef4444",
-  "W-X": "#eab308",
-  "X-Y": "#fb7185",
-  "Y-X": "#eab308",
-  "X-Z": "#f472b6",
-};
-
-function segmentColor(a: string, b: string): string {
-  return SEGMENT_COLORS[`${a}-${b}`] ?? "#94a3b8";
-}
+/** Visual role of a rendered count — drives colour weight and label priority. */
+type CountRole = "primary" | "internal" | "alternative";
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -221,7 +208,22 @@ export function TradingChart({
       chartMarkers.push(marker);
     };
 
-    const renderCount = (waves: ElliottWaveDTO[], opacity: number, showLines: boolean, showLabels: boolean) => {
+    // Label slots already taken, so labels of different degrees never stack on
+    // the same anchor. Priority: primary > internal > alternative.
+    const usedLabelSlots = new Set<string>();
+
+    const renderCount = (
+      waves: ElliottWaveDTO[],
+      opts: {
+        role: CountRole;
+        degree: DisplayDegree;
+        showLines: boolean;
+        showLabels: boolean;
+      },
+    ) => {
+      const { role, degree, showLines, showLabels } = opts;
+      const color = degreeColor(degree);
+      const opacity = role === "primary" ? 1 : role === "internal" ? 0.75 : 0.45;
       if (waves.length < 2) return;
       // Segmented lines, one series per pair.
       if (showLines) {
@@ -237,11 +239,10 @@ export function TradingChart({
             !isFiniteNumber(a.price) ||
             !isFiniteNumber(b.price)
           ) continue;
-          const color = segmentColor(a.label, b.label);
           const s = chart.addSeries(LineSeries, {
             color: opacity < 1 ? hexWithAlpha(color, opacity) : color,
-            lineWidth: opacity < 1 ? 1 : 2,
-            lineStyle: opacity < 1 ? LineStyle.Dotted : LineStyle.Solid,
+            lineWidth: role === "primary" ? 2 : 1,
+            lineStyle: role === "alternative" ? LineStyle.Dashed : LineStyle.Solid,
             priceLineVisible: false,
             lastValueVisible: false,
           });
@@ -257,13 +258,24 @@ export function TradingChart({
           .map((w) => ({ t: snapTime(waveTime(w, candles)), w }))
           .filter((p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && isFiniteNumber(p.w.price));
         for (const { t, w } of wavePoints) {
+          // Distinct vertical offsets per role prevent visual collisions.
+          const position: SeriesMarker<Time>["position"] =
+            role === "internal"
+              ? "inBar"
+              : role === "alternative"
+                ? (w.type === "HIGH" ? "belowBar" : "aboveBar")
+                : (w.type === "HIGH" ? "aboveBar" : "belowBar");
+          const slot = `${t}:${position}`;
+          if (usedLabelSlots.has(slot)) continue;
+          usedLabelSlots.add(slot);
+          const text = displayWaveLabel(w.label, degree);
           pushMarker({
-            id: `elliott-${w.label}-${t}-${opacity}`,
+            id: `elliott-${role}-${w.label}-${t}`,
             time: t as unknown as UTCTimestamp,
-            position: w.type === "HIGH" ? "aboveBar" : "belowBar",
-            color: w.confirmed ? "#facc15" : "rgba(250,204,21,0.5)",
+            position,
+            color: w.confirmed ? hexWithAlpha(color, opacity) : hexWithAlpha(color, opacity * 0.6),
             shape: "circle",
-            text: w.confirmed ? w.label : `${w.label}?`,
+            text: w.confirmed ? text : `${text}?`,
           });
         }
       }
@@ -282,16 +294,34 @@ export function TradingChart({
       const fallback = elliott.alternatives.find((a) => a.waves.length > 0) ?? null;
       const operative = retired && fallback ? fallback : elliott;
       const secondary = operative === elliott ? fallback : elliott;
-      renderCount(operative.waves, 1, isDiag ? layers.elliottLines : true, isDiag ? layers.elliottLabels : true);
+      const showPrimary = isDiag ? layers.primaryCount : true;
+      if (showPrimary) {
+        renderCount(operative.waves, {
+          role: "primary",
+          degree: (operative.degree ?? "INTERMEDIATE") as DisplayDegree,
+          showLines: isDiag ? layers.elliottLines : true,
+          showLabels: isDiag ? layers.elliottLabels : true,
+        });
+      }
       if (layers.alternativeCount && secondary && secondary.waves.length > 0) {
-        renderCount(secondary.waves, 0.4, true, true);
+        renderCount(secondary.waves, {
+          role: "alternative",
+          degree: (secondary.degree ?? "INTERMEDIATE") as DisplayDegree,
+          showLines: true,
+          showLabels: isDiag ? layers.elliottLabels : true,
+        });
       }
     }
 
     // Internal (lower-degree) subdivision: drawn in Diagnostic on top of the
     // major structure so 3-4-5 and W-X-Y coexist instead of replacing each other.
-    if (isDiag && internal && internal.waves.length >= 2) {
-      renderCount(internal.waves, 0.55, layers.elliottLines, layers.elliottLabels);
+    if (isDiag && layers.internalWaves && internal && internal.waves.length >= 2) {
+      renderCount(internal.waves, {
+        role: "internal",
+        degree: "INTERNAL",
+        showLines: layers.elliottLines,
+        showLabels: layers.elliottLabels,
+      });
     }
 
     if (isDiag && elliott) {
