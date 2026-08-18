@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { fetchCandles } from "@/lib/twelvedata.functions";
+import { fetchOhlcv } from "@/lib/marketData.functions";
 import { detectSetup } from "@/lib/detection/engine";
 import type { TradeSetup } from "@/lib/detection/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +29,7 @@ type Row = {
 };
 
 function Dashboard() {
-  const fetch = useServerFn(fetchCandles);
+  const fetch = useServerFn(fetchOhlcv);
   const [rows, setRows] = useState<Row[]>(
     DEFAULT_PAIRS.map((s) => ({ symbol: s, loading: true, price: null, setup: null })),
   );
