@@ -237,6 +237,23 @@ function buildRationale(
   return parts.join(" ");
 }
 
+/** Minimum score an alternative must reach before it can drive orders. */
+const ALT_MIN_SCORE = 0.4;
+
+/**
+ * The count the operational layer trades from. Mirrors the decision engine's
+ * arbitration: primary while it is not INVALIDATED, otherwise the highest
+ * scoring non-invalidated alternative above `ALT_MIN_SCORE`.
+ */
+function pickOperativeCount(elliott: ElliottAnalysis): ElliottCountV2 | null {
+  const primary = elliott.primary;
+  if (primary && primary.state !== "INVALIDATED") return primary;
+  const alt = [...elliott.alternatives]
+    .filter((c) => c.state !== "INVALIDATED" && c.state !== "NO_COUNT" && c.score >= ALT_MIN_SCORE)
+    .sort((a, b) => b.score - a.score)[0];
+  return alt ?? null;
+}
+
 export function detectSignals(
   candles: ReadonlyArray<CandleV2>,
   pivots: ReadonlyArray<PivotV2>,
