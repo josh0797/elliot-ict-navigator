@@ -3,15 +3,15 @@ import { Label } from "@/components/ui/label";
 import type { LayerToggles } from "./TradingChart";
 
 const OPTIONS: { key: keyof LayerToggles; label: string }[] = [
-  { key: "primaryCount",      label: "Primary Elliott count" },
-  { key: "internalWaves",     label: "Internal waves" },
-  { key: "elliottLines",      label: "Elliott lines" },
-  { key: "elliottLabels",     label: "Elliott labels" },
-  { key: "alternativeCount",  label: "Alternative count" },
-  { key: "invalidation",      label: "Invalidation" },
-  { key: "fibonacciElliott",  label: "Fibonacci Elliott" },
-  { key: "liquidity",         label: "Liquidity levels" },
-  { key: "sweeps",            label: "Sweep markers" },
+  { key: "primaryCount", label: "Primary Elliott count" },
+  { key: "internalWaves", label: "Internal waves" },
+  { key: "elliottLines", label: "Elliott lines" },
+  { key: "elliottLabels", label: "Elliott labels" },
+  { key: "alternativeCount", label: "Alternative count" },
+  { key: "invalidation", label: "Invalidation" },
+  { key: "fibonacciElliott", label: "Fibonacci Elliott" },
+  { key: "liquidity", label: "Liquidity levels" },
+  { key: "sweeps", label: "Sweep markers" },
 ];
 
 export function LayerControls({
@@ -27,7 +27,9 @@ export function LayerControls({
       <div className="space-y-2">
         {OPTIONS.map((o) => (
           <div key={o.key} className="flex items-center justify-between">
-            <Label htmlFor={`layer-${o.key}`} className="text-sm text-foreground/90">{o.label}</Label>
+            <Label htmlFor={`layer-${o.key}`} className="text-sm text-foreground/90">
+              {o.label}
+            </Label>
             <Switch
               id={`layer-${o.key}`}
               checked={layers[o.key]}

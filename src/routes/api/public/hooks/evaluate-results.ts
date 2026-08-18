@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 async function getPrice(symbol: string, apiKey: string): Promise<number | null> {
-  const r = await fetch(`https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`);
+  const r = await fetch(
+    `https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`,
+  );
   const j = (await r.json()) as { price?: string };
   return j.price ? Number(j.price) : null;
 }
@@ -57,7 +59,10 @@ export const Route = createFileRoute("/api/public/hooks/evaluate-results")({
           // Expire after 72h
           const age = (Date.now() - new Date(s.detected_at).getTime()) / 3600_000;
           if (!outcome && age > 72) {
-            await supabaseAdmin.from("setups").update({ status: "expired", closed_at: new Date().toISOString() }).eq("id", s.id);
+            await supabaseAdmin
+              .from("setups")
+              .update({ status: "expired", closed_at: new Date().toISOString() })
+              .eq("id", s.id);
             updated++;
             continue;
           }
@@ -65,12 +70,14 @@ export const Route = createFileRoute("/api/public/hooks/evaluate-results")({
 
           const r = Math.abs(entry - sl) || 1;
           const exit = outcome === "sl" ? sl : outcome === "tp1" ? tp1 : (tp2 ?? tp1);
-          const rMult = ((long ? exit - entry : entry - exit) / r);
+          const rMult = (long ? exit - entry : entry - exit) / r;
           await supabaseAdmin
             .from("setups")
             .update({ status: outcome, closed_at: new Date().toISOString(), rr: rMult })
             .eq("id", s.id);
-          await supabaseAdmin.from("trade_results").insert({ setup_id: s.id, outcome, r_multiple: rMult });
+          await supabaseAdmin
+            .from("trade_results")
+            .insert({ setup_id: s.id, outcome, r_multiple: rMult });
           updated++;
         }
         return Response.json({ ok: true, evaluated: updated });

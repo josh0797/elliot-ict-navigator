@@ -15,15 +15,7 @@ import { groupSymbols } from "@/lib/symbols";
  * Grouped instrument picker (Forex / Metals / Crypto).
  * Selecting an item navigates to the chart route for the new symbol, preserving the timeframe.
  */
-export function SymbolPicker({
-  symbol,
-  tf,
-  bars,
-}: {
-  symbol: string;
-  tf: string;
-  bars: number;
-}) {
+export function SymbolPicker({ symbol, tf, bars }: { symbol: string; tf: string; bars: number }) {
   const navigate = useNavigate();
   const groups = groupSymbols();
 

@@ -12,6 +12,7 @@ import { detectSignals } from "./detection/setup/engine";
 import type { DetectSetupsResult } from "./detection/setup/types";
 import { decideOperation } from "./detection/decision/engine";
 import { detectEndingDiagonal } from "./detection/elliott/diagonal";
+import { contextTimeframeFor } from "./detection/mtf";
 
 const Input = z.object({
   symbol: z.string().min(2),
@@ -23,36 +24,20 @@ const Input = z.object({
    * analyse the very same candles — no second fetch, no drift.
    */
   candles: z
-    .array(z.object({
-      time: z.number(),
-      open: z.number(),
-      high: z.number(),
-      low: z.number(),
-      close: z.number(),
-      volume: z.number().optional(),
-    }))
+    .array(
+      z.object({
+        time: z.number(),
+        open: z.number(),
+        high: z.number(),
+        low: z.number(),
+        close: z.number(),
+        volume: z.number().optional(),
+      }),
+    )
     .optional(),
+  /** Caller-known staleness: blocks any new signal. */
+  dataStale: z.boolean().default(false),
 });
-
-/**
- * Multi-timeframe map: LTF (execution / ICT) → HTF (macro Elliott count).
- * Keys accept both raw provider strings and canonical alphabet — normalize
- * before lookup.
- */
-const HTF_MAP: Record<string, string> = {
-  "1m": "15min",
-  "5min": "1h",
-  "5m": "1h",
-  "15min": "4h",
-  "15m": "4h",
-  "30min": "4h",
-  "30m": "4h",
-  "1h": "1day",
-  "2h": "1day",
-  "4h": "1day",
-  "1day": "1week",
-  "1d": "1week",
-};
 
 function emptyElliottDto() {
   return {
@@ -74,15 +59,25 @@ export const detectSetups = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<DetectSetupsResult> => {
     const snapshot = data.candles?.length
-      ? { candles: data.candles, provider: "none" as const, meta: undefined, error: undefined }
-      : await fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } });
+      ? {
+          candles: data.candles,
+          provider: "none" as const,
+          meta: undefined,
+          error: undefined,
+          status: (data.dataStale ? "DATA_STALE" : "OK") as "OK" | "DATA_STALE",
+        }
+      : await fetchOhlcv({
+          data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize },
+        });
     const { candles, provider, error } = snapshot;
     const meta = snapshot.meta ?? null;
     const emptyElliott = emptyElliottDto();
-    if (error || candles.length === 0) {
+    if (error || candles.length === 0 || snapshot.status === "DATA_STALE") {
       return {
-        symbol: data.symbol, timeframe: data.interval,
-        signals: [], elliott: emptyElliott,
+        symbol: data.symbol,
+        timeframe: data.interval,
+        signals: [],
+        elliott: emptyElliott,
         decision: {
           decision: "NO_TRADE",
           status: "NO_SETUP",
@@ -90,11 +85,15 @@ export const detectSetups = createServerFn({ method: "POST" })
           direction: "NEUTRAL",
           bias: { dominant: "NEUTRAL", bullScore: 0, bearScore: 0, conflict: false, votes: [] },
           primarySignal: null,
-          reasons: ["NO_PRIMARY_COUNT"],
-          summary: "NO TRADE — sin datos.",
+          reasons: snapshot.status === "DATA_STALE" ? ["DATA_STALE"] : ["NO_PRIMARY_COUNT"],
+          summary:
+            snapshot.status === "DATA_STALE"
+              ? "NO TRADE — datos obsoletos (DATA_STALE)."
+              : "NO TRADE — sin datos.",
           missing: [],
         },
-        provider, error: error ?? "No candles",
+        provider,
+        error: error ?? (snapshot.status === "DATA_STALE" ? "DATA_STALE" : "No candles"),
       };
     }
     const lifted = liftCandles(candles);
@@ -140,19 +139,28 @@ export const detectSetups = createServerFn({ method: "POST" })
 export const detectSetupsMTF = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<DetectSetupsResult & { htf: string }> => {
-    const htfInterval = HTF_MAP[data.interval] ?? "1day";
+    const htfInterval = contextTimeframeFor(data.interval);
     const emptyElliott = emptyElliottDto();
 
     const [htfRes, ltfRes] = await Promise.all([
       fetchOhlcv({ data: { symbol: data.symbol, interval: htfInterval, outputsize: 300 } }),
       data.candles?.length
-        ? Promise.resolve({ candles: data.candles, provider: "none" as const, meta: undefined, error: undefined })
-        : fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } }),
+        ? Promise.resolve({
+            candles: data.candles,
+            provider: "none" as const,
+            meta: undefined,
+            error: undefined,
+            status: (data.dataStale ? "DATA_STALE" : "OK") as "OK" | "DATA_STALE",
+          })
+        : fetchOhlcv({
+            data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize },
+          }),
     ]);
     const ltfMeta = ltfRes.meta ?? null;
 
     const ltfError = ltfRes.error;
-    if (ltfError || ltfRes.candles.length === 0) {
+    const ltfStale = ltfRes.status === "DATA_STALE" || ltfMeta?.stale === true;
+    if (ltfError || ltfRes.candles.length === 0 || ltfStale) {
       return {
         symbol: data.symbol,
         timeframe: data.interval,
@@ -166,12 +174,12 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
           direction: "NEUTRAL",
           bias: { dominant: "NEUTRAL", bullScore: 0, bearScore: 0, conflict: false, votes: [] },
           primarySignal: null,
-          reasons: ["NO_PRIMARY_COUNT"],
-          summary: "NO TRADE — sin datos.",
+          reasons: ltfStale ? ["DATA_STALE"] : ["NO_PRIMARY_COUNT"],
+          summary: ltfStale ? "NO TRADE — datos obsoletos (DATA_STALE)." : "NO TRADE — sin datos.",
           missing: [],
         },
         provider: ltfRes.provider,
-        error: ltfError ?? "No candles",
+        error: ltfError ?? (ltfStale ? "DATA_STALE" : "No candles"),
       };
     }
 

@@ -23,9 +23,25 @@ it("rules: R1 rejects wave 2 below P0 (long)", () => {
 });
 
 it("rules: R3 rejects wave 4 overlapping wave 1 (impulse only)", () => {
-  const long = checkImpulseRules({ direction: "long", pattern: "IMPULSE", p0: 100, p1: 110, p2: 105, p3: 130, p4: 109 });
+  const long = checkImpulseRules({
+    direction: "long",
+    pattern: "IMPULSE",
+    p0: 100,
+    p1: 110,
+    p2: 105,
+    p3: 130,
+    p4: 109,
+  });
   expect(long.invalidations.some((s) => s.startsWith("R3"))).toBeTruthy();
-  const diag = checkImpulseRules({ direction: "long", pattern: "ENDING_DIAGONAL", p0: 100, p1: 110, p2: 105, p3: 130, p4: 109 });
+  const diag = checkImpulseRules({
+    direction: "long",
+    pattern: "ENDING_DIAGONAL",
+    p0: 100,
+    p1: 110,
+    p2: 105,
+    p3: 130,
+    p4: 109,
+  });
   expect(!diag.invalidations.some((s) => s.startsWith("R3"))).toBeTruthy();
 });
 
@@ -35,7 +51,12 @@ it("rules: R2 rejects W3 shortest among 1/3/5 (no R1/R3 collision)", () => {
   const r = checkImpulseRules({
     direction: "long",
     pattern: "IMPULSE",
-    p0: 100, p1: 120, p2: 110, p3: 125, p4: 121, p5: 160,
+    p0: 100,
+    p1: 120,
+    p2: 110,
+    p3: 125,
+    p4: 121,
+    p5: 160,
   });
   expect(r.invalidations.some((s) => s.startsWith("R2"))).toBeTruthy();
   expect(!r.invalidations.some((s) => s.startsWith("R1"))).toBeTruthy();

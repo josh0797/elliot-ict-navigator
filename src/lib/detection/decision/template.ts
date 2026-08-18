@@ -44,8 +44,7 @@ export function classifyTemplate(
     .reverse()
     .find((e) => e.type === "BOS" && e.state === "CONFIRMED");
 
-  const reversalSweepDir =
-    recentSweep && (recentSweep.type === "sell_side" ? "long" : "short");
+  const reversalSweepDir = recentSweep && (recentSweep.type === "sell_side" ? "long" : "short");
 
   // 1. ICT reversal
   if (recentChoch && recentChoch.direction === dir && reversalSweepDir === dir) {

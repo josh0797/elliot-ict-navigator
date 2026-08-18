@@ -1,4 +1,12 @@
-import type { Candle, FVG, ICTContext, LiquiditySweep, OrderBlock, Pivot, StructureEvent } from "./types";
+import type {
+  Candle,
+  FVG,
+  ICTContext,
+  LiquiditySweep,
+  OrderBlock,
+  Pivot,
+  StructureEvent,
+} from "./types";
 
 export function detectFVG(candles: Candle[]): FVG[] {
   const out: FVG[] = [];
@@ -30,9 +38,21 @@ export function detectOrderBlocks(candles: Candle[]): OrderBlock[] {
     const impulse = Math.abs(move) / range;
     if (impulse < 1.5) continue;
     if (isBear && move > 0) {
-      blocks.push({ type: "bullish", top: c.high, bottom: c.low, startTime: c.time, endTime: future[future.length - 1].time });
+      blocks.push({
+        type: "bullish",
+        top: c.high,
+        bottom: c.low,
+        startTime: c.time,
+        endTime: future[future.length - 1].time,
+      });
     } else if (isBull && move < 0) {
-      blocks.push({ type: "bearish", top: c.high, bottom: c.low, startTime: c.time, endTime: future[future.length - 1].time });
+      blocks.push({
+        type: "bearish",
+        top: c.high,
+        bottom: c.low,
+        startTime: c.time,
+        endTime: future[future.length - 1].time,
+      });
     }
   }
   return blocks.slice(-15);

@@ -87,10 +87,10 @@ export function detectEndingDiagonal(
     // Require w1..w4 confirmed; w5 may be provisional (validated by breakout).
     if (!w[0].confirmed || !w[1].confirmed || !w[2].confirmed || !w[3].confirmed) continue;
 
-    const bearish = tryDiagonal(w, candles, "long", opts);   // falling wedge → LONG reversal
+    const bearish = tryDiagonal(w, candles, "long", opts); // falling wedge → LONG reversal
     if (bearish) return bearish;
 
-    const bullish = tryDiagonal(w, candles, "short", opts);  // rising wedge → SHORT reversal
+    const bullish = tryDiagonal(w, candles, "short", opts); // rising wedge → SHORT reversal
     if (bullish) return bullish;
   }
   return null;
@@ -106,16 +106,28 @@ function tryDiagonal(
 
   if (reversal === "long") {
     // Falling wedge: L-H-L-H-L with lower lows and lower highs.
-    if (p1.type !== "LOW" || p2.type !== "HIGH" || p3.type !== "LOW" ||
-        p4.type !== "HIGH" || p5.type !== "LOW") return null;
-    if (!(p3.price < p1.price && p5.price < p3.price)) return null;   // lower lows
-    if (!(p4.price < p2.price)) return null;                          // lower highs
+    if (
+      p1.type !== "LOW" ||
+      p2.type !== "HIGH" ||
+      p3.type !== "LOW" ||
+      p4.type !== "HIGH" ||
+      p5.type !== "LOW"
+    )
+      return null;
+    if (!(p3.price < p1.price && p5.price < p3.price)) return null; // lower lows
+    if (!(p4.price < p2.price)) return null; // lower highs
   } else {
     // Rising wedge: H-L-H-L-H with higher highs and higher lows.
-    if (p1.type !== "HIGH" || p2.type !== "LOW" || p3.type !== "HIGH" ||
-        p4.type !== "LOW" || p5.type !== "HIGH") return null;
-    if (!(p3.price > p1.price && p5.price > p3.price)) return null;   // higher highs
-    if (!(p4.price > p2.price)) return null;                          // higher lows
+    if (
+      p1.type !== "HIGH" ||
+      p2.type !== "LOW" ||
+      p3.type !== "HIGH" ||
+      p4.type !== "LOW" ||
+      p5.type !== "HIGH"
+    )
+      return null;
+    if (!(p3.price > p1.price && p5.price > p3.price)) return null; // higher highs
+    if (!(p4.price > p2.price)) return null; // higher lows
   }
 
   // Wave-3 must not be the shortest (holds inside diagonals too).
@@ -134,11 +146,11 @@ function tryDiagonal(
 
   // Both lines must slope in the direction of the terminal move and CONVERGE.
   if (reversal === "long") {
-    if (line24.slope >= 0 || line13.slope >= 0) return null;   // both falling
-    if (line24.slope >= line13.slope) return null;             // 2-4 steeper → converging
+    if (line24.slope >= 0 || line13.slope >= 0) return null; // both falling
+    if (line24.slope >= line13.slope) return null; // 2-4 steeper → converging
   } else {
-    if (line24.slope <= 0 || line13.slope <= 0) return null;   // both rising
-    if (line24.slope <= line13.slope) return null;             // 2-4 steeper → converging
+    if (line24.slope <= 0 || line13.slope <= 0) return null; // both rising
+    if (line24.slope <= line13.slope) return null; // 2-4 steeper → converging
   }
 
   // Wave-5 throw-over: pivot 5 beyond the 1-3 line (exhaustion bonus).
@@ -152,7 +164,11 @@ function tryDiagonal(
     const lvl = valueAt(line24, k);
     const c = candles[k];
     const closedBeyond = reversal === "long" ? c.close > lvl : c.close < lvl;
-    if (closedBeyond) { brokenOut = true; breakoutIndex = k; break; }
+    if (closedBeyond) {
+      brokenOut = true;
+      breakoutIndex = k;
+      break;
+    }
     // Invalidation: new extreme beyond pivot 5 kills the count.
     const invalidated = reversal === "long" ? c.low < p5.price : c.high > p5.price;
     if (invalidated) return null;
@@ -167,7 +183,7 @@ function tryDiagonal(
 
   // Quality: base 55, +15 throw-over, +15 contraction, +15 tight convergence.
   const spreadStart = Math.abs(valueAt(line24, p1.index) - valueAt(line13, p1.index));
-  const spreadEnd   = Math.abs(valueAt(line24, p5.index) - valueAt(line13, p5.index));
+  const spreadEnd = Math.abs(valueAt(line24, p5.index) - valueAt(line13, p5.index));
   const convergenceRatio = spreadStart > 0 ? 1 - spreadEnd / spreadStart : 0;
   let quality = 55;
   if (throwOver) quality += 15;

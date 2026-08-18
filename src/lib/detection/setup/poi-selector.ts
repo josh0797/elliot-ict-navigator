@@ -26,8 +26,10 @@ export interface SelectedPOI {
   distanceAtr?: number | null;
 }
 
-function overlap(a: { top: number; bottom: number }, b: { top: number; bottom: number }):
-  { top: number; bottom: number } | null {
+function overlap(
+  a: { top: number; bottom: number },
+  b: { top: number; bottom: number },
+): { top: number; bottom: number } | null {
   const top = Math.min(a.top, b.top);
   const bottom = Math.max(a.bottom, b.bottom);
   return top > bottom ? { top, bottom } : null;
@@ -47,23 +49,12 @@ function fvgAligned(f: FVG, dir: SignalDirection): boolean {
  * with `displacementConfirmed === true` references this FVG via `fvgRef`.
  * Without such evidence the FVG is treated as noise (no standalone setup).
  */
-function fvgHasDisplacement(
-  f: FVG,
-  obs: ReadonlyArray<OrderBlock>,
-  dir: SignalDirection,
-): boolean {
-  return obs.some(
-    (ob) =>
-      ob.fvgRef === f.id &&
-      ob.displacementConfirmed &&
-      obAligned(ob, dir),
-  );
+function fvgHasDisplacement(f: FVG, obs: ReadonlyArray<OrderBlock>, dir: SignalDirection): boolean {
+  return obs.some((ob) => ob.fvgRef === f.id && ob.displacementConfirmed && obAligned(ob, dir));
 }
 
 function proximalDistal(dir: SignalDirection, top: number, bottom: number) {
-  return dir === "long"
-    ? { proximal: top, distal: bottom }
-    : { proximal: bottom, distal: top };
+  return dir === "long" ? { proximal: top, distal: bottom } : { proximal: bottom, distal: top };
 }
 
 function dirLabel(dir: SignalDirection): "BULLISH" | "BEARISH" {
@@ -165,13 +156,17 @@ export function selectPois(
     if (price !== undefined && Number.isFinite(price)) {
       // Drop POIs already overshot (price past the distal edge in the trade direction).
       const past =
-        direction === "long" ? price < Math.min(p.proximal, p.distal)
-                              : price > Math.max(p.proximal, p.distal);
+        direction === "long"
+          ? price < Math.min(p.proximal, p.distal)
+          : price > Math.max(p.proximal, p.distal);
       if (past) continue;
       // Distance from price to proximal edge (0 when price is already inside the POI).
       const lo = Math.min(p.top, p.bottom);
       const hi = Math.max(p.top, p.bottom);
-      const distPrice = price >= lo && price <= hi ? 0 : Math.min(Math.abs(price - p.proximal), Math.abs(price - p.distal));
+      const distPrice =
+        price >= lo && price <= hi
+          ? 0
+          : Math.min(Math.abs(price - p.proximal), Math.abs(price - p.distal));
       const distAtr = atr && atr > 0 ? distPrice / atr : null;
       p.distanceAtr = distAtr;
       if (maxDist !== undefined && distAtr !== null && distAtr > maxDist) continue;

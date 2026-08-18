@@ -52,9 +52,12 @@ export function parseCsv(text: string): Record<string, string>[] {
   }
   if (rows.length === 0) return [];
   const header = rows[0].map((h) => h.trim());
-  return rows.slice(1).filter((r) => r.some((v) => v.length)).map((r) => {
-    const o: Record<string, string> = {};
-    for (let j = 0; j < header.length; j++) o[header[j]] = (r[j] ?? "").trim();
-    return o;
-  });
+  return rows
+    .slice(1)
+    .filter((r) => r.some((v) => v.length))
+    .map((r) => {
+      const o: Record<string, string> = {};
+      for (let j = 0; j < header.length; j++) o[header[j]] = (r[j] ?? "").trim();
+      return o;
+    });
 }

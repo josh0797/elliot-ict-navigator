@@ -5,13 +5,7 @@
 
 import type { CandleV2 } from "../schemas/analysis";
 import type { StructureBias } from "../structure/market-structure";
-import {
-  alternationScore,
-  wave2Score,
-  wave3Score,
-  wave4Score,
-  wave5Score,
-} from "./scoring";
+import { alternationScore, wave2Score, wave3Score, wave4Score, wave5Score } from "./scoring";
 import type {
   Bias,
   ConfidenceBreakdown,
@@ -60,7 +54,11 @@ function mandatoryRules(count: ElliottCountV2): ElliottRuleResult[] {
 
   // W2_ORIGIN
   if (!labels.has("2")) {
-    rules.push({ code: "W2_ORIGIN", status: "PENDING", message: ruleMessage("W2_ORIGIN", "PENDING") });
+    rules.push({
+      code: "W2_ORIGIN",
+      status: "PENDING",
+      message: ruleMessage("W2_ORIGIN", "PENDING"),
+    });
   } else if (/R1:/.test(invs)) {
     rules.push({ code: "W2_ORIGIN", status: "FAIL", message: ruleMessage("W2_ORIGIN", "FAIL") });
   } else {
@@ -69,16 +67,32 @@ function mandatoryRules(count: ElliottCountV2): ElliottRuleResult[] {
 
   // W3_NOT_SHORTEST — only definitive once wave 5 exists
   if (!labels.has("5")) {
-    rules.push({ code: "W3_NOT_SHORTEST", status: "PENDING", message: ruleMessage("W3_NOT_SHORTEST", "PENDING") });
+    rules.push({
+      code: "W3_NOT_SHORTEST",
+      status: "PENDING",
+      message: ruleMessage("W3_NOT_SHORTEST", "PENDING"),
+    });
   } else if (/R2:/.test(invs)) {
-    rules.push({ code: "W3_NOT_SHORTEST", status: "FAIL", message: ruleMessage("W3_NOT_SHORTEST", "FAIL") });
+    rules.push({
+      code: "W3_NOT_SHORTEST",
+      status: "FAIL",
+      message: ruleMessage("W3_NOT_SHORTEST", "FAIL"),
+    });
   } else {
-    rules.push({ code: "W3_NOT_SHORTEST", status: "PASS", message: ruleMessage("W3_NOT_SHORTEST", "PASS") });
+    rules.push({
+      code: "W3_NOT_SHORTEST",
+      status: "PASS",
+      message: ruleMessage("W3_NOT_SHORTEST", "PASS"),
+    });
   }
 
   // W4_OVERLAP
   if (!labels.has("4")) {
-    rules.push({ code: "W4_OVERLAP", status: "PENDING", message: ruleMessage("W4_OVERLAP", "PENDING") });
+    rules.push({
+      code: "W4_OVERLAP",
+      status: "PENDING",
+      message: ruleMessage("W4_OVERLAP", "PENDING"),
+    });
   } else if (/R3:/.test(invs)) {
     rules.push({ code: "W4_OVERLAP", status: "FAIL", message: ruleMessage("W4_OVERLAP", "FAIL") });
   } else {
@@ -157,7 +171,12 @@ function fibBucketAvg(count: ElliottCountV2): number {
  */
 function recomputeSoft(count: ElliottCountV2): void {
   const p = (label: WaveLabel) => priceAt(count.labeled, label);
-  const p0 = p("0"), p1 = p("1"), p2 = p("2"), p3 = p("3"), p4 = p("4"), p5 = p("5");
+  const p0 = p("0"),
+    p1 = p("1"),
+    p2 = p("2"),
+    p3 = p("3"),
+    p4 = p("4"),
+    p5 = p("5");
   if (p0 !== undefined && p1 !== undefined && p2 !== undefined) {
     count.fibScores.wave2Retracement = wave2Score(p0, p1, p2);
   }
@@ -170,7 +189,13 @@ function recomputeSoft(count: ElliottCountV2): void {
   if (p0 !== undefined && p1 !== undefined && p4 !== undefined && p5 !== undefined) {
     count.fibScores.wave5Projection = wave5Score(p0, p1, p4, p5);
   }
-  if (p0 !== undefined && p1 !== undefined && p2 !== undefined && p3 !== undefined && p4 !== undefined) {
+  if (
+    p0 !== undefined &&
+    p1 !== undefined &&
+    p2 !== undefined &&
+    p3 !== undefined &&
+    p4 !== undefined
+  ) {
     count.alternation = alternationScore(p0, p1, p2, p3, p4);
   }
 }
@@ -183,7 +208,14 @@ export function computeConfidence(
   if (count.state === "INVALIDATED") {
     return {
       confidence: 0,
-      breakdown: { mandatoryRules: 0, alternation: 0, fibonacci: 0, pivotClarity: 0, timeDuration: 0, marketStructure: 0 },
+      breakdown: {
+        mandatoryRules: 0,
+        alternation: 0,
+        fibonacci: 0,
+        pivotClarity: 0,
+        timeDuration: 0,
+        marketStructure: 0,
+      },
     };
   }
   recomputeSoft(count);
@@ -229,18 +261,25 @@ function round(n: number) {
 
 function statusFor(count: ElliottCountV2): ElliottStatus {
   switch (count.state) {
-    case "INVALIDATED": return "INVALIDATED";
-    case "NO_COUNT":    return "NO_COUNT";
-    case "DEVELOPING":  return "DEVELOPING";
-    case "COMPLETED":   return "COMPLETED";
-    case "VALID":       return "VALID";
+    case "INVALIDATED":
+      return "INVALIDATED";
+    case "NO_COUNT":
+      return "NO_COUNT";
+    case "DEVELOPING":
+      return "DEVELOPING";
+    case "COMPLETED":
+      return "COMPLETED";
+    case "VALID":
+      return "VALID";
   }
 }
 
 function completionFor(count: ElliottCountV2): number {
   const labels = new Set(count.labeled.map((l) => l.label));
   const impulse = ["0", "1", "2", "3", "4", "5"].filter((l) => labels.has(l as WaveLabel)).length;
-  const corrective = ["A", "B", "C", "W", "X", "Y", "Z"].filter((l) => labels.has(l as WaveLabel)).length;
+  const corrective = ["A", "B", "C", "W", "X", "Y", "Z"].filter((l) =>
+    labels.has(l as WaveLabel),
+  ).length;
   if (corrective > 0) return Math.min(1, (impulse - 1 + corrective) / 8);
   return Math.min(1, Math.max(0, (impulse - 1) / 5));
 }
@@ -258,9 +297,19 @@ function invalidationLevelFor(count: ElliottCountV2): number | null {
 }
 
 const IMPULSE_NEXT: Partial<Record<WaveLabel, WaveLabel>> = {
-  "0": "1", "1": "2", "2": "3", "3": "4", "4": "5", "5": "A",
-  A: "B", B: "C", C: "1",
-  W: "X", X: "Y", Y: "Z", Z: "1",
+  "0": "1",
+  "1": "2",
+  "2": "3",
+  "3": "4",
+  "4": "5",
+  "5": "A",
+  A: "B",
+  B: "C",
+  C: "1",
+  W: "X",
+  X: "Y",
+  Y: "Z",
+  Z: "1",
 };
 
 function nextWaveFor(count: ElliottCountV2): WaveLabel | null {
@@ -276,14 +325,27 @@ function nextWaveFor(count: ElliottCountV2): WaveLabel | null {
 function confirmationLevelFor(count: ElliottCountV2): number | null {
   const p = (label: WaveLabel) => priceAt(count.labeled, label);
   switch (count.currentWave) {
-    case "1": return p("1") ?? null;
-    case "2": return p("1") ?? null;
-    case "3": return p("3") ?? null;
-    case "4": return p("3") ?? null;
-    case "5": return p("5") ?? null;
-    case "A": case "B": case "C": return p("A") ?? null;
-    case "W": case "X": case "Y": case "Z": return p("W") ?? null;
-    default: return null;
+    case "1":
+      return p("1") ?? null;
+    case "2":
+      return p("1") ?? null;
+    case "3":
+      return p("3") ?? null;
+    case "4":
+      return p("3") ?? null;
+    case "5":
+      return p("5") ?? null;
+    case "A":
+    case "B":
+    case "C":
+      return p("A") ?? null;
+    case "W":
+    case "X":
+    case "Y":
+    case "Z":
+      return p("W") ?? null;
+    default:
+      return null;
   }
 }
 
@@ -291,12 +353,22 @@ function confirmationLevelFor(count: ElliottCountV2): number | null {
 function fibTargetsFor(count: ElliottCountV2): FibTargetDTO[] {
   const p = (label: WaveLabel) => priceAt(count.labeled, label);
   const out: FibTargetDTO[] = [];
-  const p0 = p("0"), p1 = p("1"), p2 = p("2"), p3 = p("3"), p4 = p("4"), p5 = p("5");
+  const p0 = p("0"),
+    p1 = p("1"),
+    p2 = p("2"),
+    p3 = p("3"),
+    p4 = p("4"),
+    p5 = p("5");
   const cw = count.currentWave;
 
   if (cw === "2" && p0 !== undefined && p1 !== undefined) {
     for (const r of [0.382, 0.5, 0.618, 0.786]) {
-      out.push({ label: `W2 ${(r * 100).toFixed(1)}% retr`, ratio: r, price: p1 - (p1 - p0) * r, kind: "RETRACEMENT" });
+      out.push({
+        label: `W2 ${(r * 100).toFixed(1)}% retr`,
+        ratio: r,
+        price: p1 - (p1 - p0) * r,
+        kind: "RETRACEMENT",
+      });
     }
   }
   if ((cw === "2" || cw === "3") && p0 !== undefined && p1 !== undefined && p2 !== undefined) {
@@ -306,12 +378,22 @@ function fibTargetsFor(count: ElliottCountV2): FibTargetDTO[] {
   }
   if (cw === "4" && p2 !== undefined && p3 !== undefined) {
     for (const r of [0.236, 0.382, 0.5]) {
-      out.push({ label: `W4 ${(r * 100).toFixed(1)}% retr`, ratio: r, price: p3 - (p3 - p2) * r, kind: "RETRACEMENT" });
+      out.push({
+        label: `W4 ${(r * 100).toFixed(1)}% retr`,
+        ratio: r,
+        price: p3 - (p3 - p2) * r,
+        kind: "RETRACEMENT",
+      });
     }
   }
   if ((cw === "4" || cw === "5") && p0 !== undefined && p3 !== undefined && p4 !== undefined) {
     for (const r of [0.618, 1.0, 1.618]) {
-      out.push({ label: `W5 ${r}× W1`, ratio: r, price: p4 + (p1 !== undefined && p0 !== undefined ? (p1 - p0) : (p3 - p0)) * r, kind: "PROJECTION" });
+      out.push({
+        label: `W5 ${r}× W1`,
+        ratio: r,
+        price: p4 + (p1 !== undefined && p0 !== undefined ? p1 - p0 : p3 - p0) * r,
+        kind: "PROJECTION",
+      });
     }
   }
   if ((cw === "A" || cw === "B" || cw === "C") && p5 !== undefined) {
@@ -323,13 +405,18 @@ function fibTargetsFor(count: ElliottCountV2): FibTargetDTO[] {
       }
     }
   }
-  if ((cw === "W" || cw === "X" || cw === "Y" || cw === "Z")) {
+  if (cw === "W" || cw === "X" || cw === "Y" || cw === "Z") {
     const w = priceAt(count.labeled, "W");
     const x = priceAt(count.labeled, "X");
     const origin = p5 ?? p3;
     if (w !== undefined && x !== undefined && origin !== undefined) {
       for (const r of [1.0, 1.618]) {
-        out.push({ label: `WY ${r}× WW`, ratio: r, price: x + (w - origin) * r, kind: "PROJECTION" });
+        out.push({
+          label: `WY ${r}× WW`,
+          ratio: r,
+          price: x + (w - origin) * r,
+          kind: "PROJECTION",
+        });
       }
     }
   }
@@ -410,7 +497,7 @@ export function toElliottResult(
       breakdown,
       scenarioKind: withAlts ? analysis.scenarioKind : undefined,
       hypotheses: withAlts ? analysis.hypotheses : undefined,
-      truncation: withAlts ? analysis.truncation ?? null : null,
+      truncation: withAlts ? (analysis.truncation ?? null) : null,
       notes: count.notes.slice(),
     };
   };

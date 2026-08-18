@@ -21,7 +21,12 @@ function pv(index: number, price: number, type: "HIGH" | "LOW", confirmed = true
 const TRUNC_GEOMETRY = {
   direction: "long" as const,
   pattern: "IMPULSE" as const,
-  p0: 100, p1: 120, p2: 110, p3: 160, p4: 140, p5: 155,
+  p0: 100,
+  p1: 120,
+  p2: 110,
+  p3: 160,
+  p4: 140,
+  p5: 155,
 };
 
 describe("truncated fifth evidence", () => {
@@ -107,7 +112,12 @@ describe("scenario stability", () => {
     labeled: [{ pivot: pv(index, 100, "LOW", confirmed), label: "0" as const }],
     currentWave: "0" as const,
     score,
-    fibScores: { wave2Retracement: null, wave3Extension: null, wave4Retracement: null, wave5Projection: null },
+    fibScores: {
+      wave2Retracement: null,
+      wave3Extension: null,
+      wave4Retracement: null,
+      wave5Projection: null,
+    },
     alternation: null,
     invalidations: [],
     notes: [],
@@ -126,12 +136,16 @@ describe("scenario stability", () => {
   });
 
   it("switches once the challenger is confirmed and beats the margin", () => {
-    const d = shouldReplaceScenario(count(0.5, true, 5), count(0.9, true, 8), { lastClosedIndex: 8 });
+    const d = shouldReplaceScenario(count(0.5, true, 5), count(0.9, true, 8), {
+      lastClosedIndex: 8,
+    });
     expect(d.replace).toBe(true);
   });
 
   it("rejects a challenger anchored beyond the last closed candle", () => {
-    const d = shouldReplaceScenario(count(0.5, true, 5), count(0.9, true, 12), { lastClosedIndex: 8 });
+    const d = shouldReplaceScenario(count(0.5, true, 5), count(0.9, true, 12), {
+      lastClosedIndex: 8,
+    });
     expect(d.replace).toBe(false);
     expect(d.reason).toBe("AWAITING_CLOSED_CANDLE");
   });

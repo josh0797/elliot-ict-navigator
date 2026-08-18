@@ -12,11 +12,7 @@
  */
 import type { CandleV2 } from "../schemas/analysis";
 import type { IctContext } from "../ict/types";
-import type {
-  ConsistencyIssueCode,
-  ElliottResultDTO,
-  FibTargetDTO,
-} from "../elliott/types";
+import type { ConsistencyIssueCode, ElliottResultDTO, FibTargetDTO } from "../elliott/types";
 import { collectExhaustion, isTerminationConfirmed } from "./exhaustion";
 import { evaluateTruncation } from "../elliott/truncation";
 import { atr14 } from "../indicators/atr";
@@ -73,8 +69,7 @@ export function annotateTargets(
   const hit = byRef("HIT");
   const active = byRef("ACTIVE")[0] ?? null;
   const next = byRef("NEXT")[0] ?? null;
-  const allExceeded =
-    directional.length > 0 && directional.every((t) => reached(t));
+  const allExceeded = directional.length > 0 && directional.every((t) => reached(t));
 
   return { targets: out, hit, active, next, allExceeded };
 }
@@ -119,9 +114,7 @@ function checkOne(dto: ElliottResultDTO, ctx: ConsistencyContext): ElliottResult
   // ── Invalidation breach ────────────────────────────────────────────────────
   const inv = out.invalidationLevel;
   const breached =
-    inv !== null &&
-    Number.isFinite(inv) &&
-    (direction === "long" ? price < inv : price > inv);
+    inv !== null && Number.isFinite(inv) && (direction === "long" ? price < inv : price > inv);
 
   // ── Exhaustion evidence ────────────────────────────────────────────────────
   const exhaustion = collectExhaustion({
@@ -148,8 +141,12 @@ function checkOne(dto: ElliottResultDTO, ctx: ConsistencyContext): ElliottResult
     truncation = evaluateTruncation({
       direction,
       pattern: out.pattern,
-      p0: priceOf("0"), p1: priceOf("1"), p2: priceOf("2"),
-      p3: priceOf("3"), p4: priceOf("4"), p5: priceOf("5"),
+      p0: priceOf("0"),
+      p1: priceOf("1"),
+      p2: priceOf("2"),
+      p3: priceOf("3"),
+      p4: priceOf("4"),
+      p5: priceOf("5"),
       invalidations,
       internalLabels: (out.internal?.waves ?? []).map((w) => w.label),
       exhaustion,

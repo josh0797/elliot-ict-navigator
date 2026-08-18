@@ -16,6 +16,7 @@ import { Route as AuthenticatedTrainingRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
+import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as AuthenticatedChartSymbolRouteImport } from './routes/_authenticated/chart.$symbol'
 import { Route as ApiPublicHooksScanAndAlertRouteImport } from './routes/api/public/hooks/scan-and-alert'
 import { Route as ApiPublicHooksEvaluateResultsRouteImport } from './routes/api/public/hooks/evaluate-results'
@@ -55,6 +56,11 @@ const AuthenticatedAlertsRoute = AuthenticatedAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
+  id: '/api/public/health',
+  path: '/api/public/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedChartSymbolRoute =
   AuthenticatedChartSymbolRouteImport.update({
     id: '/chart/$symbol',
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/training': typeof AuthenticatedTrainingRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/diag/alpaca': typeof ApiPublicDiagAlpacaRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/training': typeof AuthenticatedTrainingRoute
   '/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/diag/alpaca': typeof ApiPublicDiagAlpacaRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
@@ -113,6 +121,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/training': typeof AuthenticatedTrainingRoute
   '/_authenticated/chart/$symbol': typeof AuthenticatedChartSymbolRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/diag/alpaca': typeof ApiPublicDiagAlpacaRoute
   '/api/public/hooks/evaluate-results': typeof ApiPublicHooksEvaluateResultsRoute
   '/api/public/hooks/scan-and-alert': typeof ApiPublicHooksScanAndAlertRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/training'
     | '/chart/$symbol'
+    | '/api/public/health'
     | '/api/public/diag/alpaca'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/training'
     | '/chart/$symbol'
+    | '/api/public/health'
     | '/api/public/diag/alpaca'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
@@ -152,6 +163,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/training'
     | '/_authenticated/chart/$symbol'
+    | '/api/public/health'
     | '/api/public/diag/alpaca'
     | '/api/public/hooks/evaluate-results'
     | '/api/public/hooks/scan-and-alert'
@@ -161,6 +173,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicDiagAlpacaRoute: typeof ApiPublicDiagAlpacaRoute
   ApiPublicHooksEvaluateResultsRoute: typeof ApiPublicHooksEvaluateResultsRoute
   ApiPublicHooksScanAndAlertRoute: typeof ApiPublicHooksScanAndAlertRoute
@@ -217,6 +230,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/health': {
+      id: '/api/public/health'
+      path: '/api/public/health'
+      fullPath: '/api/public/health'
+      preLoaderRoute: typeof ApiPublicHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/chart/$symbol': {
       id: '/_authenticated/chart/$symbol'
       path: '/chart/$symbol'
@@ -271,6 +291,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicDiagAlpacaRoute: ApiPublicDiagAlpacaRoute,
   ApiPublicHooksEvaluateResultsRoute: ApiPublicHooksEvaluateResultsRoute,
   ApiPublicHooksScanAndAlertRoute: ApiPublicHooksScanAndAlertRoute,

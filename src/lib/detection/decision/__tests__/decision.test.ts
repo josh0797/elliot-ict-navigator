@@ -13,7 +13,12 @@ function bullishCount(invalidations: string[] = []): ElliottCountV2 {
     labeled: [],
     currentWave: "2",
     score: 0.7,
-    fibScores: { wave2Retracement: null, wave3Extension: null, wave4Retracement: null, wave5Projection: null },
+    fibScores: {
+      wave2Retracement: null,
+      wave3Extension: null,
+      wave4Retracement: null,
+      wave5Projection: null,
+    },
     alternation: null,
     invalidations,
     notes: [],
@@ -46,23 +51,30 @@ function bullishSignal(overrides: Partial<TradeSignal> = {}): TradeSignal {
     directionUpper: "LONG",
     orderType: "BUY_LIMIT",
     status: "WAITING_RETRACE",
-    entry: 1.10,
+    entry: 1.1,
     sl: 1.095,
     tp1: 1.115,
     tp2: 1.125,
     rrToTp1: 3,
     rrToTp2: 5,
-    entryZone: { top: 1.10, bottom: 1.095 },
+    entryZone: { top: 1.1, bottom: 1.095 },
     entryPolicy: "OB_PROXIMAL",
     stopReason: "BEYOND_ORDER_BLOCK",
     targets: [],
     selectedPoi: null,
     trigger: null,
     priceAtDetection: 1.102,
-    slBasis: { elliottInvalidation: 1.095, poiExtreme: 1.095, sweepExtreme: null, protectedSwing: null, atrBuffer: 0.0005, chosen: "min" },
+    slBasis: {
+      elliottInvalidation: 1.095,
+      poiExtreme: 1.095,
+      sweepExtreme: null,
+      protectedSwing: null,
+      atrBuffer: 0.0005,
+      chosen: "min",
+    },
     tp1Source: { kind: "FALLBACK", fallback: "2R" },
     tp2Source: { kind: "FALLBACK", fallback: "3R" },
-    poi: { kind: "ORDER_BLOCK", id: "ob1", proximal: 1.10, distal: 1.095, state: "FRESH" },
+    poi: { kind: "ORDER_BLOCK", id: "ob1", proximal: 1.1, distal: 1.095, state: "FRESH" },
     score: 0.75,
     scoreOut100: 75,
     grade: "B",
@@ -95,7 +107,12 @@ describe("decision/engine", () => {
   });
 
   it("returns NO_TRADE when primary is INVALIDATED and no alternatives", () => {
-    const r = decideOperation({ primary: bullishCount(["W2_ORIGIN failed"]), alternatives: [] }, ict("NEUTRAL"), [], 100);
+    const r = decideOperation(
+      { primary: bullishCount(["W2_ORIGIN failed"]), alternatives: [] },
+      ict("NEUTRAL"),
+      [],
+      100,
+    );
     expect(r.decision).toBe("NO_TRADE");
     expect(r.reasons).toContain("ELLIOTT_INVALIDATED");
   });
@@ -113,10 +130,25 @@ describe("decision/engine", () => {
   it("returns BUY when bullish bias and gated signal align", () => {
     const elliott: ElliottAnalysis = { primary: bullishCount(), alternatives: [] };
     const struct: StructureEvent = {
-      id: "s1", type: "CHoCH", direction: "long", price: 1.1, time: 0, index: 95,
-      state: "CONFIRMED", brokenPivotId: "p", breakIndex: 95, breakPrice: 1.1, closeBeyondAtr: 1, displacement: true,
+      id: "s1",
+      type: "CHoCH",
+      direction: "long",
+      price: 1.1,
+      time: 0,
+      index: 95,
+      state: "CONFIRMED",
+      brokenPivotId: "p",
+      breakIndex: 95,
+      breakPrice: 1.1,
+      closeBeyondAtr: 1,
+      displacement: true,
     };
-    const r = decideOperation(elliott, ict("BULLISH", { structure: [struct] }), [bullishSignal()], 100);
+    const r = decideOperation(
+      elliott,
+      ict("BULLISH", { structure: [struct] }),
+      [bullishSignal()],
+      100,
+    );
     expect(r.decision).toBe("BUY");
     expect(r.status).toBe("ARMED");
     expect(r.primarySignal?.id).toBe("sig-1");
@@ -126,7 +158,11 @@ describe("decision/engine", () => {
     const elliott: ElliottAnalysis = { primary: bullishCount(), alternatives: [] };
     const r = decideOperation(elliott, ict("BULLISH"), [], 100);
     expect(r.decision).toBe("WAIT");
-    expect(r.status === "WAITING_FOR_SWEEP" || r.status === "WAITING_FOR_STRUCTURE_SHIFT" || r.status === "WATCHING").toBe(true);
+    expect(
+      r.status === "WAITING_FOR_SWEEP" ||
+        r.status === "WAITING_FOR_STRUCTURE_SHIFT" ||
+        r.status === "WATCHING",
+    ).toBe(true);
   });
 
   it("breaks a close bull/bear tie in favor of the live HTF Elliott primary", () => {
@@ -134,7 +170,14 @@ describe("decision/engine", () => {
     // Relative diff is well under 15% → tie-break kicks in and Elliott wins.
     const elliott: ElliottAnalysis = { primary: bullishCount(), alternatives: [] };
     const ctx = ict("BEARISH", {
-      pdArray: { high: 2, low: 1, midpoint: 1.5, currentPrice: 1.9, zone: "PREMIUM", position: 0.9 },
+      pdArray: {
+        high: 2,
+        low: 1,
+        midpoint: 1.5,
+        currentPrice: 1.9,
+        zone: "PREMIUM",
+        position: 0.9,
+      },
     });
     const bias = computeDirectionBias(elliott, ctx, 100);
     expect(bias.dominant).toBe("BULLISH");
@@ -148,11 +191,29 @@ describe("decision/engine", () => {
     const elliott: ElliottAnalysis = { primary: null, alternatives: [] };
     const ctx = ict("BULLISH", {
       structure: [
-        { id: "s1", type: "BOS", direction: "short", price: 1.0, time: 0, index: 95,
-          state: "CONFIRMED", brokenPivotId: "p", breakIndex: 95, breakPrice: 1.0,
-          closeBeyondAtr: 1, displacement: true },
+        {
+          id: "s1",
+          type: "BOS",
+          direction: "short",
+          price: 1.0,
+          time: 0,
+          index: 95,
+          state: "CONFIRMED",
+          brokenPivotId: "p",
+          breakIndex: 95,
+          breakPrice: 1.0,
+          closeBeyondAtr: 1,
+          displacement: true,
+        },
       ],
-      pdArray: { high: 2, low: 1, midpoint: 1.5, currentPrice: 1.9, zone: "PREMIUM", position: 0.9 },
+      pdArray: {
+        high: 2,
+        low: 1,
+        midpoint: 1.5,
+        currentPrice: 1.9,
+        zone: "PREMIUM",
+        position: 0.9,
+      },
     });
     const bias = computeDirectionBias(elliott, ctx, 100);
     expect(bias.dominant).toBe("NEUTRAL");

@@ -30,9 +30,12 @@ export interface ScoreBreakdown {
  * the legacy ML adapter consumes this through an explicit mapper.
  */
 export type OrderType =
-  | "BUY_LIMIT" | "SELL_LIMIT"
-  | "BUY_STOP"  | "SELL_STOP"
-  | "MARKET_BUY" | "MARKET_SELL"
+  | "BUY_LIMIT"
+  | "SELL_LIMIT"
+  | "BUY_STOP"
+  | "SELL_STOP"
+  | "MARKET_BUY"
+  | "MARKET_SELL"
   | "NO_ORDER";
 
 export type SetupStatus =
@@ -63,9 +66,9 @@ export type Tp1Source =
 export type Tp2Source =
   | {
       kind: "FIB_EXTENSION";
-      wave: string;        // e.g. "3", "5", "C"
-      from: number;        // leg origin price
-      to: number;          // leg end price
+      wave: string; // e.g. "3", "5", "C"
+      from: number; // leg origin price
+      to: number; // leg end price
       projectedFrom: number;
       ratio: 1.618;
     }

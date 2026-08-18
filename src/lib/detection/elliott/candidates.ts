@@ -34,9 +34,7 @@ export function generateCandidates(pivots: ReadonlyArray<PivotV2>): PivotCandida
 
   // Try several end pivots so a higher-degree count can terminate before the
   // live edge (e.g. wave 3 completed several swings ago).
-  const ends = [1, 2, 3, 4, 5]
-    .map((back) => pivots.length - back)
-    .filter((i) => i >= 2);
+  const ends = [1, 2, 3, 4, 5].map((back) => pivots.length - back).filter((i) => i >= 2);
 
   for (const end of ends) {
     for (const max of [9, 8, 7, 6, 5, 4, 3]) {

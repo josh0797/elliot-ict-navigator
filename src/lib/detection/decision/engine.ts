@@ -47,9 +47,7 @@ function signalIsStructurallyValid(s: TradeSignal, minRR: number): boolean {
   return true;
 }
 
-const PENDING_ORDER_TYPES = new Set([
-  "BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP",
-]);
+const PENDING_ORDER_TYPES = new Set(["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]);
 
 const MANDATORY_RULES = ["W2_ORIGIN", "W3_NOT_SHORTEST", "W4_OVERLAP"] as const;
 
@@ -67,9 +65,7 @@ const MANDATORY_RULE_ALIASES: Record<(typeof MANDATORY_RULES)[number], readonly 
 
 function hasMandatoryFailure(invalidations: readonly string[]): boolean {
   return MANDATORY_RULES.some((code) =>
-    MANDATORY_RULE_ALIASES[code].some((alias) =>
-      invalidations.some((v) => v.includes(alias)),
-    ),
+    MANDATORY_RULE_ALIASES[code].some((alias) => invalidations.some((v) => v.includes(alias))),
   );
 }
 
@@ -78,9 +74,7 @@ function hasMandatoryFailureExcept(
   waive: readonly (typeof MANDATORY_RULES)[number][],
 ): boolean {
   return MANDATORY_RULES.filter((code) => !waive.includes(code)).some((code) =>
-    MANDATORY_RULE_ALIASES[code].some((alias) =>
-      invalidations.some((v) => v.includes(alias)),
-    ),
+    MANDATORY_RULE_ALIASES[code].some((alias) => invalidations.some((v) => v.includes(alias))),
   );
 }
 
@@ -99,18 +93,25 @@ function pickSignalForDirection(
 
 function statusFromSignal(signal: TradeSignal): OperationalSetupStatus {
   switch (signal.status) {
-    case "TRIGGERED": return "TRIGGERED";
-    case "ARMED": return "ARMED";
+    case "TRIGGERED":
+      return "TRIGGERED";
+    case "ARMED":
+      return "ARMED";
     // Watch-only: an unconfirmed potential B never becomes an actionable order.
-    case "POTENTIAL_B": return "WATCHING";
+    case "POTENTIAL_B":
+      return "WATCHING";
     case "WAITING_RETRACE":
       // Only "armed" when a concrete pending order can be placed; otherwise
       // the user is still waiting for the retrace to materialise.
       return PENDING_ORDER_TYPES.has(signal.orderType) ? "ARMED" : "WAITING_FOR_RETRACE";
-    case "READY": return "ARMED";
-    case "INVALIDATED": return "INVALIDATED";
-    case "NO_SETUP": return "NO_SETUP";
-    default: return "WATCHING";
+    case "READY":
+      return "ARMED";
+    case "INVALIDATED":
+      return "INVALIDATED";
+    case "NO_SETUP":
+      return "NO_SETUP";
+    default:
+      return "WATCHING";
   }
 }
 
@@ -132,12 +133,21 @@ function dirToVote(d: "long" | "short"): VoteDirection {
 }
 
 function describe(report: Omit<OperationalReport, "summary">): string {
-  const dirLabel = report.direction === "BULLISH" ? "alcista" : report.direction === "BEARISH" ? "bajista" : "neutral";
+  const dirLabel =
+    report.direction === "BULLISH"
+      ? "alcista"
+      : report.direction === "BEARISH"
+        ? "bajista"
+        : "neutral";
   switch (report.decision) {
-    case "BUY": return `BUY — setup ${report.template.toLowerCase().replace(/_/g, " ")} listo (${report.status}).`;
-    case "SELL": return `SELL — setup ${report.template.toLowerCase().replace(/_/g, " ")} listo (${report.status}).`;
-    case "WAIT": return `WAIT — sesgo ${dirLabel}; falta ${report.missing.join(", ") || "confirmación"}.`;
-    case "NO_TRADE": return `NO TRADE — ${report.reasons.join(", ")}.`;
+    case "BUY":
+      return `BUY — setup ${report.template.toLowerCase().replace(/_/g, " ")} listo (${report.status}).`;
+    case "SELL":
+      return `SELL — setup ${report.template.toLowerCase().replace(/_/g, " ")} listo (${report.status}).`;
+    case "WAIT":
+      return `WAIT — sesgo ${dirLabel}; falta ${report.missing.join(", ") || "confirmación"}.`;
+    case "NO_TRADE":
+      return `NO TRADE — ${report.reasons.join(", ")}.`;
   }
 }
 
@@ -344,10 +354,13 @@ export function decideOperation(
   // BUY/SELL only when armed-with-pending-order or already triggered.
   const decision = decisionFromSignal(signal);
   const reasonCode: DecisionReasonCode =
-    status === "TRIGGERED" ? "MARKET_TRIGGERED"
-    : status === "ARMED" ? "WAITING_RETRACE"
-    : status === "WAITING_FOR_RETRACE" ? "WAITING_RETRACE"
-    : "OK";
+    status === "TRIGGERED"
+      ? "MARKET_TRIGGERED"
+      : status === "ARMED"
+        ? "WAITING_RETRACE"
+        : status === "WAITING_FOR_RETRACE"
+          ? "WAITING_RETRACE"
+          : "OK";
 
   const r: OperationalReport = {
     decision,

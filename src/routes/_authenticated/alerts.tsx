@@ -47,7 +47,9 @@ function AlertsPage() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "setups" }, (payload) => {
         const row = payload.new as SetupRow;
         setSetups((prev) => [row, ...prev].slice(0, 100));
-        toast.success(`New ${row.direction.toUpperCase()} setup · ${row.symbol} (${row.timeframe})`);
+        toast.success(
+          `New ${row.direction.toUpperCase()} setup · ${row.symbol} (${row.timeframe})`,
+        );
       })
       .subscribe();
     return () => {
@@ -59,7 +61,9 @@ function AlertsPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Signal feed</h1>
-        <p className="text-sm text-muted-foreground">Live alerts as confluence is detected. Updates in real time.</p>
+        <p className="text-sm text-muted-foreground">
+          Live alerts as confluence is detected. Updates in real time.
+        </p>
       </div>
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -84,22 +88,26 @@ function AlertCard({ s }: { s: SetupRow }) {
   const long = s.direction === "long";
   const px = (n: number) => n.toFixed(s.symbol === "USD/JPY" ? 3 : s.symbol === "XAU/USD" ? 2 : 5);
   return (
-    <Link
-      to="/chart/$symbol"
-      params={{ symbol: s.symbol }}
-      search={{ tf: s.timeframe, bars: 500 }}
-    >
+    <Link to="/chart/$symbol" params={{ symbol: s.symbol }} search={{ tf: s.timeframe, bars: 500 }}>
       <Card className="border-border/60 hover:border-primary/50 transition-colors">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="font-mono text-base flex items-center gap-2">
-              {long ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
+              {long ? (
+                <TrendingUp className="h-4 w-4 text-success" />
+              ) : (
+                <TrendingDown className="h-4 w-4 text-destructive" />
+              )}
               {s.symbol}
               <span className="text-xs text-muted-foreground">· {s.timeframe}</span>
             </CardTitle>
             <div className="flex gap-2">
-              <Badge variant="outline" className="font-mono">{Math.round(s.score * 100)}%</Badge>
-              <Badge variant="outline" className="font-mono uppercase">{s.status}</Badge>
+              <Badge variant="outline" className="font-mono">
+                {Math.round(s.score * 100)}%
+              </Badge>
+              <Badge variant="outline" className="font-mono uppercase">
+                {s.status}
+              </Badge>
             </div>
           </div>
         </CardHeader>

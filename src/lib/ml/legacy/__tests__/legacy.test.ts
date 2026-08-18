@@ -66,21 +66,44 @@ it("5. distOB fallback is 0.5 when currentPriceApprox missing", () => {
 });
 
 it("6. isKillzone is constant 0.5", () => {
-  for (const inp of [baseInput(), { ...baseInput(), rrRatio: 0 }, { ...baseInput(), waveLabel: null }]) {
+  for (const inp of [
+    baseInput(),
+    { ...baseInput(), rrRatio: 0 },
+    { ...baseInput(), waveLabel: null },
+  ]) {
     expect(extractLegacyFeatures(inp).raw[2]).toBe(0.5);
   }
 });
 
 it("7. waveCode mapping (legacy literal)", () => {
   const cases: Array<[string, number]> = [
-    ["1", 0.1], ["(1)", 0.1], ["i", 0.1], ["(i)", 0.1], ["(I)", 0.1],
-    ["2", 0.2], ["(2)", 0.2], ["ii", 0.2], ["(ii)", 0.2],
-    ["3", 0.9], ["(3)", 0.9], ["iii", 0.9], ["(iii)", 0.9],
-    ["4", 0.4], ["(4)", 0.4], ["iv", 0.4], ["(iv)", 0.4],
-    ["5", 0.6], ["(5)", 0.6], ["v", 0.6], ["(v)", 0.6],
-    ["A", 0.3], ["a", 0.3],
-    ["B", 0.1], ["b", 0.1],
-    ["C", 0.7], ["c", 0.7],
+    ["1", 0.1],
+    ["(1)", 0.1],
+    ["i", 0.1],
+    ["(i)", 0.1],
+    ["(I)", 0.1],
+    ["2", 0.2],
+    ["(2)", 0.2],
+    ["ii", 0.2],
+    ["(ii)", 0.2],
+    ["3", 0.9],
+    ["(3)", 0.9],
+    ["iii", 0.9],
+    ["(iii)", 0.9],
+    ["4", 0.4],
+    ["(4)", 0.4],
+    ["iv", 0.4],
+    ["(iv)", 0.4],
+    ["5", 0.6],
+    ["(5)", 0.6],
+    ["v", 0.6],
+    ["(v)", 0.6],
+    ["A", 0.3],
+    ["a", 0.3],
+    ["B", 0.1],
+    ["b", 0.1],
+    ["C", 0.7],
+    ["c", 0.7],
   ];
   for (const [label, expected] of cases) {
     expect(waveCode(label).value).toBe(expected);

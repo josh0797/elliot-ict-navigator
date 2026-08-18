@@ -13,7 +13,9 @@ export function ChartViewToggle({
       <button
         onClick={() => onChange("operational")}
         className={`px-3 py-1.5 font-mono flex items-center gap-1.5 ${
-          mode === "operational" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+          mode === "operational"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground"
         }`}
         title="Solo el setup activo (entry, SL, TPs, trigger, invalidación)"
       >
@@ -22,7 +24,9 @@ export function ChartViewToggle({
       <button
         onClick={() => onChange("diagnostic")}
         className={`px-3 py-1.5 font-mono flex items-center gap-1.5 ${
-          mode === "diagnostic" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+          mode === "diagnostic"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground"
         }`}
         title="Todas las capas Elliott / ICT"
       >

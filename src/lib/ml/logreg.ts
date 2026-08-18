@@ -21,11 +21,7 @@ function sigmoid(z: number): number {
   return e / (1 + e);
 }
 
-export function trainLogReg(
-  X: number[][],
-  y: number[],
-  opts: TrainOptions = {},
-): LogRegModel {
+export function trainLogReg(X: number[][], y: number[], opts: TrainOptions = {}): LogRegModel {
   const lr = opts.learningRate ?? 0.1;
   const epochs = opts.epochs ?? 400;
   const l2 = opts.l2 ?? 0.01;

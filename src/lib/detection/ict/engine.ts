@@ -33,7 +33,10 @@ export function analyzeIct(
   let score = 0.4;
   const lastStruct = structure[structure.length - 1];
   if (lastStruct) {
-    if ((bias === "BULLISH" && lastStruct.direction === "long") || (bias === "BEARISH" && lastStruct.direction === "short")) {
+    if (
+      (bias === "BULLISH" && lastStruct.direction === "long") ||
+      (bias === "BEARISH" && lastStruct.direction === "short")
+    ) {
       score += 0.2;
     }
   }

@@ -42,7 +42,9 @@ export interface CandleValidation {
   warnings: string[];
 }
 
-export function validateCandles(candles: ReadonlyArray<{ time: number; open: number; high: number; low: number; close: number }>): CandleValidation {
+export function validateCandles(
+  candles: ReadonlyArray<{ time: number; open: number; high: number; low: number; close: number }>,
+): CandleValidation {
   const warnings: string[] = [];
   if (candles.length === 0) {
     return { valid: false, warnings: ["empty candle array"] };
@@ -69,9 +71,16 @@ export function validateCandles(candles: ReadonlyArray<{ time: number; open: num
 }
 
 /** Lift a legacy candle (time/open/high/low/close[/volume]) to CandleV2 with explicit index. */
-export function liftCandles<T extends { time: number; open: number; high: number; low: number; close: number; volume?: number }>(
-  candles: ReadonlyArray<T>,
-): CandleV2[] {
+export function liftCandles<
+  T extends {
+    time: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume?: number;
+  },
+>(candles: ReadonlyArray<T>): CandleV2[] {
   return candles.map((c, i) => ({
     index: i,
     time: c.time,

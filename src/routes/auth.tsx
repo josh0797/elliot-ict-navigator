@@ -75,8 +75,20 @@ function AuthPage() {
               </TabsList>
               <TabsContent value="signin">
                 <form onSubmit={handleSignIn} className="space-y-4 pt-4">
-                  <Field id="email-in" label="Email" type="email" value={email} onChange={setEmail} />
-                  <Field id="pw-in" label="Password" type="password" value={password} onChange={setPassword} />
+                  <Field
+                    id="email-in"
+                    label="Email"
+                    type="email"
+                    value={email}
+                    onChange={setEmail}
+                  />
+                  <Field
+                    id="pw-in"
+                    label="Password"
+                    type="password"
+                    value={password}
+                    onChange={setPassword}
+                  />
                   <Button type="submit" disabled={loading} className="w-full">
                     {loading ? "Signing in…" : "Sign in"}
                   </Button>
@@ -84,8 +96,20 @@ function AuthPage() {
               </TabsContent>
               <TabsContent value="signup">
                 <form onSubmit={handleSignUp} className="space-y-4 pt-4">
-                  <Field id="email-up" label="Email" type="email" value={email} onChange={setEmail} />
-                  <Field id="pw-up" label="Password (min 8)" type="password" value={password} onChange={setPassword} />
+                  <Field
+                    id="email-up"
+                    label="Email"
+                    type="email"
+                    value={email}
+                    onChange={setEmail}
+                  />
+                  <Field
+                    id="pw-up"
+                    label="Password (min 8)"
+                    type="password"
+                    value={password}
+                    onChange={setPassword}
+                  />
                   <Button type="submit" disabled={loading} className="w-full">
                     {loading ? "Creating…" : "Create account"}
                   </Button>
@@ -115,7 +139,13 @@ function Field({
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} required />
+      <Input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required
+      />
     </div>
   );
 }

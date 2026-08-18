@@ -66,6 +66,7 @@ export type DecisionReasonCode =
   | "NO_DOMINANT_BIAS"
   | "ELLIOTT_ICT_CONFLICT"
   | "SCENARIO_STALE"
+  | "DATA_STALE"
   | "OK";
 
 export interface OperationalReport {

@@ -110,9 +110,7 @@ export function degreePool(pivots: ReadonlyArray<PivotV2>, degree: ElliottDegree
     selected = selected.filter((s) => ids.has(s.pivot.id));
   }
 
-  const chronological = selected
-    .map((s) => s.pivot)
-    .sort((a, b) => a.index - b.index);
+  const chronological = selected.map((s) => s.pivot).sort((a, b) => a.index - b.index);
   if (!chronological.some((p) => p.id === last.id)) chronological.push(last);
   return dedupeAlternating(chronological);
 }
@@ -120,13 +118,25 @@ export function degreePool(pivots: ReadonlyArray<PivotV2>, degree: ElliottDegree
 /** Auto degree from the analysed timeframe (Regla crítica: degree ~ swing size). */
 export function autoDegree(timeframe: string | undefined): ElliottDegree {
   switch ((timeframe ?? "1h").toLowerCase()) {
-    case "1m": case "1min": case "5m": case "5min": case "15m": case "15min":
+    case "1m":
+    case "1min":
+    case "5m":
+    case "5min":
+    case "15m":
+    case "15min":
       return "MINOR";
-    case "30m": case "30min": case "1h": case "1hour":
+    case "30m":
+    case "30min":
+    case "1h":
+    case "1hour":
       return "INTERMEDIATE";
-    case "4h": case "4hour":
+    case "4h":
+    case "4hour":
       return "INTERMEDIATE";
-    case "1d": case "1day": case "1w": case "1week":
+    case "1d":
+    case "1day":
+    case "1w":
+    case "1week":
       return "MAJOR";
     default:
       return "INTERMEDIATE";

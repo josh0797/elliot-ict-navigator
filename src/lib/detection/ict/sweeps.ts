@@ -21,7 +21,12 @@ import type { LiquidityLevel, LiquiditySweep, StructureEvent } from "./types";
 
 const DISPLACEMENT_WINDOW = 10;
 
-function qualityOf(s: { wickBeyond: boolean; closeBack: boolean; displacementAfter: boolean; level: LiquidityLevel }): number {
+function qualityOf(s: {
+  wickBeyond: boolean;
+  closeBack: boolean;
+  displacementAfter: boolean;
+  level: LiquidityLevel;
+}): number {
   let q = 30;
   if (s.wickBeyond) q += 20;
   if (s.closeBack) q += 25;
@@ -48,9 +53,13 @@ export function detectSweeps(
       let side: "buy_side" | "sell_side" = "buy_side";
       let closeBack = false;
       if (lvl.side === "BSL" && c.high > lvl.price) {
-        hit = true; side = "buy_side"; closeBack = c.close < lvl.price;
+        hit = true;
+        side = "buy_side";
+        closeBack = c.close < lvl.price;
       } else if (lvl.side === "SSL" && c.low < lvl.price) {
-        hit = true; side = "sell_side"; closeBack = c.close > lvl.price;
+        hit = true;
+        side = "sell_side";
+        closeBack = c.close > lvl.price;
       }
       if (!hit) continue;
       taken.add(lvl.id);
@@ -58,15 +67,25 @@ export function detectSweeps(
       // Displacement: opposite-direction BOS within window.
       const oppositeDir = side === "buy_side" ? "short" : "long";
       const displacementAfter = structure.some(
-        (s) => s.type === "BOS" && s.direction === oppositeDir && s.index >= i && s.index <= i + DISPLACEMENT_WINDOW,
+        (s) =>
+          s.type === "BOS" &&
+          s.direction === oppositeDir &&
+          s.index >= i &&
+          s.index <= i + DISPLACEMENT_WINDOW,
       );
 
       // Mitigation: future candle re-enters the swept wick zone past the close.
       let mitigated = false;
       for (let k = i + 1; k < candles.length; k++) {
         const f = candles[k];
-        if (side === "buy_side" && f.high >= lvl.price && f.low <= c.close) { mitigated = true; break; }
-        if (side === "sell_side" && f.low <= lvl.price && f.high >= c.close) { mitigated = true; break; }
+        if (side === "buy_side" && f.high >= lvl.price && f.low <= c.close) {
+          mitigated = true;
+          break;
+        }
+        if (side === "sell_side" && f.low <= lvl.price && f.high >= c.close) {
+          mitigated = true;
+          break;
+        }
       }
 
       const sweep: LiquiditySweep = {

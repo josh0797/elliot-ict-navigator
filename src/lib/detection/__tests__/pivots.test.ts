@@ -35,7 +35,12 @@ it("detectPivots last pivot may be provisional on truncated series", () => {
 
 it("detectPivots assigns MAJOR strength to large swings", () => {
   const cs = buildSeries();
-  const pivots = detectPivots(cs, { leftBars: 2, rightBars: 2, minAtrDistance: 0.1, majorAtrThreshold: 1.5 });
+  const pivots = detectPivots(cs, {
+    leftBars: 2,
+    rightBars: 2,
+    minAtrDistance: 0.1,
+    majorAtrThreshold: 1.5,
+  });
   expect(pivots.some((p) => p.strength === "MAJOR")).toBeTruthy();
 });
 
@@ -56,6 +61,11 @@ it("detectPivots does not promote early pivots to MAJOR when ATR is cold", () =>
     const p = 100 + (i % 2 === 0 ? 1 : -1) * 5; // alternating ±5
     cs.push({ index: i, time: i, open: p, high: p + 0.5, low: p - 0.5, close: p });
   }
-  const pivots = detectPivots(cs, { leftBars: 1, rightBars: 1, minAtrDistance: 0.1, majorAtrThreshold: 1.5 });
+  const pivots = detectPivots(cs, {
+    leftBars: 1,
+    rightBars: 1,
+    minAtrDistance: 0.1,
+    majorAtrThreshold: 1.5,
+  });
   expect(pivots.every((p) => p.strength === "MINOR")).toBeTruthy();
 });

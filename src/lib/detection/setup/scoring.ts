@@ -73,24 +73,45 @@ export function computeScore(args: {
   };
 
   const primary = elliott.primary;
-  add("ELLIOTT_ALIGNED",
+  add(
+    "ELLIOTT_ALIGNED",
     !!primary && primary.state !== "INVALIDATED" && primary.direction === direction,
-    `Primary ${primary?.pattern ?? "?"} ${primary?.direction ?? "?"} W${primary?.currentWave ?? "?"}`);
+    `Primary ${primary?.pattern ?? "?"} ${primary?.direction ?? "?"} W${primary?.currentWave ?? "?"}`,
+  );
 
-  add("ICT_BIAS_ALIGNED",
-    (ict.bias === "BULLISH" && direction === "long") || (ict.bias === "BEARISH" && direction === "short"),
-    `ICT bias ${ict.bias}`);
+  add(
+    "ICT_BIAS_ALIGNED",
+    (ict.bias === "BULLISH" && direction === "long") ||
+      (ict.bias === "BEARISH" && direction === "short"),
+    `ICT bias ${ict.bias}`,
+  );
 
   const wantSweep = direction === "long" ? "sell_side" : "buy_side";
-  add("SWEEP_OPPOSITE_RECENT",
-    ict.sweeps.some((s) => s.type === wantSweep && s.index >= cutoff && s.wickBeyond && s.closeBack),
-    "Sweep opuesto reciente");
+  add(
+    "SWEEP_OPPOSITE_RECENT",
+    ict.sweeps.some(
+      (s) => s.type === wantSweep && s.index >= cutoff && s.wickBeyond && s.closeBack,
+    ),
+    "Sweep opuesto reciente",
+  );
 
-  const lastChoch = [...ict.structure].reverse().find((e) => e.type === "CHoCH" && e.state === "CONFIRMED" && e.index >= cutoff);
-  add("CHOCH_CONFIRMED", !!lastChoch && lastChoch.direction === direction, `CHoCH ${lastChoch?.direction ?? "?"}`);
+  const lastChoch = [...ict.structure]
+    .reverse()
+    .find((e) => e.type === "CHoCH" && e.state === "CONFIRMED" && e.index >= cutoff);
+  add(
+    "CHOCH_CONFIRMED",
+    !!lastChoch && lastChoch.direction === direction,
+    `CHoCH ${lastChoch?.direction ?? "?"}`,
+  );
 
-  const lastBos = [...ict.structure].reverse().find((e) => e.type === "BOS" && e.state === "CONFIRMED" && e.index >= cutoff);
-  add("BOS_DISPLACEMENT", !!lastBos && lastBos.direction === direction && lastBos.displacement, `BOS displacement ${lastBos?.direction ?? "?"}`);
+  const lastBos = [...ict.structure]
+    .reverse()
+    .find((e) => e.type === "BOS" && e.state === "CONFIRMED" && e.index >= cutoff);
+  add(
+    "BOS_DISPLACEMENT",
+    !!lastBos && lastBos.direction === direction && lastBos.displacement,
+    `BOS displacement ${lastBos?.direction ?? "?"}`,
+  );
 
   // POI type alone is NOT enough — re-verify the source object is still active.
   const obKind = poi.type === "OB" || poi.type === "OB_FVG_INTERSECTION";
@@ -99,17 +120,26 @@ export function computeScore(args: {
   const fvgAlive = fvgKind && fvgStillValid(ict, poi.sourceIds);
   add("OB_VALID", obAlive, obAlive ? "OB activo (FRESH/TOUCHED)" : "OB no activo");
   add("FVG_VALID", fvgAlive, fvgAlive ? "FVG activo (no mitigado)" : "FVG no activo");
-  add("OB_FVG_INTERSECTION", poi.type === "OB_FVG_INTERSECTION" && obAlive && fvgAlive, "Intersección OB+FVG");
+  add(
+    "OB_FVG_INTERSECTION",
+    poi.type === "OB_FVG_INTERSECTION" && obAlive && fvgAlive,
+    "Intersección OB+FVG",
+  );
 
   if (ict.pdArray) {
-    const aligned = (direction === "long" && ict.pdArray.zone === "DISCOUNT")
-      || (direction === "short" && ict.pdArray.zone === "PREMIUM");
+    const aligned =
+      (direction === "long" && ict.pdArray.zone === "DISCOUNT") ||
+      (direction === "short" && ict.pdArray.zone === "PREMIUM");
     add("PD_ALIGNED", aligned, `PD zone ${ict.pdArray.zone}`);
   } else {
     add("PD_ALIGNED", false, "Sin PD array");
   }
 
-  add("KILLZONE_ACTIVE", !!ict.killzone, ict.killzone ? `Killzone ${ict.killzone.name}` : "Sin killzone");
+  add(
+    "KILLZONE_ACTIVE",
+    !!ict.killzone,
+    ict.killzone ? `Killzone ${ict.killzone.name}` : "Sin killzone",
+  );
   add("HTF_ALIGNED", false, "HTF no integrado todavía");
 
   const rawScore = audit.reduce((s, a) => s + a.points, 0);

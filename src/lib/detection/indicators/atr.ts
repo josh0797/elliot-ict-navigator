@@ -15,11 +15,7 @@ export function trueRange(candles: ReadonlyArray<CandleV2>): number[] {
       continue;
     }
     const prevClose = candles[i - 1].close;
-    out[i] = Math.max(
-      c.high - c.low,
-      Math.abs(c.high - prevClose),
-      Math.abs(c.low - prevClose),
-    );
+    out[i] = Math.max(c.high - c.low, Math.abs(c.high - prevClose), Math.abs(c.low - prevClose));
   }
   return out;
 }

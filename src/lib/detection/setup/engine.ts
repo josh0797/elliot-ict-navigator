@@ -64,7 +64,10 @@ function priceAtLabel(count: ElliottCountV2, label: string): number | undefined 
 }
 
 /** Elliott invalidation level for the running count, given current wave. */
-function elliottInvalidationLevel(count: ElliottCountV2, direction: SignalDirection): number | null {
+function elliottInvalidationLevel(
+  count: ElliottCountV2,
+  direction: SignalDirection,
+): number | null {
   void direction;
   // Long impulse: wave 2 cannot retrace below wave 0. Wave 4 cannot enter wave 1.
   const p0 = priceAtLabel(count, "0");
@@ -145,17 +148,21 @@ function structuralConfirmation(
   candleCount: number,
 ): { ok: boolean; via: "BOS_CHOCH" | "SWEEP_DISPLACEMENT" | null } {
   const cutoff = candleCount - STRUCTURE_RECENT_BARS;
-  const bos = [...ict.structure].reverse().find(
-    (e: StructureEvent) =>
-      e.state === "CONFIRMED" && e.direction === direction && e.index >= cutoff,
-  );
+  const bos = [...ict.structure]
+    .reverse()
+    .find(
+      (e: StructureEvent) =>
+        e.state === "CONFIRMED" && e.direction === direction && e.index >= cutoff,
+    );
   if (bos) return { ok: true, via: "BOS_CHOCH" };
 
   const wantSweep = direction === "long" ? "sell_side" : "buy_side";
-  const sw = [...ict.sweeps].reverse().find(
-    (s: LiquiditySweep) =>
-      s.type === wantSweep && s.wickBeyond && s.closeBack && s.displacementAfter,
-  );
+  const sw = [...ict.sweeps]
+    .reverse()
+    .find(
+      (s: LiquiditySweep) =>
+        s.type === wantSweep && s.wickBeyond && s.closeBack && s.displacementAfter,
+    );
   if (sw) return { ok: true, via: "SWEEP_DISPLACEMENT" };
 
   return { ok: false, via: null };
@@ -210,10 +217,10 @@ function computeConfluence(
     BIAS_ALIGN: 0.18,
     WAVE_ENTRY_ZONE: 0.18,
     OB_CONFLUENCE: 0.14,
-    FVG_CONFLUENCE: 0.10,
+    FVG_CONFLUENCE: 0.1,
     SWEEP_RECENT: 0.16,
     STRUCTURE_CONFIRMED: 0.14,
-    PD_ALIGNED: 0.10,
+    PD_ALIGNED: 0.1,
     KILLZONE_ACTIVE: 0.06,
   };
   const confluenceBucket = Math.min(
@@ -221,9 +228,10 @@ function computeConfluence(
     cflu.reduce((s, f) => s + flagWeights[f], 0),
   );
 
-  const score = Math.max(0, Math.min(1,
-    0.35 * elliottBucket + 0.25 * ictBucket + 0.40 * confluenceBucket,
-  ));
+  const score = Math.max(
+    0,
+    Math.min(1, 0.35 * elliottBucket + 0.25 * ictBucket + 0.4 * confluenceBucket),
+  );
 
   return {
     confluences: cflu,
@@ -246,7 +254,8 @@ function buildRationale(
   if (cflu.includes("FVG_CONFLUENCE")) parts.push("Confluencia con FVG no mitigado.");
   if (cflu.includes("SWEEP_RECENT")) parts.push("Barrido de liquidez reciente.");
   if (cflu.includes("STRUCTURE_CONFIRMED")) parts.push("Estructura BOS/CHoCH confirmada.");
-  if (cflu.includes("PD_ALIGNED")) parts.push(direction === "long" ? "Precio en discount." : "Precio en premium.");
+  if (cflu.includes("PD_ALIGNED"))
+    parts.push(direction === "long" ? "Precio en discount." : "Precio en premium.");
   if (cflu.includes("KILLZONE_ACTIVE")) parts.push("Killzone activa.");
   parts.push(`RR≈${rr.toFixed(2)}.`);
   return parts.join(" ");
@@ -263,10 +272,7 @@ export interface OperativeCount {
 }
 
 /** Anticipation confirmations (at least one is required to ARM a setup). */
-export type AnticipationConfirmation =
-  | "CHOCH_CLOSED"
-  | "SWEEP_CLOSE_BACK"
-  | "DIAGONAL_BREAKOUT";
+export type AnticipationConfirmation = "CHOCH_CLOSED" | "SWEEP_CLOSE_BACK" | "DIAGONAL_BREAKOUT";
 
 function collectConfirmations(
   ict: IctContext,
@@ -276,16 +282,26 @@ function collectConfirmations(
 ): AnticipationConfirmation[] {
   const out: AnticipationConfirmation[] = [];
   const cutoff = candleCount - STRUCTURE_RECENT_BARS;
-  const choch = [...ict.structure].reverse().find(
-    (e: StructureEvent) =>
-      e.type === "CHoCH" && e.state === "CONFIRMED" && e.direction === direction && e.index >= cutoff,
-  );
+  const choch = [...ict.structure]
+    .reverse()
+    .find(
+      (e: StructureEvent) =>
+        e.type === "CHoCH" &&
+        e.state === "CONFIRMED" &&
+        e.direction === direction &&
+        e.index >= cutoff,
+    );
   if (choch) out.push("CHOCH_CLOSED");
   const wantSweep = direction === "long" ? "sell_side" : "buy_side";
-  const sweep = [...ict.sweeps].reverse().find(
-    (s: LiquiditySweep) =>
-      s.type === wantSweep && s.wickBeyond && s.closeBack && s.index >= candleCount - SWEEP_RECENT_BARS,
-  );
+  const sweep = [...ict.sweeps]
+    .reverse()
+    .find(
+      (s: LiquiditySweep) =>
+        s.type === wantSweep &&
+        s.wickBeyond &&
+        s.closeBack &&
+        s.index >= candleCount - SWEEP_RECENT_BARS,
+    );
   if (sweep) out.push("SWEEP_CLOSE_BACK");
   if (diagonalBreakout) out.push("DIAGONAL_BREAKOUT");
   return out;
@@ -332,9 +348,7 @@ export function detectSignals(
   const lastAtr = Number.isFinite(lastAtrRaw) ? (lastAtrRaw as number) : lastClose * 0.005;
   if (!isFinitePositive(lastAtr) || !isFinitePositive(lastClose)) return [];
 
-  const priceAtDetection = candles.length >= 2
-    ? candles[candles.length - 2].close
-    : lastClose;
+  const priceAtDetection = candles.length >= 2 ? candles[candles.length - 2].close : lastClose;
 
   // ── Gate 10: structural confirmation is required (BOS/CHoCH or sweep+displacement).
   // Gate 10 (relaxed): structural confirmation elevates a setup to a
@@ -347,7 +361,10 @@ export function detectSignals(
   const wave = primary.currentWave;
   const inAnticipationWave = wave === "2" || wave === "4" || wave === "B";
   const confirmations = collectConfirmations(
-    ict, direction, candles.length, opts.diagonalBreakout === true,
+    ict,
+    direction,
+    candles.length,
+    opts.diagonalBreakout === true,
   );
   // Anticipation needs an entry wave AND at least one hard confirmation
   // (closed CHoCH, sweep with close-back, or confirmed diagonal breakout).
@@ -359,7 +376,8 @@ export function detectSignals(
     operative.source === "ALTERNATIVE" &&
     wave === "B" &&
     primary.score >= 0.5 &&
-    ((direction === "short" && pdZone === "PREMIUM") || (direction === "long" && pdZone === "DISCOUNT"));
+    ((direction === "short" && pdZone === "PREMIUM") ||
+      (direction === "long" && pdZone === "DISCOUNT"));
   if (!conf.ok && !anticipation && !potentialB) return [];
   const anticipated = !conf.ok;
   // Anticipated setups demand a better payoff than confirmed ones.
@@ -391,15 +409,18 @@ export function detectSignals(
   for (const poi of pois) {
     // Phase 9 entry: proximal of OB; consequent encroachment of FVG; midpoint of intersection.
     const entry =
-      poi.type === "OB_FVG_INTERSECTION" ? poi.midpoint
-      : poi.type === "FVG" ? poi.midpoint
-      : poi.proximal;
+      poi.type === "OB_FVG_INTERSECTION"
+        ? poi.midpoint
+        : poi.type === "FVG"
+          ? poi.midpoint
+          : poi.proximal;
     const entryPolicy =
-      poi.type === "OB_FVG_INTERSECTION" ? "OB_FVG_INTERSECTION"
-      : poi.type === "FVG" ? "FVG_CE"
-      : "OB_PROXIMAL";
-    const candKind: "ORDER_BLOCK" | "FVG" =
-      poi.type === "FVG" ? "FVG" : "ORDER_BLOCK";
+      poi.type === "OB_FVG_INTERSECTION"
+        ? "OB_FVG_INTERSECTION"
+        : poi.type === "FVG"
+          ? "FVG_CE"
+          : "OB_PROXIMAL";
+    const candKind: "ORDER_BLOCK" | "FVG" = poi.type === "FVG" ? "FVG" : "ORDER_BLOCK";
 
     // ── Entry classification (orderType / status / invalidation).
     const cls = classifyEntry(direction, poi.proximal, poi.distal, priceAtDetection);
@@ -430,8 +451,13 @@ export function detectSignals(
 
     // ── Targets ladder (TP1/TP2/TP3).
     const targets: TargetSpec[] = pickTargets({
-      direction, entry, risk, minRR,
-      liquidity: ict.liquidity, primary, allocations: config.allocations,
+      direction,
+      entry,
+      risk,
+      minRR,
+      liquidity: ict.liquidity,
+      primary,
+      allocations: config.allocations,
     });
     const tp1 = targets[0]?.price ?? NaN;
     const tp2 = targets[1]?.price ?? NaN;
@@ -451,21 +477,32 @@ export function detectSignals(
     if (rr1 < minRR) continue;
 
     const { confluences, breakdown, score } = computeConfluence(
-      direction, primary, ict, candKind, candles.length,
+      direction,
+      primary,
+      ict,
+      candKind,
+      candles.length,
     );
     if (score < minScore) continue;
 
     // Canonical 0..100 score + per-confluence audit.
     const scoreCanon = computeScore({
-      direction, elliott, ict, poi,
-      weights: config.weights, recentBars: config.recentBars, candleCount: candles.length,
+      direction,
+      elliott,
+      ict,
+      poi,
+      weights: config.weights,
+      recentBars: config.recentBars,
+      candleCount: candles.length,
     });
 
     // Phase-11 guard: a setup whose entire TP ladder is synthetic (R-fallback)
     // cannot graduate to Grade A — there is no structural objective to honour.
     const allFallback = targets.every((t) => t.category === "FALLBACK");
-    const cappedGrade = allFallback && (scoreCanon.grade === "A+" || scoreCanon.grade === "A")
-      ? "B" : scoreCanon.grade;
+    const cappedGrade =
+      allFallback && (scoreCanon.grade === "A+" || scoreCanon.grade === "A")
+        ? "B"
+        : scoreCanon.grade;
     const warnings: string[] = [];
     if (allFallback) warnings.push("ALL_TARGETS_FALLBACK_GRADE_CAPPED_AT_B");
 
@@ -475,11 +512,20 @@ export function detectSignals(
     let mlScore: number | null = null;
     let modelVersion: string | null = null;
     try {
-      const legacy = scoreSignalLegacy(buildLegacyInput(
-        { confirmationLevel: entry, invalidationLevel: sl, fibTarget1: tp1, rrToTp1: rr1, waveLabel, entry },
-        elliott,
-        priceAtDetection,
-      ));
+      const legacy = scoreSignalLegacy(
+        buildLegacyInput(
+          {
+            confirmationLevel: entry,
+            invalidationLevel: sl,
+            fibTarget1: tp1,
+            rrToTp1: rr1,
+            waveLabel,
+            entry,
+          },
+          elliott,
+          priceAtDetection,
+        ),
+      );
       mlScore = legacy.probability;
       modelVersion = legacy.schema;
     } catch {
@@ -512,9 +558,8 @@ export function detectSignals(
 
     const entryZone = { top: Math.max(poi.top, poi.bottom), bottom: Math.min(poi.top, poi.bottom) };
     // Last *confirmed* (closed) candle = the bar before the live one when ≥2 exist.
-    const lastConfirmedCandle = candles.length >= 2
-      ? candles[candles.length - 2]
-      : candles[candles.length - 1];
+    const lastConfirmedCandle =
+      candles.length >= 2 ? candles[candles.length - 2] : candles[candles.length - 1];
     // POI birth ≈ when the structure became actionable. Approximate "armed at" as
     // the POI origin so LIMIT scans only forward candles.
     const armedAtIndex = lastConfirmedCandle.index;
@@ -545,10 +590,13 @@ export function detectSignals(
       : trigger.description;
 
     const invalidationReason =
-      slReason === "ELLIOTT_INVALIDATION" ? "Invalidación Elliott rota"
-      : slReason === "BEYOND_SWEEP" ? "Estructura del sweep rota"
-      : slReason === "BEYOND_PROTECTED_SWING" ? "Swing protegido perforado"
-      : "Distal del POI perforado";
+      slReason === "ELLIOTT_INVALIDATION"
+        ? "Invalidación Elliott rota"
+        : slReason === "BEYOND_SWEEP"
+          ? "Estructura del sweep rota"
+          : slReason === "BEYOND_PROTECTED_SWING"
+            ? "Swing protegido perforado"
+            : "Distal del POI perforado";
 
     const rationale = buildRationale(direction, primary, confluences, rr1);
     const setupId = `${opts.symbol}-${opts.timeframe}-${poi.type}-${poi.sourceIds.join("_")}`;
@@ -578,7 +626,13 @@ export function detectSignals(
       slBasis: basis,
       tp1Source,
       tp2Source,
-      poi: { kind: candKind, id: poi.sourceIds[0], proximal: poi.proximal, distal: poi.distal, state: poi.type },
+      poi: {
+        kind: candKind,
+        id: poi.sourceIds[0],
+        proximal: poi.proximal,
+        distal: poi.distal,
+        state: poi.type,
+      },
       score,
       scoreOut100: scoreCanon.score,
       grade: cappedGrade,

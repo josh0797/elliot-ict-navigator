@@ -78,23 +78,43 @@ export function evaluateTruncation(input: TruncationInput): TruncationEvidence {
   const push = (code: TruncationCheck["code"], passed: boolean, detail: string) =>
     checks.push({ code, passed, detail });
 
-  const complete =
-    [p0, p1, p2, p3, p4, p5].every((v) => typeof v === "number" && Number.isFinite(v));
-  push("SEQUENCE_COMPLETE", complete, complete ? "0-1-2-3-4-5 present" : "incomplete impulse sequence");
+  const complete = [p0, p1, p2, p3, p4, p5].every(
+    (v) => typeof v === "number" && Number.isFinite(v),
+  );
+  push(
+    "SEQUENCE_COMPLETE",
+    complete,
+    complete ? "0-1-2-3-4-5 present" : "incomplete impulse sequence",
+  );
 
   const w3NotShortest = !/R2:/.test(invs);
-  push("W3_NOT_SHORTEST", w3NotShortest, w3NotShortest ? "wave 3 is not the shortest" : "wave 3 is the shortest of 1/3/5");
+  push(
+    "W3_NOT_SHORTEST",
+    w3NotShortest,
+    w3NotShortest ? "wave 3 is not the shortest" : "wave 3 is the shortest of 1/3/5",
+  );
 
-  const noOverlap = !/R3:/.test(invs) || pattern === "ENDING_DIAGONAL" || pattern === "LEADING_DIAGONAL";
-  push("W4_NO_OVERLAP", noOverlap, noOverlap ? "wave 4 respects wave 1 (or valid diagonal)" : "wave 4 invades wave 1");
+  const noOverlap =
+    !/R3:/.test(invs) || pattern === "ENDING_DIAGONAL" || pattern === "LEADING_DIAGONAL";
+  push(
+    "W4_NO_OVERLAP",
+    noOverlap,
+    noOverlap ? "wave 4 respects wave 1 (or valid diagonal)" : "wave 4 invades wave 1",
+  );
 
-  const advanced =
-    complete && (direction === "long" ? p5! > p4! : p5! < p4!);
-  push("W5_DIRECTIONAL", advanced, advanced ? "wave 5 advances with the impulse" : "wave 5 does not advance from wave 4");
+  const advanced = complete && (direction === "long" ? p5! > p4! : p5! < p4!);
+  push(
+    "W5_DIRECTIONAL",
+    advanced,
+    advanced ? "wave 5 advances with the impulse" : "wave 5 does not advance from wave 4",
+  );
 
-  const belowThree =
-    complete && (direction === "long" ? p5! < p3! : p5! > p3!);
-  push("W5_BELOW_W3", belowThree, belowThree ? "wave 5 failed to exceed wave 3" : "wave 5 exceeded wave 3 (no truncation)");
+  const belowThree = complete && (direction === "long" ? p5! < p3! : p5! > p3!);
+  push(
+    "W5_BELOW_W3",
+    belowThree,
+    belowThree ? "wave 5 failed to exceed wave 3" : "wave 5 exceeded wave 3 (no truncation)",
+  );
 
   const subwaves = IMPULSIVE_INTERNAL.filter((l) => internalLabels.includes(l));
   const fiveSubwaves = subwaves.length === 5;
@@ -105,10 +125,18 @@ export function evaluateTruncation(input: TruncationInput): TruncationEvidence {
   );
 
   const hasExhaustion = exhaustion.length >= 1;
-  push("EXHAUSTION_EVIDENCE", hasExhaustion, hasExhaustion ? exhaustion.join(", ") : "no exhaustion / reversal evidence");
+  push(
+    "EXHAUSTION_EVIDENCE",
+    hasExhaustion,
+    hasExhaustion ? exhaustion.join(", ") : "no exhaustion / reversal evidence",
+  );
 
   const invalidationIntact = input.invalidationBreached !== true;
-  push("INVALIDATION_INTACT", invalidationIntact, invalidationIntact ? "invalidation level intact" : "invalidation level breached");
+  push(
+    "INVALIDATION_INTACT",
+    invalidationIntact,
+    invalidationIntact ? "invalidation level intact" : "invalidation level breached",
+  );
 
   const geometry = complete && advanced && belowThree && w3NotShortest && noOverlap;
   const gapPrice = complete ? Math.abs(p3! - p5!) : null;

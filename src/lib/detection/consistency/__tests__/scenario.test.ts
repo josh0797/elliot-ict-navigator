@@ -4,7 +4,10 @@ import { computeBiasSplit } from "../../decision/bias-split";
 import type { ElliottResultDTO, FibTargetDTO } from "../../elliott/types";
 
 const T = (label: string, price: number): FibTargetDTO => ({
-  label, ratio: 1, price, kind: "PROJECTION",
+  label,
+  ratio: 1,
+  price,
+  kind: "PROJECTION",
 });
 
 function dto(over: Partial<ElliottResultDTO> = {}): ElliottResultDTO {
@@ -70,7 +73,12 @@ describe("scenarioConsistencyCheck", () => {
   });
 
   it("promotes a surviving alternative when the primary is retired", () => {
-    const alt = dto({ bias: "BEARISH", invalidationLevel: 4800, confidence: 55, fibTargets: [T("WC 1.0", 4200)] });
+    const alt = dto({
+      bias: "BEARISH",
+      invalidationLevel: 4800,
+      confidence: 55,
+      fibTargets: [T("WC 1.0", 4200)],
+    });
     const r = scenarioConsistencyCheck(dto({ alternatives: [alt] }), { currentPrice: 4600 });
     expect(r.promoted).not.toBeNull();
     expect(r.scenario.consistency?.issues).toContain("ALTERNATIVE_PROMOTED");
@@ -80,7 +88,10 @@ describe("scenarioConsistencyCheck", () => {
 describe("Elliott vs ICT reconciliation", () => {
   it("returns MIXED when both sides disagree with mass", () => {
     const split = computeBiasSplit({
-      dominant: "BEARISH", bullScore: 3.5, bearScore: 3, conflict: false,
+      dominant: "BEARISH",
+      bullScore: 3.5,
+      bearScore: 3,
+      conflict: false,
       votes: [
         { source: "ELLIOTT_PRIMARY", direction: "BULLISH", weight: 2, reason: "" },
         { source: "ELLIOTT_WAVE", direction: "BULLISH", weight: 1.5, reason: "" },
@@ -96,7 +107,10 @@ describe("Elliott vs ICT reconciliation", () => {
 
   it("agrees when both point the same way", () => {
     const split = computeBiasSplit({
-      dominant: "BULLISH", bullScore: 4, bearScore: 0, conflict: false,
+      dominant: "BULLISH",
+      bullScore: 4,
+      bearScore: 0,
+      conflict: false,
       votes: [
         { source: "ELLIOTT_PRIMARY", direction: "BULLISH", weight: 2, reason: "" },
         { source: "ICT_STRUCTURE", direction: "BULLISH", weight: 2, reason: "" },

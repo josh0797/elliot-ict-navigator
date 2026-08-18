@@ -21,11 +21,7 @@ export interface SetupTrigger {
   description: string;
   satisfied: boolean;
   /** Policy applied to evaluate `satisfied`. */
-  triggerPolicy?:
-    | "MARKET_INSIDE_ZONE"
-    | "LIMIT_ZONE_INTERSECTION"
-    | "STOP_CLOSE_BEYOND"
-    | "MANUAL";
+  triggerPolicy?: "MARKET_INSIDE_ZONE" | "LIMIT_ZONE_INTERSECTION" | "STOP_CLOSE_BEYOND" | "MANUAL";
   triggeredAt?: number | null;
   triggeredCandleIndex?: number | null;
   triggeredPrice?: number | null;
@@ -55,8 +51,14 @@ export function deriveTrigger(args: {
   candlesSinceArmed?: ReadonlyArray<CandleV2>;
 }): SetupTrigger {
   const {
-    direction, orderType, entry, entryZone, currentPrice,
-    lastConfirmedCandle = null, armedAtIndex = null, candlesSinceArmed = [],
+    direction,
+    orderType,
+    entry,
+    entryZone,
+    currentPrice,
+    lastConfirmedCandle = null,
+    armedAtIndex = null,
+    candlesSinceArmed = [],
   } = args;
   void direction;
 
@@ -92,7 +94,9 @@ export function deriveTrigger(args: {
   if (orderType === "BUY_LIMIT" || orderType === "SELL_LIMIT") {
     const scan = candlesSinceArmed.length
       ? candlesSinceArmed
-      : (lastConfirmedCandle ? [lastConfirmedCandle] : []);
+      : lastConfirmedCandle
+        ? [lastConfirmedCandle]
+        : [];
     const lo = entryZone.bottom;
     const hi = entryZone.top;
     let hit: CandleV2 | null = null;
@@ -100,7 +104,10 @@ export function deriveTrigger(args: {
       if (armedAtIndex != null && c.index < armedAtIndex) continue;
       const intersects = c.low <= hi && c.high >= lo;
       const fillsEntry = orderType === "BUY_LIMIT" ? c.low <= entry : c.high >= entry;
-      if (intersects && fillsEntry) { hit = c; break; }
+      if (intersects && fillsEntry) {
+        hit = c;
+        break;
+      }
     }
     const desc = hit
       ? `Orden ${orderType} ejecutada en vela ${hit.index} (zona ${lo.toFixed(5)}–${hi.toFixed(5)}).`

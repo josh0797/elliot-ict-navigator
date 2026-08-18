@@ -12,7 +12,8 @@ export function rsi(candles: ReadonlyArray<CandleV2>, period = 14): number[] {
   let loss = 0;
   for (let i = 1; i <= period; i++) {
     const d = candles[i].close - candles[i - 1].close;
-    if (d >= 0) gain += d; else loss -= d;
+    if (d >= 0) gain += d;
+    else loss -= d;
   }
   let avgGain = gain / period;
   let avgLoss = loss / period;

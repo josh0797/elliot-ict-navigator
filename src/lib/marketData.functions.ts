@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { fetchCandles, type Candle } from "./twelvedata.functions";
+import {
+  evaluateFreshness,
+  pickLeastStale,
+  type DataStatus,
+  type Freshness,
+} from "./marketData/freshness";
 
 /**
  * Market data adapter — provider cascade:
@@ -22,7 +28,20 @@ import { fetchCandles, type Candle } from "./twelvedata.functions";
  *   Crypto is detected when the quote leg is USD/USDT/USDC and the base is a known crypto symbol.
  */
 
-const CRYPTO_BASES = new Set(["BTC", "ETH", "LTC", "TON", "SOL", "XRP", "ADA", "DOGE", "BNB", "AVAX", "MATIC", "DOT"]);
+const CRYPTO_BASES = new Set([
+  "BTC",
+  "ETH",
+  "LTC",
+  "TON",
+  "SOL",
+  "XRP",
+  "ADA",
+  "DOGE",
+  "BNB",
+  "AVAX",
+  "MATIC",
+  "DOT",
+]);
 
 function classify(symbol: string): { kind: "crypto" | "forex"; base: string; quote: string } {
   const [base, quote] = symbol.toUpperCase().split("/");
@@ -38,30 +57,45 @@ function toPolygonSymbol(symbol: string): string {
 function toPolygonInterval(interval: string): { multiplier: number; timespan: string } | null {
   switch (interval) {
     case "1m":
-    case "1min": return { multiplier: 1, timespan: "minute" };
+    case "1min":
+      return { multiplier: 1, timespan: "minute" };
     case "5m":
-    case "5min": return { multiplier: 5, timespan: "minute" };
+    case "5min":
+      return { multiplier: 5, timespan: "minute" };
     case "15m":
-    case "15min": return { multiplier: 15, timespan: "minute" };
+    case "15min":
+      return { multiplier: 15, timespan: "minute" };
     case "30m":
-    case "30min": return { multiplier: 30, timespan: "minute" };
-    case "1h": return { multiplier: 1, timespan: "hour" };
-    case "4h": return { multiplier: 4, timespan: "hour" };
+    case "30min":
+      return { multiplier: 30, timespan: "minute" };
+    case "1h":
+      return { multiplier: 1, timespan: "hour" };
+    case "4h":
+      return { multiplier: 4, timespan: "hour" };
     case "1d":
-    case "1day": return { multiplier: 1, timespan: "day" };
-    default: return null;
+    case "1day":
+      return { multiplier: 1, timespan: "day" };
+    default:
+      return null;
   }
 }
 
 function toTwelveDataInterval(interval: string): string {
   switch (interval) {
-    case "1m": return "1min";
-    case "5m": return "5min";
-    case "15m": return "15min";
-    case "30m": return "30min";
-    case "1d": return "1day";
-    case "1w": return "1week";
-    default: return interval; // already 1h, 4h, 1day
+    case "1m":
+      return "1min";
+    case "5m":
+      return "5min";
+    case "15m":
+      return "15min";
+    case "30m":
+      return "30min";
+    case "1d":
+      return "1day";
+    case "1w":
+      return "1week";
+    default:
+      return interval; // already 1h, 4h, 1day
   }
 }
 
@@ -69,21 +103,47 @@ type CanonInterval = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d" | "1w";
 
 function canonInterval(interval: string): CanonInterval | null {
   switch (interval) {
-    case "1m": case "1min": return "1m";
-    case "5m": case "5min": return "5m";
-    case "15m": case "15min": return "15m";
-    case "30m": case "30min": return "30m";
-    case "1h": case "60min": case "1hour": return "1h";
-    case "4h": case "4hour": return "4h";
-    case "1d": case "1day": case "daily": return "1d";
-    case "1w": case "1week": case "weekly": return "1w";
-    default: return null;
+    case "1m":
+    case "1min":
+      return "1m";
+    case "5m":
+    case "5min":
+      return "5m";
+    case "15m":
+    case "15min":
+      return "15m";
+    case "30m":
+    case "30min":
+      return "30m";
+    case "1h":
+    case "60min":
+    case "1hour":
+      return "1h";
+    case "4h":
+    case "4hour":
+      return "4h";
+    case "1d":
+    case "1day":
+    case "daily":
+      return "1d";
+    case "1w":
+    case "1week":
+    case "weekly":
+      return "1w";
+    default:
+      return null;
   }
 }
 
 const CANON_SECONDS: Record<CanonInterval, number> = {
-  "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
-  "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800,
+  "1m": 60,
+  "5m": 300,
+  "15m": 900,
+  "30m": 1800,
+  "1h": 3600,
+  "4h": 14400,
+  "1d": 86400,
+  "1w": 604800,
 };
 
 /** Aggregate ascending candles into fixed-size buckets (used for 4h from 1h, 1w from 1d). */
@@ -95,7 +155,14 @@ function aggregate(candles: Candle[], bucketSeconds: number): Candle[] {
     const bucket = Math.floor(c.time / bucketSeconds);
     if (!cur || bucket !== curBucket) {
       if (cur) out.push(cur);
-      cur = { time: bucket * bucketSeconds, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume ?? 0 };
+      cur = {
+        time: bucket * bucketSeconds,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume ?? 0,
+      };
       curBucket = bucket;
       continue;
     }
@@ -137,12 +204,16 @@ function ymd(ts: number): string {
 }
 
 /** Live rate for BASE/QUOTE from MetalPrice API (base=BASE, currencies=QUOTE). */
-async function fetchMetalPriceLatest(symbol: string): Promise<{ price: number | null; error?: string }> {
-  const apiKey = process.env['METALPRICE_API_KEY'];
+async function fetchMetalPriceLatest(
+  symbol: string,
+): Promise<{ price: number | null; error?: string }> {
+  const apiKey = process.env["METALPRICE_API_KEY"];
   if (!apiKey) return { price: null, error: "METALPRICE_API_KEY missing" };
   const { base, quote } = classify(symbol);
   try {
-    const res = await fetch(`${METALPRICE_BASE}/latest?api_key=${apiKey}&base=${base}&currencies=${quote}`);
+    const res = await fetch(
+      `${METALPRICE_BASE}/latest?api_key=${apiKey}&base=${base}&currencies=${quote}`,
+    );
     const json = (await res.json()) as {
       success?: boolean;
       rates?: Record<string, number>;
@@ -164,11 +235,16 @@ async function fetchMetalPriceLatest(symbol: string): Promise<{ price: number | 
  * The endpoint publishes one rate per day, so OHLC is reconstructed from the
  * close sequence (open = previous close, high/low = envelope of the bar).
  */
-async function fetchMetalPrice(symbol: string, interval: string, limit: number): Promise<{ candles: Candle[]; error?: string }> {
-  const apiKey = process.env['METALPRICE_API_KEY'];
+async function fetchMetalPrice(
+  symbol: string,
+  interval: string,
+  limit: number,
+): Promise<{ candles: Candle[]; error?: string }> {
+  const apiKey = process.env["METALPRICE_API_KEY"];
   if (!apiKey) return { candles: [], error: "METALPRICE_API_KEY missing" };
   const ivl = canonInterval(interval);
-  if (ivl !== "1d" && ivl !== "1w") return { candles: [], error: "metalpriceapi: intraday not supported" };
+  if (ivl !== "1d" && ivl !== "1w")
+    return { candles: [], error: "metalpriceapi: intraday not supported" };
   const { base, quote } = classify(symbol);
 
   const days = Math.min(365, ivl === "1w" ? limit * 7 + 14 : limit + 10);
@@ -212,29 +288,26 @@ async function fetchMetalPrice(symbol: string, interval: string, limit: number):
   }
 }
 
-/**
- * Re-anchor the most recent candle to the MetalPrice live rate so the UI price
- * never drifts from the primary provider (fixes 1h/30m cross-provider skew).
- */
-function anchorLast(candles: Candle[], livePrice: number | null): Candle[] {
-  if (!candles.length || livePrice == null || !Number.isFinite(livePrice) || livePrice <= 0) return candles;
-  const last = candles[candles.length - 1];
-  const patched: Candle = {
-    ...last,
-    close: livePrice,
-    high: Math.max(last.high, livePrice),
-    low: Math.min(last.low, livePrice),
-  };
-  return [...candles.slice(0, -1), patched];
-}
+// NOTE: the OHLC of a closed candle is NEVER patched with a live spot quote.
+// The live rate travels next to the series as `livePrice` so the historical
+// series stays exactly as the serving provider published it.
 
 // ─── Financial Modeling Prep ─────────────────────────────────────────────────
 
 const FMP_INTRADAY: Partial<Record<CanonInterval, string>> = {
-  "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "1hour", "4h": "4hour",
+  "1m": "1min",
+  "5m": "5min",
+  "15m": "15min",
+  "30m": "30min",
+  "1h": "1hour",
+  "4h": "4hour",
 };
 
-async function fetchFmp(symbol: string, interval: string, limit: number): Promise<{ candles: Candle[]; error?: string }> {
+async function fetchFmp(
+  symbol: string,
+  interval: string,
+  limit: number,
+): Promise<{ candles: Candle[]; error?: string }> {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) return { candles: [], error: "FMP_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -246,7 +319,14 @@ async function fetchFmp(symbol: string, interval: string, limit: number): Promis
       const url = `https://financialmodelingprep.com/api/v3/historical-price-full/${ticker}?apikey=${apiKey}&timeseries=${Math.min(5000, ivl === "1w" ? limit * 7 + 40 : limit + 10)}`;
       const res = await fetch(url);
       const json = (await res.json()) as {
-        historical?: Array<{ date: string; open: number; high: number; low: number; close: number; volume?: number }>;
+        historical?: Array<{
+          date: string;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume?: number;
+        }>;
         "Error Message"?: string;
       };
       if (!res.ok || json["Error Message"] || !json.historical) {
@@ -254,25 +334,46 @@ async function fetchFmp(symbol: string, interval: string, limit: number): Promis
       }
       const daily = sanitize(
         json.historical.map((r) => ({
-          time: parseUtc(r.date), open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume,
+          time: parseUtc(r.date),
+          open: r.open,
+          high: r.high,
+          low: r.low,
+          close: r.close,
+          volume: r.volume,
         })),
         ivl === "1w" ? limit * 7 + 40 : limit,
       );
-      return { candles: ivl === "1w" ? aggregate(daily, CANON_SECONDS["1w"]).slice(-limit) : daily };
+      return {
+        candles: ivl === "1w" ? aggregate(daily, CANON_SECONDS["1w"]).slice(-limit) : daily,
+      };
     }
 
     const fmpIvl = FMP_INTRADAY[ivl]!;
     const url = `https://financialmodelingprep.com/api/v3/historical-chart/${fmpIvl}/${ticker}?apikey=${apiKey}`;
     const res = await fetch(url);
     const json = (await res.json()) as
-      | Array<{ date: string; open: number; high: number; low: number; close: number; volume?: number }>
+      | Array<{
+          date: string;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume?: number;
+        }>
       | { "Error Message"?: string };
     if (!res.ok || !Array.isArray(json)) {
       const msg = !Array.isArray(json) ? json["Error Message"] : undefined;
       return { candles: [], error: msg ?? `fmp ${res.status}` };
     }
     const candles = sanitize(
-      json.map((r) => ({ time: parseUtc(r.date), open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume })),
+      json.map((r) => ({
+        time: parseUtc(r.date),
+        open: r.open,
+        high: r.high,
+        low: r.low,
+        close: r.close,
+        volume: r.volume,
+      })),
       limit,
     );
     return { candles };
@@ -284,10 +385,19 @@ async function fetchFmp(symbol: string, interval: string, limit: number): Promis
 // ─── Alpha Vantage (secondary) ───────────────────────────────────────────────
 
 const AV_INTRADAY: Partial<Record<CanonInterval, string>> = {
-  "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "4h": "60min",
+  "1m": "1min",
+  "5m": "5min",
+  "15m": "15min",
+  "30m": "30min",
+  "1h": "60min",
+  "4h": "60min",
 };
 
-async function fetchAlphaVantage(symbol: string, interval: string, limit: number): Promise<{ candles: Candle[]; error?: string }> {
+async function fetchAlphaVantage(
+  symbol: string,
+  interval: string,
+  limit: number,
+): Promise<{ candles: Candle[]; error?: string }> {
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
   if (!apiKey) return { candles: [], error: "ALPHA_VANTAGE_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -322,11 +432,17 @@ async function fetchAlphaVantage(symbol: string, interval: string, limit: number
   try {
     const res = await fetch(`https://www.alphavantage.co/query?${params.toString()}`);
     const json = (await res.json()) as Record<string, unknown>;
-    const errMsg = (json["Error Message"] ?? json["Note"] ?? json["Information"]) as string | undefined;
+    const errMsg = (json["Error Message"] ?? json["Note"] ?? json["Information"]) as
+      | string
+      | undefined;
     const seriesKey = Object.keys(json).find((k) => /Time Series|Digital Currency/i.test(k));
-    if (!res.ok || !seriesKey) return { candles: [], error: errMsg ?? `alphavantage ${res.status}` };
+    if (!res.ok || !seriesKey)
+      return { candles: [], error: errMsg ?? `alphavantage ${res.status}` };
     const series = json[seriesKey] as Record<string, Record<string, string>>;
-    const pick = (row: Record<string, string>, field: "open" | "high" | "low" | "close"): number => {
+    const pick = (
+      row: Record<string, string>,
+      field: "open" | "high" | "low" | "close",
+    ): number => {
       const key = Object.keys(row).find((k) => k.toLowerCase().includes(field));
       return key ? Number(row[key]) : NaN;
     };
@@ -355,7 +471,11 @@ function intervalSeconds(interval: string): number {
   return p.multiplier * unit;
 }
 
-async function fetchPolygon(symbol: string, interval: string, limit: number): Promise<{ candles: Candle[]; error?: string }> {
+async function fetchPolygon(
+  symbol: string,
+  interval: string,
+  limit: number,
+): Promise<{ candles: Candle[]; error?: string }> {
   const apiKey = process.env.MASSIVE_API_KEY;
   if (!apiKey) return { candles: [], error: "MASSIVE_API_KEY missing" };
   const ivl = toPolygonInterval(interval);
@@ -401,10 +521,22 @@ export interface OhlcvResponse {
   provider: MarketProvider;
   /** Freshness contract for the snapshot (last CLOSED candle). */
   meta?: DataMeta;
+  /** OK, or DATA_STALE when no provider served a fresh series. */
+  status: DataStatus;
+  /** Live quote from the primary provider — never merged into the series. */
+  livePrice?: number | null;
+  /** UTC epoch seconds the snapshot was taken at. */
+  asOf: number;
   error?: string;
 }
 
-export type MarketProvider = "metalpriceapi" | "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+export type MarketProvider =
+  | "metalpriceapi"
+  | "fmp"
+  | "alphavantage"
+  | "polygon"
+  | "twelvedata"
+  | "none";
 
 export interface DataMeta {
   provider: MarketProvider;
@@ -419,6 +551,8 @@ export interface DataMeta {
   /** True when data lags more than one full interval beyond the expected bar. */
   stale: boolean;
   candles: number;
+  /** Full freshness verdict (tolerance, market session, reason). */
+  freshness: Freshness;
 }
 
 /** Seconds per canonical bucket for freshness math. */
@@ -431,30 +565,28 @@ function bucketSeconds(interval: string): number {
  * Drop the still-forming candle: any bar whose bucket equals the bucket the
  * current time falls into is incomplete and must never reach the engines.
  */
-function dropOpenCandle(candles: Candle[], interval: string): Candle[] {
+function dropOpenCandle(candles: Candle[], interval: string, nowSeconds: number): Candle[] {
   if (candles.length === 0) return candles;
   const sec = bucketSeconds(interval);
-  const currentBucket = Math.floor(Date.now() / 1000 / sec) * sec;
+  const currentBucket = Math.floor(nowSeconds / sec) * sec;
   const last = candles[candles.length - 1];
   return last.time >= currentBucket ? candles.slice(0, -1) : candles;
 }
 
-/** Weekends have no forex/metal prints — do not flag them as stale data. */
-function marketLikelyClosed(now = new Date()): boolean {
-  const day = now.getUTCDay();
-  if (day === 6) return true;                     // Saturday
-  if (day === 0 && now.getUTCHours() < 22) return true;  // Sunday before open
-  if (day === 5 && now.getUTCHours() >= 22) return true; // Friday after close
-  return false;
-}
-
-function buildMeta(candles: Candle[], provider: MarketProvider, interval: string): DataMeta | undefined {
+function buildMeta(
+  candles: Candle[],
+  provider: MarketProvider,
+  interval: string,
+  nowSeconds: number,
+): DataMeta | undefined {
   if (candles.length === 0) return undefined;
   const sec = bucketSeconds(interval);
   const last = candles[candles.length - 1];
-  const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - last.time);
-  // One closed candle is expected to be up to 2 intervals old (open + close lag).
-  const stale = !marketLikelyClosed() && ageSeconds > sec * 2;
+  const freshness = evaluateFreshness({
+    lastCandleTime: last.time,
+    intervalSeconds: sec,
+    nowSeconds,
+  });
   return {
     provider,
     interval,
@@ -462,17 +594,31 @@ function buildMeta(candles: Candle[], provider: MarketProvider, interval: string
     lastCandleTime: last.time,
     lastCandleIso: new Date(last.time * 1000).toISOString(),
     lastClose: last.close,
-    ageSeconds,
-    stale,
+    ageSeconds: freshness.ageSeconds,
+    stale: freshness.stale,
     candles: candles.length,
+    freshness,
   };
 }
 
-/** Normalise every provider result into the canonical closed-candle snapshot. */
-function finalize(candles: Candle[], provider: MarketProvider, interval: string, livePrice: number | null): OhlcvResponse {
-  const closed = dropOpenCandle(sanitizeAscending(candles), interval);
-  const anchored = anchorLast(closed, livePrice);
-  return { candles: anchored, provider, meta: buildMeta(anchored, provider, interval) };
+/** Normalise one provider result into the canonical closed-candle snapshot. */
+function finalize(
+  candles: Candle[],
+  provider: MarketProvider,
+  interval: string,
+  nowSeconds: number,
+  livePrice: number | null,
+): OhlcvResponse {
+  const closed = dropOpenCandle(sanitizeAscending(candles), interval, nowSeconds);
+  const meta = buildMeta(closed, provider, interval, nowSeconds);
+  return {
+    candles: closed,
+    provider,
+    meta,
+    status: meta?.stale ? "DATA_STALE" : "OK",
+    livePrice,
+    asOf: nowSeconds,
+  };
 }
 
 function sanitizeAscending(candles: Candle[]): Candle[] {
@@ -481,47 +627,69 @@ function sanitizeAscending(candles: Candle[]): Candle[] {
 
 /**
  * Provider cascade: MetalPrice API → FMP → Alpha Vantage → Polygon → Twelve Data.
- * The first provider returning usable candles wins; the rest are never called.
- * Whatever provider serves the series, the last candle is anchored to the
- * MetalPrice live rate when available.
+ *
+ * A provider only wins when its series is BOTH non-empty AND fresh for the
+ * requested timeframe. A stale provider is skipped and the cascade continues.
+ * If every provider is stale the least stale series is returned with
+ * `status: "DATA_STALE"` so the caller blocks Elliott/ICT/signals — series from
+ * different providers are never blended.
  */
 export const fetchOhlcv = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<OhlcvResponse> => {
     const errors: string[] = [];
+    const nowSeconds = Math.floor(Date.now() / 1000);
 
     const live = await fetchMetalPriceLatest(data.symbol);
     if (live.error) errors.push(`metalpriceapi(latest): ${live.error}`);
 
-    const mp = await fetchMetalPrice(data.symbol, data.interval, data.outputsize);
-    if (mp.candles.length > 0) {
-      return finalize(mp.candles, "metalpriceapi", data.interval, live.price);
+    const cascade: Array<[MarketProvider, () => Promise<{ candles: Candle[]; error?: string }>]> = [
+      ["metalpriceapi", () => fetchMetalPrice(data.symbol, data.interval, data.outputsize)],
+      ["fmp", () => fetchFmp(data.symbol, data.interval, data.outputsize)],
+      ["alphavantage", () => fetchAlphaVantage(data.symbol, data.interval, data.outputsize)],
+      ["polygon", () => fetchPolygon(data.symbol, data.interval, data.outputsize)],
+      [
+        "twelvedata",
+        () =>
+          fetchCandles({
+            data: {
+              symbol: data.symbol,
+              interval: toTwelveDataInterval(canonInterval(data.interval) ?? data.interval),
+              outputsize: data.outputsize,
+            },
+          }),
+      ],
+    ];
+
+    const staleAttempts: Array<OhlcvResponse & { freshness: Freshness }> = [];
+    for (const [provider, run] of cascade) {
+      const res = await run();
+      if (res.error) errors.push(`${provider}: ${res.error}`);
+      if (res.candles.length === 0) continue;
+      const snapshot = finalize(res.candles, provider, data.interval, nowSeconds, live.price);
+      if (snapshot.candles.length === 0 || !snapshot.meta) continue;
+      if (!snapshot.meta.stale) return snapshot;
+      errors.push(`${provider}: stale (${snapshot.meta.freshness.reason ?? "lagging series"})`);
+      staleAttempts.push({ ...snapshot, freshness: snapshot.meta.freshness });
     }
-    if (mp.error) errors.push(`metalpriceapi: ${mp.error}`);
 
-    const fmp = await fetchFmp(data.symbol, data.interval, data.outputsize);
-    if (fmp.candles.length > 0) return finalize(fmp.candles, "fmp", data.interval, live.price);
-    if (fmp.error) errors.push(`fmp: ${fmp.error}`);
+    const best = pickLeastStale(staleAttempts);
+    if (best) {
+      return {
+        ...best,
+        status: "DATA_STALE",
+        error: `DATA_STALE — ${best.provider}: ${best.meta?.freshness.reason ?? "lagging series"}`,
+      };
+    }
 
-    const av = await fetchAlphaVantage(data.symbol, data.interval, data.outputsize);
-    if (av.candles.length > 0) return finalize(av.candles, "alphavantage", data.interval, live.price);
-    if (av.error) errors.push(`alphavantage: ${av.error}`);
-
-    const poly = await fetchPolygon(data.symbol, data.interval, data.outputsize);
-    if (poly.candles.length > 0) return finalize(poly.candles, "polygon", data.interval, live.price);
-    if (poly.error) errors.push(`polygon: ${poly.error}`);
-
-    const td = await fetchCandles({
-      data: {
-        symbol: data.symbol,
-        interval: toTwelveDataInterval(canonInterval(data.interval) ?? data.interval),
-        outputsize: data.outputsize,
-      },
-    });
-    if (td.candles.length > 0) return finalize(td.candles, "twelvedata", data.interval, live.price);
-    if (td.error) errors.push(`twelvedata: ${td.error}`);
-
-    return { candles: [], provider: "none", error: errors.join(" | ") || "no data from any provider" };
+    return {
+      candles: [],
+      provider: "none",
+      status: "DATA_STALE",
+      asOf: nowSeconds,
+      livePrice: live.price,
+      error: errors.join(" | ") || "no data from any provider",
+    };
   });
 
 export { toPolygonSymbol, toPolygonInterval, toTwelveDataInterval, canonInterval, aggregate };

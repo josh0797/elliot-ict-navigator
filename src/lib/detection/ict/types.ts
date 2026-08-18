@@ -42,12 +42,18 @@ export interface OrderBlock {
  */
 export type LiquiditySide = "BSL" | "SSL";
 export type LiquidityKind =
-  | "EQH" | "EQL"            // equal highs / equal lows (stop clusters)
-  | "SWING_HIGH" | "SWING_LOW"
-  | "PDH" | "PDL"            // previous-day high / low
-  | "PWH" | "PWL"            // previous-week high / low
-  | "SESSION_HIGH" | "SESSION_LOW"
-  | "ASIA_HIGH" | "ASIA_LOW";
+  | "EQH"
+  | "EQL" // equal highs / equal lows (stop clusters)
+  | "SWING_HIGH"
+  | "SWING_LOW"
+  | "PDH"
+  | "PDL" // previous-day high / low
+  | "PWH"
+  | "PWL" // previous-week high / low
+  | "SESSION_HIGH"
+  | "SESSION_LOW"
+  | "ASIA_HIGH"
+  | "ASIA_LOW";
 export type LiquidityState = "ACTIVE" | "SWEPT" | "MITIGATED" | "BROKEN";
 
 export interface LiquidityLevel {

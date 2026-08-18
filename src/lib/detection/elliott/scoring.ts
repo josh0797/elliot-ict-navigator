@@ -45,7 +45,13 @@ export function wave5Score(p0: number, p1: number, p4: number, p5: number): numb
 }
 
 /** Alternation score: 1 if W2 and W4 differ in depth (ratio > 1.5 or < 0.66). */
-export function alternationScore(p0: number, p1: number, p2: number, p3: number, p4: number): number {
+export function alternationScore(
+  p0: number,
+  p1: number,
+  p2: number,
+  p3: number,
+  p4: number,
+): number {
   const w1 = Math.abs(p1 - p0);
   const w3 = Math.abs(p3 - p2);
   const w2Depth = Math.abs(p1 - p2) / w1;
