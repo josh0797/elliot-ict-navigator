@@ -91,12 +91,18 @@ export function buildHypothesis(
   let score = count.score;
   const notes = [...count.notes];
 
+  // Coverage: a reading that explains more structure beats a 3-pivot fragment
+  // anchored at the live edge. Applied before the guideline penalties so a
+  // long, slightly imperfect count still outranks a short "perfect" one.
+  const coverage = Math.min(3, Math.max(0, count.labeled.length - 3));
+  score += 0.06 * coverage;
+
   // An impulse reading that piles up guideline failures is a weak impulse: the
   // structure is more likely corrective. Two or more failures cost real score.
   if (kind === "IMPULSE" || kind === "UNCONFIRMED" || kind === "TRUNCATED_FIFTH") {
     const n = fibFailures(count).length;
     if (n >= 2) {
-      score *= n >= 3 ? 0.65 : 0.8;
+      score *= n >= 3 ? 0.75 : 0.88;
       notes.push(`impulse penalised: ${n} Fibonacci/alternation failures`);
     }
   }
