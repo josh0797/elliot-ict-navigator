@@ -163,6 +163,6 @@ export interface DetectSetupsResult {
   elliott: ElliottResultDTO;
   decision: OperationalReport;
   diagonal?: DiagonalPattern | null;
-  provider?: "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+  provider?: "metalpriceapi" | "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
   error?: string;
 }

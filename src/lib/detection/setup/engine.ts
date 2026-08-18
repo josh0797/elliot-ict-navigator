@@ -237,6 +237,23 @@ function buildRationale(
   return parts.join(" ");
 }
 
+/** Minimum score an alternative must reach before it can drive orders. */
+const ALT_MIN_SCORE = 0.4;
+
+/**
+ * The count the operational layer trades from. Mirrors the decision engine's
+ * arbitration: primary while it is not INVALIDATED, otherwise the highest
+ * scoring non-invalidated alternative above `ALT_MIN_SCORE`.
+ */
+function pickOperativeCount(elliott: ElliottAnalysis): ElliottCountV2 | null {
+  const primary = elliott.primary;
+  if (primary && primary.state !== "INVALIDATED") return primary;
+  const alt = [...elliott.alternatives]
+    .filter((c) => c.state !== "INVALIDATED" && c.state !== "NO_COUNT" && c.score >= ALT_MIN_SCORE)
+    .sort((a, b) => b.score - a.score)[0];
+  return alt ?? null;
+}
+
 export function detectSignals(
   candles: ReadonlyArray<CandleV2>,
   pivots: ReadonlyArray<PivotV2>,
@@ -245,10 +262,13 @@ export function detectSignals(
   opts: SetupEngineOptions,
 ): TradeSignal[] {
   const config = resolveConfig(opts.config);
-  // ── Gate 1: Elliott primary exists and is not INVALIDATED.
-  const primary = elliott.primary;
+  // ── Gate 1: an OPERABLE Elliott count must exist.
+  // Consistency with the decision engine: when the primary count is missing or
+  // INVALIDATED, the best valid alternative takes over as the operative count
+  // (the decision engine already lets it vote). Previously the alternative
+  // could vote but never produce an order — a logical inconsistency.
+  const primary = pickOperativeCount(elliott);
   if (!primary) return [];
-  if (primary.state === "INVALIDATED") return [];
   if (candles.length === 0) return [];
 
   const direction = primary.direction;

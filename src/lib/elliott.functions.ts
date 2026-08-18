@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { fetchOhlcv } from "./marketData.functions";
+import { fetchOhlcv, type MarketProvider } from "./marketData.functions";
 import { liftCandles } from "./detection/schemas/analysis";
 import { detectPivots } from "./detection/structure/pivots";
 import { currentBias } from "./detection/structure/market-structure";
@@ -50,7 +50,7 @@ export interface AnalyzeResponse {
   /** Macro count on the higher timeframe (context / bias). */
   macro: ElliottResultDTO | null;
   ict: IctContext | null;
-  provider?: "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+  provider?: MarketProvider;
   error?: string;
   /** Timeframe the macro count ran on. */
   countTimeframe?: string;

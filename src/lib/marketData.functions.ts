@@ -4,10 +4,17 @@ import { fetchCandles, type Candle } from "./twelvedata.functions";
 
 /**
  * Market data adapter — provider cascade:
- *   1. Financial Modeling Prep (FMP_API_KEY)      ← primary
- *   2. Alpha Vantage (ALPHA_VANTAGE_API_KEY)      ← secondary / cross-check
- *   3. Polygon (MASSIVE_API_KEY)                  ← tertiary
- *   4. Twelve Data                                ← last resort
+ *   1. MetalPrice API (METALPRICE_API_KEY)        ← primary
+ *   2. Financial Modeling Prep (FMP_API_KEY)
+ *   3. Alpha Vantage (ALPHA_VANTAGE_API_KEY)
+ *   4. Polygon (MASSIVE_API_KEY)
+ *   5. Twelve Data                                ← last resort
+ *
+ * MetalPrice API serves daily/weekly series natively (`/v1/timeframe`) and the
+ * live rate (`/v1/latest`) for every pair (metals AND currencies). Because it
+ * does not publish intraday OHLC, intraday requests fall through the cascade
+ * and the LAST candle is re-anchored to the MetalPrice live rate so the app
+ * price always matches the primary provider.
  *
  * Interval contract (canonical): "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d" | "1w".
  * Also accepts Twelve Data style ("1min" | "5min" | "15min" | "1h" | "4h" | "1day") for compatibility.
@@ -121,7 +128,107 @@ function flatSymbol(symbol: string): string {
   return symbol.toUpperCase().replace("/", "");
 }
 
-// ─── Financial Modeling Prep (primary) ───────────────────────────────────────
+// ─── MetalPrice API (primary) ────────────────────────────────────────────────
+
+const METALPRICE_BASE = "https://api.metalpriceapi.com/v1";
+
+function ymd(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(0, 10);
+}
+
+/** Live rate for BASE/QUOTE from MetalPrice API (base=BASE, currencies=QUOTE). */
+async function fetchMetalPriceLatest(symbol: string): Promise<{ price: number | null; error?: string }> {
+  const apiKey = process.env['METALPRICE_API_KEY'];
+  if (!apiKey) return { price: null, error: "METALPRICE_API_KEY missing" };
+  const { base, quote } = classify(symbol);
+  try {
+    const res = await fetch(`${METALPRICE_BASE}/latest?api_key=${apiKey}&base=${base}&currencies=${quote}`);
+    const json = (await res.json()) as {
+      success?: boolean;
+      rates?: Record<string, number>;
+      error?: { message?: string } | string;
+    };
+    const rate = json.rates?.[quote] ?? json.rates?.[`${base}${quote}`];
+    if (!res.ok || json.success === false || !Number.isFinite(rate)) {
+      const msg = typeof json.error === "string" ? json.error : json.error?.message;
+      return { price: null, error: msg ?? `metalpriceapi ${res.status}` };
+    }
+    return { price: rate as number };
+  } catch (err) {
+    return { price: null, error: (err as Error).message };
+  }
+}
+
+/**
+ * Daily / weekly series from MetalPrice API `/v1/timeframe` (close-per-day).
+ * The endpoint publishes one rate per day, so OHLC is reconstructed from the
+ * close sequence (open = previous close, high/low = envelope of the bar).
+ */
+async function fetchMetalPrice(symbol: string, interval: string, limit: number): Promise<{ candles: Candle[]; error?: string }> {
+  const apiKey = process.env['METALPRICE_API_KEY'];
+  if (!apiKey) return { candles: [], error: "METALPRICE_API_KEY missing" };
+  const ivl = canonInterval(interval);
+  if (ivl !== "1d" && ivl !== "1w") return { candles: [], error: "metalpriceapi: intraday not supported" };
+  const { base, quote } = classify(symbol);
+
+  const days = Math.min(365, ivl === "1w" ? limit * 7 + 14 : limit + 10);
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - days * 86400;
+
+  try {
+    const url =
+      `${METALPRICE_BASE}/timeframe?api_key=${apiKey}` +
+      `&start_date=${ymd(start)}&end_date=${ymd(end)}&base=${base}&currencies=${quote}`;
+    const res = await fetch(url);
+    const json = (await res.json()) as {
+      success?: boolean;
+      rates?: Record<string, Record<string, number>>;
+      error?: { message?: string } | string;
+    };
+    if (!res.ok || json.success === false || !json.rates) {
+      const msg = typeof json.error === "string" ? json.error : json.error?.message;
+      return { candles: [], error: msg ?? `metalpriceapi ${res.status}` };
+    }
+    const closes = Object.entries(json.rates)
+      .map(([date, row]) => ({ time: parseUtc(date), close: row[quote] ?? row[`${base}${quote}`] }))
+      .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.close) && (r.close as number) > 0)
+      .sort((a, b) => a.time - b.time);
+    if (closes.length === 0) return { candles: [], error: "metalpriceapi: empty series" };
+
+    const daily: Candle[] = closes.map((r, i) => {
+      const open = i === 0 ? r.close : closes[i - 1].close;
+      return {
+        time: r.time,
+        open,
+        high: Math.max(open, r.close),
+        low: Math.min(open, r.close),
+        close: r.close,
+      };
+    });
+    const out = ivl === "1w" ? aggregate(daily, CANON_SECONDS["1w"]) : daily;
+    return { candles: sanitize(out, limit) };
+  } catch (err) {
+    return { candles: [], error: (err as Error).message };
+  }
+}
+
+/**
+ * Re-anchor the most recent candle to the MetalPrice live rate so the UI price
+ * never drifts from the primary provider (fixes 1h/30m cross-provider skew).
+ */
+function anchorLast(candles: Candle[], livePrice: number | null): Candle[] {
+  if (!candles.length || livePrice == null || !Number.isFinite(livePrice) || livePrice <= 0) return candles;
+  const last = candles[candles.length - 1];
+  const patched: Candle = {
+    ...last,
+    close: livePrice,
+    high: Math.max(last.high, livePrice),
+    low: Math.min(last.low, livePrice),
+  };
+  return [...candles.slice(0, -1), patched];
+}
+
+// ─── Financial Modeling Prep ─────────────────────────────────────────────────
 
 const FMP_INTRADAY: Partial<Record<CanonInterval, string>> = {
   "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "1hour", "4h": "4hour",
@@ -295,27 +402,38 @@ export interface OhlcvResponse {
   error?: string;
 }
 
-export type MarketProvider = "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+export type MarketProvider = "metalpriceapi" | "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
 
 /**
- * Provider cascade: FMP → Alpha Vantage → Polygon → Twelve Data.
+ * Provider cascade: MetalPrice API → FMP → Alpha Vantage → Polygon → Twelve Data.
  * The first provider returning usable candles wins; the rest are never called.
+ * Whatever provider serves the series, the last candle is anchored to the
+ * MetalPrice live rate when available.
  */
 export const fetchOhlcv = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<OhlcvResponse> => {
     const errors: string[] = [];
 
+    const live = await fetchMetalPriceLatest(data.symbol);
+    if (live.error) errors.push(`metalpriceapi(latest): ${live.error}`);
+
+    const mp = await fetchMetalPrice(data.symbol, data.interval, data.outputsize);
+    if (mp.candles.length > 0) {
+      return { candles: anchorLast(mp.candles, live.price), provider: "metalpriceapi" };
+    }
+    if (mp.error) errors.push(`metalpriceapi: ${mp.error}`);
+
     const fmp = await fetchFmp(data.symbol, data.interval, data.outputsize);
-    if (fmp.candles.length > 0) return { candles: fmp.candles, provider: "fmp" };
+    if (fmp.candles.length > 0) return { candles: anchorLast(fmp.candles, live.price), provider: "fmp" };
     if (fmp.error) errors.push(`fmp: ${fmp.error}`);
 
     const av = await fetchAlphaVantage(data.symbol, data.interval, data.outputsize);
-    if (av.candles.length > 0) return { candles: av.candles, provider: "alphavantage" };
+    if (av.candles.length > 0) return { candles: anchorLast(av.candles, live.price), provider: "alphavantage" };
     if (av.error) errors.push(`alphavantage: ${av.error}`);
 
     const poly = await fetchPolygon(data.symbol, data.interval, data.outputsize);
-    if (poly.candles.length > 0) return { candles: poly.candles, provider: "polygon" };
+    if (poly.candles.length > 0) return { candles: anchorLast(poly.candles, live.price), provider: "polygon" };
     if (poly.error) errors.push(`polygon: ${poly.error}`);
 
     const td = await fetchCandles({
@@ -325,7 +443,7 @@ export const fetchOhlcv = createServerFn({ method: "POST" })
         outputsize: data.outputsize,
       },
     });
-    if (td.candles.length > 0) return { candles: td.candles, provider: "twelvedata" };
+    if (td.candles.length > 0) return { candles: anchorLast(td.candles, live.price), provider: "twelvedata" };
     if (td.error) errors.push(`twelvedata: ${td.error}`);
 
     return { candles: [], provider: "none", error: errors.join(" | ") || "no data from any provider" };
