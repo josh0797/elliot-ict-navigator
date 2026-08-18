@@ -369,16 +369,27 @@ function ChartPage() {
             </Link>
           </Button>
           <SymbolPicker symbol={decoded} tf={interval} bars={outputsize} />
-          <Badge variant="outline" className="font-mono">{interval}</Badge>
+          <Badge variant="outline" className="font-mono text-[10px]" title="Timeframe contextual — conteo macro">
+            Contexto: {contextTf} — Conteo macro
+          </Badge>
+          <Badge variant="outline" className="font-mono text-[10px]" title="Timeframe de ejecución — subconteo local">
+            Ejecución: {interval} — Subconteo local
+          </Badge>
           {provider && <Badge variant="secondary" className="font-mono text-[10px]">{provider}</Badge>}
-          {dataHealth && (
+          {snapshot && (
             <Badge
               variant="outline"
-              className={`font-mono text-[10px] ${dataHealth.stale ? "text-destructive border-destructive/50" : "text-muted-foreground"}`}
-              title={`Última vela cerrada ${dataHealth.lastCandleIso} · ${dataHealth.candles} velas`}
+              className={`font-mono text-[10px] ${stale ? "text-destructive border-destructive/50" : "text-muted-foreground"}`}
+              title={`Proveedor ${snapshot.provider} · última vela cerrada ${new Date(snapshot.lastClosedCandleTime * 1000).toISOString()} · ${snapshot.candles.length} velas · asOf ${new Date(snapshot.asOf * 1000).toISOString()} · build ${snapshot.buildId.slice(0, 8)}`}
             >
-              {dataHealth.lastCandleIso.slice(5, 16).replace("T", " ")}Z · {px(dataHealth.lastClose)} ·{" "}
-              {formatAge(dataHealth.ageSeconds)}{dataHealth.stale ? " · STALE" : ""}
+              {new Date(snapshot.lastClosedCandleTime * 1000).toISOString().slice(5, 16).replace("T", " ")}Z ·{" "}
+              {px(snapshot.candles[snapshot.candles.length - 1]?.close ?? 0)} ·{" "}
+              {formatAge(snapshot.freshness.ageSeconds)}{stale ? " · STALE" : ""}
+            </Badge>
+          )}
+          {loading && (
+            <Badge variant="outline" className="font-mono text-[10px] text-amber-400 border-amber-400/50">
+              Cargando {pending?.tf}
             </Badge>
           )}
           {elliott && elliott.status !== "NO_COUNT" && (
