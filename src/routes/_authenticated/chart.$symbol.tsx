@@ -305,6 +305,16 @@ function ChartPage() {
           <SymbolPicker symbol={decoded} tf={interval} bars={outputsize} />
           <Badge variant="outline" className="font-mono">{interval}</Badge>
           {provider && <Badge variant="secondary" className="font-mono text-[10px]">{provider}</Badge>}
+          {dataHealth && (
+            <Badge
+              variant="outline"
+              className={`font-mono text-[10px] ${dataHealth.stale ? "text-destructive border-destructive/50" : "text-muted-foreground"}`}
+              title={`Última vela cerrada ${dataHealth.lastCandleIso} · ${dataHealth.candles} velas`}
+            >
+              {dataHealth.lastCandleIso.slice(5, 16).replace("T", " ")}Z · {px(dataHealth.lastClose)} ·{" "}
+              {formatAge(dataHealth.ageSeconds)}{dataHealth.stale ? " · STALE" : ""}
+            </Badge>
+          )}
           {elliott && elliott.status !== "NO_COUNT" && (
             <Badge variant="outline" className={`font-mono ${elliott.bias === "BULLISH" ? "text-success" : elliott.bias === "BEARISH" ? "text-destructive" : ""}`}>
               {elliott.bias} · W{elliott.currentWave ?? "?"} · {elliott.confidence}
