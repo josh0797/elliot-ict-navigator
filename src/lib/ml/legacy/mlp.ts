@@ -3,14 +3,7 @@
 
 import { PRETRAINED } from "./pretrained";
 
-export const LEGACY_SHAPES = [
-  [6, 12],
-  [12],
-  [12, 8],
-  [8],
-  [8, 1],
-  [1],
-] as const;
+export const LEGACY_SHAPES = [[6, 12], [12], [12, 8], [8], [8, 1], [1]] as const;
 
 type Mat = number[][];
 type Vec = number[];

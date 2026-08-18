@@ -31,8 +31,12 @@ function Landing() {
             <span className="font-mono font-bold text-sm tracking-tight">ELLIOTT × ICT PRO</span>
           </div>
           <div className="flex gap-2">
-            <Button asChild variant="ghost"><Link to="/auth">Sign in</Link></Button>
-            <Button asChild><Link to="/auth">Launch terminal</Link></Button>
+            <Button asChild variant="ghost">
+              <Link to="/auth">Sign in</Link>
+            </Button>
+            <Button asChild>
+              <Link to="/auth">Launch terminal</Link>
+            </Button>
           </div>
         </div>
       </header>
@@ -47,10 +51,9 @@ function Landing() {
             Wave counts meet <span className="text-primary">smart money</span>.
           </h1>
           <p className="mt-6 text-lg text-muted-foreground">
-            A trading terminal that automatically counts Elliott Waves, overlays ICT
-            order blocks, fair-value gaps and liquidity sweeps, then pushes
-            actionable setups with entry, stop-loss and take-profit — in the app and
-            on Telegram — the moment confluence appears.
+            A trading terminal that automatically counts Elliott Waves, overlays ICT order blocks,
+            fair-value gaps and liquidity sweeps, then pushes actionable setups with entry,
+            stop-loss and take-profit — in the app and on Telegram — the moment confluence appears.
           </p>
           <div className="mt-8 flex gap-3">
             <Button asChild size="lg">
@@ -63,16 +66,16 @@ function Landing() {
 
         <div className="mt-20 grid md:grid-cols-3 gap-6">
           <Feature icon={LineChart} title="Elliott auto-count">
-            ZigZag pivots scored against the three Elliott rules (W2≤100% W1, W3
-            never shortest, W4 cannot overlap W1).
+            ZigZag pivots scored against the three Elliott rules (W2≤100% W1, W3 never shortest, W4
+            cannot overlap W1).
           </Feature>
           <Feature icon={Layers} title="ICT overlay">
-            Order Blocks, Fair Value Gaps, Liquidity Sweeps and BOS/CHoCH printed
-            directly on the chart.
+            Order Blocks, Fair Value Gaps, Liquidity Sweeps and BOS/CHoCH printed directly on the
+            chart.
           </Feature>
           <Feature icon={BellRing} title="Confluence alerts">
-            Only setups where ICT confirms the end of an Elliott correction
-            trigger an alert — in the app and on Telegram.
+            Only setups where ICT confirms the end of an Elliott correction trigger an alert — in
+            the app and on Telegram.
           </Feature>
         </div>
 
@@ -86,7 +89,9 @@ function Landing() {
               </div>
             </div>
           </div>
-          <Button asChild variant="outline"><Link to="/auth">Get started free</Link></Button>
+          <Button asChild variant="outline">
+            <Link to="/auth">Get started free</Link>
+          </Button>
         </div>
       </section>
     </div>

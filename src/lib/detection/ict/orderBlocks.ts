@@ -34,23 +34,42 @@ const OB_LOOKBACK = 6; // bars before displacement to scan for the opposite cand
 const VOLUME_LOOKBACK = 20;
 const VOLUME_MULT = 1.5;
 
-function rangeOf(candle: CandleV2, kind: "BULLISH" | "BEARISH", policy: OBRangePolicy): { top: number; bottom: number } {
+function rangeOf(
+  candle: CandleV2,
+  kind: "BULLISH" | "BEARISH",
+  policy: OBRangePolicy,
+): { top: number; bottom: number } {
   const bodyTop = Math.max(candle.open, candle.close);
   const bodyBot = Math.min(candle.open, candle.close);
   switch (policy) {
-    case "FULL_CANDLE": return { top: candle.high, bottom: candle.low };
-    case "BODY":        return { top: bodyTop, bottom: bodyBot };
+    case "FULL_CANDLE":
+      return { top: candle.high, bottom: candle.low };
+    case "BODY":
+      return { top: bodyTop, bottom: bodyBot };
     case "OPEN_TO_LOW":
-      return kind === "BULLISH" ? { top: candle.open, bottom: candle.low } : { top: candle.high, bottom: candle.open };
+      return kind === "BULLISH"
+        ? { top: candle.open, bottom: candle.low }
+        : { top: candle.high, bottom: candle.open };
     case "OPEN_TO_HIGH":
-      return kind === "BULLISH" ? { top: candle.high, bottom: candle.open } : { top: candle.open, bottom: candle.low };
+      return kind === "BULLISH"
+        ? { top: candle.high, bottom: candle.open }
+        : { top: candle.open, bottom: candle.low };
   }
 }
 
-function isBullish(c: CandleV2): boolean { return c.close > c.open; }
-function isBearish(c: CandleV2): boolean { return c.close < c.open; }
+function isBullish(c: CandleV2): boolean {
+  return c.close > c.open;
+}
+function isBearish(c: CandleV2): boolean {
+  return c.close < c.open;
+}
 
-function computeQuality(ob: Pick<OrderBlock, "displacementConfirmed" | "bosConfirmed" | "fvgAssociated" | "volumeConfirmation">): number {
+function computeQuality(
+  ob: Pick<
+    OrderBlock,
+    "displacementConfirmed" | "bosConfirmed" | "fvgAssociated" | "volumeConfirmation"
+  >,
+): number {
   let q = 40;
   if (ob.displacementConfirmed) q += 20;
   if (ob.bosConfirmed) q += 20;
@@ -69,11 +88,12 @@ function applyLifecycle(ob: OrderBlock, candles: ReadonlyArray<CandleV2>): void 
     const wickIn = c.low <= ob.top && c.high >= ob.bottom;
     if (wickIn && ob.state !== "INVALIDATED" && ob.state !== "BREAKER") {
       ob.touchCount++;
-      const penetration = ob.type === "BULLISH"
-        ? Math.min(ob.top, c.high) - Math.max(ob.bottom, c.low) === 0
-          ? 0
-          : (ob.top - Math.max(c.low, ob.bottom))
-        : (Math.min(c.high, ob.top) - ob.bottom);
+      const penetration =
+        ob.type === "BULLISH"
+          ? Math.min(ob.top, c.high) - Math.max(ob.bottom, c.low) === 0
+            ? 0
+            : ob.top - Math.max(c.low, ob.bottom)
+          : Math.min(c.high, ob.top) - ob.bottom;
       const pct = Math.max(0, Math.min(100, (penetration / range) * 100));
       if (pct > ob.mitigationPercent) ob.mitigationPercent = pct;
       ob.state = ob.mitigationPercent >= 50 ? "MITIGATED" : "TOUCHED";
@@ -125,20 +145,30 @@ export function detectOrderBlocks(
     const displacement = body >= DISPLACEMENT_ATR_MULT * a;
     if (!displacement) continue;
 
-    const dir: "BULLISH" | "BEARISH" = isBullish(c) ? "BULLISH" : isBearish(c) ? "BEARISH" : (c.close >= c.open ? "BULLISH" : "BEARISH");
+    const dir: "BULLISH" | "BEARISH" = isBullish(c)
+      ? "BULLISH"
+      : isBearish(c)
+        ? "BEARISH"
+        : c.close >= c.open
+          ? "BULLISH"
+          : "BEARISH";
 
     // BOS aligned within window.
-    const bos = structure.find((s) =>
-      s.type === "BOS" &&
-      s.index >= i &&
-      s.index <= i + BOS_WINDOW &&
-      ((dir === "BULLISH" && s.direction === "long") || (dir === "BEARISH" && s.direction === "short")),
+    const bos = structure.find(
+      (s) =>
+        s.type === "BOS" &&
+        s.index >= i &&
+        s.index <= i + BOS_WINDOW &&
+        ((dir === "BULLISH" && s.direction === "long") ||
+          (dir === "BEARISH" && s.direction === "short")),
     );
 
     // FVG produced by the displacement (3-candle window centred at i).
-    const fvg = fvgs.find((f) =>
-      f.startIndex === i &&
-      ((dir === "BULLISH" && f.type === "bullish") || (dir === "BEARISH" && f.type === "bearish")),
+    const fvg = fvgs.find(
+      (f) =>
+        f.startIndex === i &&
+        ((dir === "BULLISH" && f.type === "bullish") ||
+          (dir === "BEARISH" && f.type === "bearish")),
     );
 
     // Find the LAST opposite-color candle within OB_LOOKBACK bars before displacement.
@@ -146,7 +176,10 @@ export function detectOrderBlocks(
     for (let k = i - 1; k >= Math.max(0, i - OB_LOOKBACK); k--) {
       const cand = candles[k];
       const opposite = dir === "BULLISH" ? isBearish(cand) : isBullish(cand);
-      if (opposite) { originIdx = k; break; }
+      if (opposite) {
+        originIdx = k;
+        break;
+      }
     }
     if (originIdx < 0 || seen.has(originIdx)) continue;
     seen.add(originIdx);
@@ -161,7 +194,10 @@ export function detectOrderBlocks(
       let count = 0;
       for (let k = Math.max(0, originIdx - VOLUME_LOOKBACK); k < originIdx; k++) {
         const v = candles[k].volume;
-        if (v !== undefined) { sum += v; count++; }
+        if (v !== undefined) {
+          sum += v;
+          count++;
+        }
       }
       const avg = count > 0 ? sum / count : 0;
       volumeConfirmation = avg > 0 && origin.volume >= VOLUME_MULT * avg;

@@ -31,7 +31,8 @@ function shape(value: unknown, depth = 0): unknown {
   if (typeof value === "object") {
     if (depth > 3) return "object";
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = shape(v, depth + 1);
+    for (const [k, v] of Object.entries(value as Record<string, unknown>))
+      out[k] = shape(v, depth + 1);
     return out;
   }
   return typeof value;
@@ -59,7 +60,8 @@ async function probe(test: string, url: string, headers: Record<string, string>)
     const res = await fetch(url, { headers });
     const rateLimit: Record<string, string> = {};
     res.headers.forEach((v, k) => {
-      if (k.toLowerCase().includes("ratelimit") || k.toLowerCase().includes("retry-after")) rateLimit[k] = v;
+      if (k.toLowerCase().includes("ratelimit") || k.toLowerCase().includes("retry-after"))
+        rateLimit[k] = v;
     });
     const text = await res.text();
     let parsed: unknown = text;
@@ -81,7 +83,10 @@ async function probe(test: string, url: string, headers: Record<string, string>)
 
     if (res.ok && parsed && typeof parsed === "object") {
       const rec = parsed as Record<string, unknown>;
-      const container = (rec["rates"] ?? rec["currency_pairs"] ?? null) as Record<string, unknown> | null;
+      const container = (rec["rates"] ?? rec["currency_pairs"] ?? null) as Record<
+        string,
+        unknown
+      > | null;
       if (container && typeof container === "object") {
         result.resolvedSymbols = Object.keys(container);
         const first = Object.values(container)[0];
@@ -116,13 +121,29 @@ export const Route = createFileRoute("/api/public/diag/alpaca")({
         };
 
         const results: Probe[] = [];
-        results.push(await probe("test1_latest_XAUUSD", `${BASE}/latest/rates?currency_pairs=XAUUSD`, headers));
         results.push(
-          await probe("test2_latest_XAU%2FUSD", `${BASE}/latest/rates?currency_pairs=${encodeURIComponent("XAU/USD")}`, headers),
+          await probe("test1_latest_XAUUSD", `${BASE}/latest/rates?currency_pairs=XAUUSD`, headers),
         );
-        results.push(await probe("test3a_latest_EURUSD", `${BASE}/latest/rates?currency_pairs=EURUSD`, headers));
         results.push(
-          await probe("test3b_latest_EUR%2FUSD", `${BASE}/latest/rates?currency_pairs=${encodeURIComponent("EUR/USD")}`, headers),
+          await probe(
+            "test2_latest_XAU%2FUSD",
+            `${BASE}/latest/rates?currency_pairs=${encodeURIComponent("XAU/USD")}`,
+            headers,
+          ),
+        );
+        results.push(
+          await probe(
+            "test3a_latest_EURUSD",
+            `${BASE}/latest/rates?currency_pairs=EURUSD`,
+            headers,
+          ),
+        );
+        results.push(
+          await probe(
+            "test3b_latest_EUR%2FUSD",
+            `${BASE}/latest/rates?currency_pairs=${encodeURIComponent("EUR/USD")}`,
+            headers,
+          ),
         );
         results.push(
           await probe(
@@ -139,9 +160,18 @@ export const Route = createFileRoute("/api/public/diag/alpaca")({
           ),
         );
 
-        results.push(await probe("control_stocks_iex_AAPL", "https://data.alpaca.markets/v2/stocks/AAPL/bars/latest?feed=iex", headers));
+        results.push(
+          await probe(
+            "control_stocks_iex_AAPL",
+            "https://data.alpaca.markets/v2/stocks/AAPL/bars/latest?feed=iex",
+            headers,
+          ),
+        );
 
-        return Response.json({ ranAt: new Date().toISOString(), results }, { headers: { "cache-control": "no-store" } });
+        return Response.json(
+          { ranAt: new Date().toISOString(), results },
+          { headers: { "cache-control": "no-store" } },
+        );
       },
     },
   },

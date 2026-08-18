@@ -127,9 +127,19 @@ export function computeDirectionBias(
   // 7. Premium/Discount
   if (ict.pdArray) {
     if (ict.pdArray.zone === "PREMIUM") {
-      votes.push({ source: "PD_ARRAY", direction: "BEARISH", weight: 1.0, reason: "Price in PREMIUM" });
+      votes.push({
+        source: "PD_ARRAY",
+        direction: "BEARISH",
+        weight: 1.0,
+        reason: "Price in PREMIUM",
+      });
     } else if (ict.pdArray.zone === "DISCOUNT") {
-      votes.push({ source: "PD_ARRAY", direction: "BULLISH", weight: 1.0, reason: "Price in DISCOUNT" });
+      votes.push({
+        source: "PD_ARRAY",
+        direction: "BULLISH",
+        weight: 1.0,
+        reason: "Price in DISCOUNT",
+      });
     }
   }
 

@@ -47,13 +47,16 @@ function SettingsPage() {
     setSaving(true);
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) return;
-    const { error } = await supabase.from("profiles").update({
-      display_name: displayName || null,
-      telegram_chat_id: telegramId || null,
-      alerts_enabled: alertsEnabled,
-      risk_pct: riskPct,
-      min_score: minScore,
-    }).eq("id", u.user.id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        display_name: displayName || null,
+        telegram_chat_id: telegramId || null,
+        alerts_enabled: alertsEnabled,
+        risk_pct: riskPct,
+        min_score: minScore,
+      })
+      .eq("id", u.user.id);
     setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("Settings saved");
@@ -65,7 +68,9 @@ function SettingsPage() {
     <div className="p-6 max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Tune alert thresholds and delivery channels.</p>
+        <p className="text-sm text-muted-foreground">
+          Tune alert thresholds and delivery channels.
+        </p>
       </div>
 
       <Card className="border-border/60">
@@ -84,7 +89,8 @@ function SettingsPage() {
         <CardHeader>
           <CardTitle>Alerts</CardTitle>
           <CardDescription>
-            In-app alerts are always active. Set your Telegram chat ID to also receive setups on Telegram.
+            In-app alerts are always active. Set your Telegram chat ID to also receive setups on
+            Telegram.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -94,7 +100,12 @@ function SettingsPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="tg">Telegram chat ID</Label>
-            <Input id="tg" placeholder="e.g. 123456789" value={telegramId} onChange={(e) => setTelegramId(e.target.value)} />
+            <Input
+              id="tg"
+              placeholder="e.g. 123456789"
+              value={telegramId}
+              onChange={(e) => setTelegramId(e.target.value)}
+            />
             <p className="text-xs text-muted-foreground">
               Start a chat with the bot, then paste the chat ID it replies with here.
             </p>
@@ -104,19 +115,33 @@ function SettingsPage() {
               <Label>Minimum confluence score</Label>
               <span className="text-sm font-mono text-primary">{Math.round(minScore * 100)}%</span>
             </div>
-            <Slider value={[minScore]} min={0.3} max={1} step={0.05} onValueChange={(v) => setMinScore(v[0])} />
+            <Slider
+              value={[minScore]}
+              min={0.3}
+              max={1}
+              step={0.05}
+              onValueChange={(v) => setMinScore(v[0])}
+            />
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>Risk per trade</Label>
               <span className="text-sm font-mono text-primary">{riskPct.toFixed(1)}%</span>
             </div>
-            <Slider value={[riskPct]} min={0.25} max={5} step={0.25} onValueChange={(v) => setRiskPct(v[0])} />
+            <Slider
+              value={[riskPct]}
+              min={0.25}
+              max={5}
+              step={0.25}
+              onValueChange={(v) => setRiskPct(v[0])}
+            />
           </div>
         </CardContent>
       </Card>
 
-      <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save settings"}</Button>
+      <Button onClick={save} disabled={saving}>
+        {saving ? "Saving…" : "Save settings"}
+      </Button>
     </div>
   );
 }

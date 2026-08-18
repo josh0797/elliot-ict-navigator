@@ -45,7 +45,10 @@ function dedupeAlternating(pivots: ReadonlyArray<PivotV2>): PivotV2[] {
   const out: PivotV2[] = [];
   for (const p of pivots) {
     const prev = out[out.length - 1];
-    if (!prev) { out.push(p); continue; }
+    if (!prev) {
+      out.push(p);
+      continue;
+    }
     if (prev.type === p.type) {
       const keepNew = p.type === "HIGH" ? p.price > prev.price : p.price < prev.price;
       if (keepNew) out[out.length - 1] = { ...p, confirmed: prev.confirmed && p.confirmed };
@@ -81,10 +84,7 @@ function isFractal(
  * Returns ALL pivots — last one may be `confirmed: false` (provisional)
  * when it lacks the required `rightBars` to the right.
  */
-export function detectPivots(
-  candles: ReadonlyArray<CandleV2>,
-  opts: PivotOptions = {},
-): PivotV2[] {
+export function detectPivots(candles: ReadonlyArray<CandleV2>, opts: PivotOptions = {}): PivotV2[] {
   const leftBars = opts.leftBars ?? 3;
   const rightBars = opts.rightBars ?? 3;
   const minAtr = opts.minAtrDistance ?? 0.75;
@@ -130,11 +130,29 @@ export function detectPivots(
       if (candles[k].low <= c.low) isLow = false;
     }
     if (isHigh) {
-      raw.push({ id: ID(c.time, "HIGH"), index: i, time: c.time, price: c.high, type: "HIGH", strength: "MINOR", atrDistance: 0, confirmed: false });
+      raw.push({
+        id: ID(c.time, "HIGH"),
+        index: i,
+        time: c.time,
+        price: c.high,
+        type: "HIGH",
+        strength: "MINOR",
+        atrDistance: 0,
+        confirmed: false,
+      });
       break;
     }
     if (isLow) {
-      raw.push({ id: ID(c.time, "LOW"), index: i, time: c.time, price: c.low, type: "LOW", strength: "MINOR", atrDistance: 0, confirmed: false });
+      raw.push({
+        id: ID(c.time, "LOW"),
+        index: i,
+        time: c.time,
+        price: c.low,
+        type: "LOW",
+        strength: "MINOR",
+        atrDistance: 0,
+        confirmed: false,
+      });
       break;
     }
   }
@@ -169,7 +187,7 @@ export function detectPivots(
 
   // ATR filter can drop intermediate pivots and leave same-type neighbours
   // (LOW, HIGH-dropped, LOW). Re-dedup so downstream Elliott/ICT receive a
- // strictly alternating sequence.
+  // strictly alternating sequence.
   return dedupeAlternating(filtered);
 }
 

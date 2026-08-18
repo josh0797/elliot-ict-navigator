@@ -17,7 +17,16 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
-const DEFAULT_PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "XAU/USD"];
+const DEFAULT_PAIRS = [
+  "EUR/USD",
+  "GBP/USD",
+  "USD/JPY",
+  "USD/CHF",
+  "AUD/USD",
+  "USD/CAD",
+  "NZD/USD",
+  "XAU/USD",
+];
 const TIMEFRAME = "1h";
 
 type Row = {
@@ -91,7 +100,8 @@ function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Market scanner</h1>
           <p className="text-sm text-muted-foreground">
-            {activeCount} active setup{activeCount === 1 ? "" : "s"} across {DEFAULT_PAIRS.length} instruments · auto-refresh 60s
+            {activeCount} active setup{activeCount === 1 ? "" : "s"} across {DEFAULT_PAIRS.length}{" "}
+            instruments · auto-refresh 60s
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -147,7 +157,9 @@ function PairCard({ row, tf }: { row: Row; tf: string }) {
             <>
               <div className="flex items-baseline justify-between">
                 <span className="text-2xl font-mono font-semibold">
-                  {row.price?.toFixed(row.symbol === "USD/JPY" ? 3 : row.symbol === "XAU/USD" ? 2 : 5)}
+                  {row.price?.toFixed(
+                    row.symbol === "USD/JPY" ? 3 : row.symbol === "XAU/USD" ? 2 : 5,
+                  )}
                 </span>
                 {setup && (
                   <Badge

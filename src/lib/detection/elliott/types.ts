@@ -6,10 +6,7 @@ import type { TruncationEvidence } from "./truncation";
 export type { ElliottDegree };
 export type { HypothesisKind, HypothesisScore, TruncationEvidence };
 
-export type WaveLabel =
-  | "0" | "1" | "2" | "3" | "4" | "5"
-  | "A" | "B" | "C"
-  | "W" | "X" | "Y" | "Z";
+export type WaveLabel = "0" | "1" | "2" | "3" | "4" | "5" | "A" | "B" | "C" | "W" | "X" | "Y" | "Z";
 
 export type WavePattern =
   | "IMPULSE"
@@ -22,12 +19,7 @@ export type WavePattern =
   | "SIMPLE_CORRECTION"
   | "UNKNOWN_CORRECTION";
 
-export type CountState =
-  | "NO_COUNT"
-  | "DEVELOPING"
-  | "VALID"
-  | "INVALIDATED"
-  | "COMPLETED";
+export type CountState = "NO_COUNT" | "DEVELOPING" | "VALID" | "INVALIDATED" | "COMPLETED";
 
 export interface LabeledPivot {
   pivot: PivotV2;
@@ -153,12 +145,12 @@ export interface ScenarioConsistency {
 }
 
 export interface ConfidenceBreakdown {
-  mandatoryRules: number;   // 0..25
-  alternation: number;      // 0..20
-  fibonacci: number;        // 0..20
-  pivotClarity: number;     // 0..15
-  timeDuration: number;     // 0..10
-  marketStructure: number;  // 0..10
+  mandatoryRules: number; // 0..25
+  alternation: number; // 0..20
+  fibonacci: number; // 0..20
+  pivotClarity: number; // 0..15
+  timeDuration: number; // 0..10
+  marketStructure: number; // 0..10
 }
 
 export interface ElliottResultDTO {
@@ -187,8 +179,8 @@ export interface ElliottResultDTO {
   pivotsUsed?: number;
   /** Internal subdivision of a lower degree (diagnostic view). */
   internal?: ElliottResultDTO | null;
-  completion: number;       // 0..1
-  confidence: number;       // 0..100
+  completion: number; // 0..1
+  confidence: number; // 0..100
   invalidationLevel: number | null;
   rules: ElliottRuleResult[];
   waves: ElliottWaveDTO[];

@@ -46,7 +46,11 @@ export function detectStructure(
   let trend: "up" | "down" | null = null;
 
   /** Find the first candle index AFTER the protected pivot that CLOSES beyond `level`. */
-  const findBreakClose = (fromIndex: number, level: number, direction: "long" | "short"): number => {
+  const findBreakClose = (
+    fromIndex: number,
+    level: number,
+    direction: "long" | "short",
+  ): number => {
     if (!candles.length) return -1;
     for (let k = fromIndex + 1; k < candles.length; k++) {
       const c = candles[k];
@@ -72,7 +76,10 @@ export function detectStructure(
     // Find the protected pivot: the most recent prior MAJOR pivot of OPPOSITE type that defines a swing.
     let protectedPivot: PivotV2 | null = null;
     for (let j = i - 1; j >= 0; j--) {
-      if (major[j].type !== cur.type) { protectedPivot = major[j]; break; }
+      if (major[j].type !== cur.type) {
+        protectedPivot = major[j];
+        break;
+      }
     }
     if (!protectedPivot) continue;
 
@@ -81,12 +88,16 @@ export function detectStructure(
     // Use last same-type prior MAJOR pivot as the "broken" level candidate.
     let sameTypePrev: PivotV2 | null = null;
     for (let j = i - 1; j >= 0; j--) {
-      if (major[j].type === cur.type) { sameTypePrev = major[j]; break; }
+      if (major[j].type === cur.type) {
+        sameTypePrev = major[j];
+        break;
+      }
     }
     if (!sameTypePrev || usedPivot.has(sameTypePrev.id)) continue;
 
     const direction: "long" | "short" = cur.type === "HIGH" ? "long" : "short";
-    const isBreak = direction === "long" ? cur.price > sameTypePrev.price : cur.price < sameTypePrev.price;
+    const isBreak =
+      direction === "long" ? cur.price > sameTypePrev.price : cur.price < sameTypePrev.price;
     if (!isBreak) continue;
 
     // Confirm via candle close beyond the level (close-based break).
@@ -97,14 +108,17 @@ export function detectStructure(
 
     const breakCandle = candles[breakIndex] ?? null;
     const breakPrice = breakCandle?.close ?? cur.price;
-    const atrHere = breakCandle && atrSeries[breakIndex] && Number.isFinite(atrSeries[breakIndex])
-      ? atrSeries[breakIndex]
-      : NaN;
-    const closeBeyondAtr = breakCandle && Number.isFinite(atrHere) && atrHere > 0
-      ? Math.abs(breakPrice - sameTypePrev.price) / atrHere
-      : 0;
+    const atrHere =
+      breakCandle && atrSeries[breakIndex] && Number.isFinite(atrSeries[breakIndex])
+        ? atrSeries[breakIndex]
+        : NaN;
+    const closeBeyondAtr =
+      breakCandle && Number.isFinite(atrHere) && atrHere > 0
+        ? Math.abs(breakPrice - sameTypePrev.price) / atrHere
+        : 0;
     const body = breakCandle ? Math.abs(breakCandle.close - breakCandle.open) : 0;
-    const displacement = Number.isFinite(atrHere) && atrHere > 0 && body >= DISPLACEMENT_ATR * atrHere;
+    const displacement =
+      Number.isFinite(atrHere) && atrHere > 0 && body >= DISPLACEMENT_ATR * atrHere;
     const failed = breakCandle ? checkFailed(breakIndex, sameTypePrev.price, direction) : false;
     let state: StructureState = "PROVISIONAL";
     if (failed) state = "FAILED";

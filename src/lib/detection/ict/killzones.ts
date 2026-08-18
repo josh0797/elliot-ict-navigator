@@ -1,10 +1,10 @@
 import type { Killzone, KillzoneName } from "./types";
 
 const ZONES: Array<{ name: Exclude<KillzoneName, null>; startUtc: number; endUtc: number }> = [
-  { name: "ASIA",   startUtc: 0,  endUtc: 5 },
-  { name: "LONDON", startUtc: 7,  endUtc: 10 },
-  { name: "NY_AM",  startUtc: 12, endUtc: 15 },
-  { name: "NY_PM",  startUtc: 18, endUtc: 20 },
+  { name: "ASIA", startUtc: 0, endUtc: 5 },
+  { name: "LONDON", startUtc: 7, endUtc: 10 },
+  { name: "NY_AM", startUtc: 12, endUtc: 15 },
+  { name: "NY_PM", startUtc: 18, endUtc: 20 },
 ];
 
 export function currentKillzone(unixSec: number): Killzone | null {

@@ -20,11 +20,28 @@ const PATTERN_KEYS = [
   "flat",
 ] as const;
 
-const DEGREE_KEYS = ["primary", "intermediate", "minor", "minute", "subminuette", "cycle", "supercycle"] as const;
+const DEGREE_KEYS = [
+  "primary",
+  "intermediate",
+  "minor",
+  "minute",
+  "subminuette",
+  "cycle",
+  "supercycle",
+] as const;
 
 const TF_KEYS = ["m15", "m30", "h1", "h4", "h8", "d1", "d2", "d3", "w1"] as const;
 
-const INSTRUMENT_KEYS = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "XAU/USD"] as const;
+const INSTRUMENT_KEYS = [
+  "EUR/USD",
+  "GBP/USD",
+  "USD/JPY",
+  "USD/CHF",
+  "AUD/USD",
+  "USD/CAD",
+  "NZD/USD",
+  "XAU/USD",
+] as const;
 
 const WAVE_BUCKETS = ["impulsive_135", "corrective_24", "abc", "wxy", "subwave"] as const;
 
@@ -106,12 +123,17 @@ function normalizePattern(s: string | undefined): (typeof PATTERN_KEYS)[number] 
 function normalizeDegree(s: string | undefined): (typeof DEGREE_KEYS)[number] | null {
   if (!s) return null;
   const t = s.trim().toLowerCase();
-  return (DEGREE_KEYS as readonly string[]).includes(t) ? (t as (typeof DEGREE_KEYS)[number]) : null;
+  return (DEGREE_KEYS as readonly string[]).includes(t)
+    ? (t as (typeof DEGREE_KEYS)[number])
+    : null;
 }
 
 function bucketWave(s: string | undefined): (typeof WAVE_BUCKETS)[number] | null {
   if (!s) return null;
-  const t = s.trim().toLowerCase().replace(/[()\[\]]/g, "");
+  const t = s
+    .trim()
+    .toLowerCase()
+    .replace(/[()\[\]]/g, "");
   if (/^[abc]$/.test(t)) return "abc";
   if (/^[xyz]$/.test(t) || /^w[xyz]?$/.test(t)) return "wxy";
   if (/^(1|3|5|i|iii|v)$/.test(t)) return "impulsive_135";
@@ -142,7 +164,14 @@ export type FeatureSpec = {
   numericFeatureCount: number;
 };
 
-const NUMERIC_FEATURES = ["rr_ratio", "sl_pips", "fib_618_present", "fib_382_present", "fib_786_present", "has_alternative"];
+const NUMERIC_FEATURES = [
+  "rr_ratio",
+  "sl_pips",
+  "fib_618_present",
+  "fib_382_present",
+  "fib_786_present",
+  "has_alternative",
+];
 
 export function rawToFeatureRaw(row: RawSetupRow): number[] | null {
   const inst = normalizeInstrument(row.instrument);
@@ -186,7 +215,14 @@ export function buildFeatureSpec(): FeatureSpec {
   DEGREE_KEYS.forEach((k) => featureNames.push(`degree=${k}`));
   WAVE_BUCKETS.forEach((k) => featureNames.push(`wave=${k}`));
   featureNames.push("direction_long");
-  featureNames.push("rr_ratio", "sl_pips", "fib_618_present", "fib_382_present", "fib_786_present", "has_alternative");
+  featureNames.push(
+    "rr_ratio",
+    "sl_pips",
+    "fib_618_present",
+    "fib_382_present",
+    "fib_786_present",
+    "has_alternative",
+  );
   return {
     featureNames,
     numericMeans: [],
@@ -232,7 +268,10 @@ function applyNumericStats(X: number[][], means: number[], stds: number[]): void
  * Server functions (admin-gated)
  * =========================================================== */
 
-async function assertAdmin(context: { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string }) {
+async function assertAdmin(context: {
+  supabase: import("@supabase/supabase-js").SupabaseClient;
+  userId: string;
+}) {
   const { data, error } = await context.supabase
     .from("user_roles")
     .select("role")
@@ -243,7 +282,12 @@ async function assertAdmin(context: { supabase: import("@supabase/supabase-js").
   if (!data) throw new Error("Forbidden: admin role required");
 }
 
-const csvInput = z.object({ csv: z.string().min(20).max(20 * 1024 * 1024) });
+const csvInput = z.object({
+  csv: z
+    .string()
+    .min(20)
+    .max(20 * 1024 * 1024),
+});
 
 export const previewDataset = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

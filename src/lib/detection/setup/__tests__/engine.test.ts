@@ -8,13 +8,29 @@ function mkCandles(n: number, basePrice: number): CandleV2[] {
   const out: CandleV2[] = [];
   for (let i = 0; i < n; i++) {
     const p = basePrice + Math.sin(i / 5) * 2;
-    out.push({ index: i, time: 1_700_000_000 + i * 3600, open: p, high: p + 0.5, low: p - 0.5, close: p });
+    out.push({
+      index: i,
+      time: 1_700_000_000 + i * 3600,
+      open: p,
+      high: p + 0.5,
+      low: p - 0.5,
+      close: p,
+    });
   }
   return out;
 }
 
 function mkPivot(i: number, type: "HIGH" | "LOW", price: number, time: number): PivotV2 {
-  return { id: `${time}-${type}`, index: i, time, price, type, strength: "MAJOR", atrDistance: 1.5, confirmed: true };
+  return {
+    id: `${time}-${type}`,
+    index: i,
+    time,
+    price,
+    type,
+    strength: "MAJOR",
+    atrDistance: 1.5,
+    confirmed: true,
+  };
 }
 
 function bullishElliott(): ElliottAnalysis {
@@ -31,7 +47,12 @@ function bullishElliott(): ElliottAnalysis {
     labeled,
     currentWave: "2",
     score: 0.7,
-    fibScores: { wave2Retracement: 0.8, wave3Extension: null, wave4Retracement: null, wave5Projection: null },
+    fibScores: {
+      wave2Retracement: 0.8,
+      wave3Extension: null,
+      wave4Retracement: null,
+      wave5Projection: null,
+    },
     alternation: null,
     invalidations: [],
     notes: [],
@@ -39,7 +60,10 @@ function bullishElliott(): ElliottAnalysis {
   return { primary, alternatives: [] };
 }
 
-function bullishIct(currentIndex: number, opts: { obTop?: number; obBottom?: number } = {}): IctContext {
+function bullishIct(
+  currentIndex: number,
+  opts: { obTop?: number; obBottom?: number } = {},
+): IctContext {
   return {
     bias: "BULLISH",
     fvgs: [],
@@ -65,22 +89,71 @@ function bullishIct(currentIndex: number, opts: { obTop?: number; obBottom?: num
       },
     ],
     liquidity: [
-      { id: "lq1", side: "BSL", kind: "PDH", price: 115, time: 0, originIndices: [10], touches: 2, state: "ACTIVE", sweptAtIndex: null, sweptAtTime: null, brokenAtIndex: null, brokenAtTime: null, strength: 70, provisional: false },
+      {
+        id: "lq1",
+        side: "BSL",
+        kind: "PDH",
+        price: 115,
+        time: 0,
+        originIndices: [10],
+        touches: 2,
+        state: "ACTIVE",
+        sweptAtIndex: null,
+        sweptAtTime: null,
+        brokenAtIndex: null,
+        brokenAtTime: null,
+        strength: 70,
+        provisional: false,
+      },
     ],
     sweeps: [
-      { id: "sw1", side: "SSL", type: "sell_side", price: 102, time: 0, index: currentIndex - 2, targetLiquidityId: "x", wickBeyond: true, closeBack: true, displacementAfter: true, mitigated: false, quality: 80 },
+      {
+        id: "sw1",
+        side: "SSL",
+        type: "sell_side",
+        price: 102,
+        time: 0,
+        index: currentIndex - 2,
+        targetLiquidityId: "x",
+        wickBeyond: true,
+        closeBack: true,
+        displacementAfter: true,
+        mitigated: false,
+        quality: 80,
+      },
     ],
     structure: [
-      { id: "st1", type: "BOS", direction: "long", price: 110, time: 0, index: currentIndex - 3, state: "CONFIRMED", brokenPivotId: "p", breakIndex: currentIndex - 3, breakPrice: 110, closeBeyondAtr: 1.6, displacement: true },
+      {
+        id: "st1",
+        type: "BOS",
+        direction: "long",
+        price: 110,
+        time: 0,
+        index: currentIndex - 3,
+        state: "CONFIRMED",
+        brokenPivotId: "p",
+        breakIndex: currentIndex - 3,
+        breakPrice: 110,
+        closeBeyondAtr: 1.6,
+        displacement: true,
+      },
     ],
     killzone: null,
-    pdArray: { high: 115, low: 100, midpoint: 107.5, currentPrice: 104, zone: "DISCOUNT", position: 0.27 },
+    pdArray: {
+      high: 115,
+      low: 100,
+      midpoint: 107.5,
+      currentPrice: 104,
+      zone: "DISCOUNT",
+      position: 0.27,
+    },
     score: 0.7,
   };
 }
 
 const candles = mkCandles(60, 104);
-const symbol = "TEST", timeframe = "1h";
+const symbol = "TEST",
+  timeframe = "1h";
 
 it("setup engine produces a long signal with positive RR when bullish confluences align", () => {
   const elliott = bullishElliott();
@@ -118,7 +191,13 @@ it("setup engine returns no signals when there are no matching POIs", () => {
 });
 
 it("setup engine returns no signals when primary is null", () => {
-  const out = detectSignals(candles, [], { primary: null, alternatives: [] }, bullishIct(candles.length - 1), { symbol, timeframe });
+  const out = detectSignals(
+    candles,
+    [],
+    { primary: null, alternatives: [] },
+    bullishIct(candles.length - 1),
+    { symbol, timeframe },
+  );
   expect(out).toEqual([]);
 });
 
@@ -152,7 +231,10 @@ it("entry policy: price inside POI yields MARKET_BUY / TRIGGERED", () => {
   // priceAtDetection ≈ candles[n-2].close. Force POI to straddle that close.
   const priceAtDet = candles[candles.length - 2].close;
   const elliott = bullishElliott();
-  const ict = bullishIct(candles.length - 1, { obTop: priceAtDet + 0.5, obBottom: priceAtDet - 0.5 });
+  const ict = bullishIct(candles.length - 1, {
+    obTop: priceAtDet + 0.5,
+    obBottom: priceAtDet - 0.5,
+  });
   const out = detectSignals(candles, [], elliott, ict, { symbol, timeframe });
   expect(out.length > 0).toBeTruthy();
   expect(out[0].orderType).toBe("MARKET_BUY");

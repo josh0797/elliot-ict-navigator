@@ -7,7 +7,7 @@ import type { WavePattern } from "./types";
  */
 export interface ImpulseInput {
   direction: "long" | "short";
-  pattern: WavePattern;            // IMPULSE | LEADING_DIAGONAL | ENDING_DIAGONAL
+  pattern: WavePattern; // IMPULSE | LEADING_DIAGONAL | ENDING_DIAGONAL
   p0: number;
   p1: number;
   p2: number;

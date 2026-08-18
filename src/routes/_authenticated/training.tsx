@@ -60,7 +60,9 @@ function TrainingPage() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    isAdminFn().then((r) => setAdmin(r.isAdmin)).catch(() => setAdmin(false));
+    isAdminFn()
+      .then((r) => setAdmin(r.isAdmin))
+      .catch(() => setAdmin(false));
   }, [isAdminFn]);
 
   async function refreshVersions() {
@@ -139,7 +141,8 @@ function TrainingPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            This area trains and manages the proprietary scoring model. Only administrators can access it.
+            This area trains and manages the proprietary scoring model. Only administrators can
+            access it.
           </CardContent>
         </Card>
       </div>
@@ -152,7 +155,8 @@ function TrainingPage() {
           <Brain className="h-5 w-5 text-primary" /> Model training
         </h1>
         <p className="text-sm text-muted-foreground">
-          Upload your historical Elliott × ICT dataset, train a logistic-regression scorer, and activate it for live alerts.
+          Upload your historical Elliott × ICT dataset, train a logistic-regression scorer, and
+          activate it for live alerts.
         </p>
       </div>
 
@@ -194,7 +198,8 @@ function TrainingPage() {
               )}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              Required columns include: instrument, timeframe, direction, pattern, wave_current, wave_degree, result.
+              Required columns include: instrument, timeframe, direction, pattern, wave_current,
+              wave_degree, result.
             </div>
           </div>
 
@@ -209,7 +214,11 @@ function TrainingPage() {
           )}
 
           <Button onClick={onTrain} disabled={!csv || training} className="w-full sm:w-auto">
-            {training ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            {training ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
             {training ? "Training…" : "Train model"}
           </Button>
         </CardContent>
@@ -222,7 +231,11 @@ function TrainingPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-              <Stat label="Accuracy" value={`${(lastMetrics.accuracy * 100).toFixed(1)}%`} cls="text-primary" />
+              <Stat
+                label="Accuracy"
+                value={`${(lastMetrics.accuracy * 100).toFixed(1)}%`}
+                cls="text-primary"
+              />
               <Stat label="Precision" value={`${(lastMetrics.precision * 100).toFixed(1)}%`} />
               <Stat label="Recall" value={`${(lastMetrics.recall * 100).toFixed(1)}%`} />
               <Stat label="F1" value={`${(lastMetrics.f1 * 100).toFixed(1)}%`} />
@@ -237,7 +250,9 @@ function TrainingPage() {
 
             {importances.length > 0 && (
               <div>
-                <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Top features</div>
+                <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                  Top features
+                </div>
                 <div className="space-y-1">
                   {importances.map((f) => (
                     <div key={f.name} className="flex items-center gap-2 text-xs font-mono">
@@ -274,7 +289,10 @@ function TrainingPage() {
                   <div className="flex items-center gap-3">
                     <span className="font-mono">v{v.version}</span>
                     {v.is_active && (
-                      <Badge className="bg-success/15 text-success border-success/30" variant="outline">
+                      <Badge
+                        className="bg-success/15 text-success border-success/30"
+                        variant="outline"
+                      >
                         <CheckCircle2 className="h-3 w-3 mr-1" /> Active
                       </Badge>
                     )}
@@ -284,7 +302,9 @@ function TrainingPage() {
                   </div>
                   <div className="flex items-center gap-3 text-xs font-mono">
                     <span className="text-muted-foreground">samples {v.trained_on}</span>
-                    <span className="text-primary">acc {((v.accuracy ?? 0) * 100).toFixed(1)}%</span>
+                    <span className="text-primary">
+                      acc {((v.accuracy ?? 0) * 100).toFixed(1)}%
+                    </span>
                     {!v.is_active && (
                       <Button size="sm" variant="outline" onClick={() => onActivate(v.id)}>
                         Activate

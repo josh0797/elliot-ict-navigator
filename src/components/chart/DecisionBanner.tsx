@@ -43,31 +43,58 @@ export function DecisionBanner({
             {sig.orderType.replace(/_/g, " ")}
           </Badge>
         )}
-        <Badge variant="outline" className="font-mono">{report.status}</Badge>
+        <Badge variant="outline" className="font-mono">
+          {report.status}
+        </Badge>
         <Badge variant="outline" className="font-mono">
           {report.template.replace(/_/g, " ")}
         </Badge>
         <Badge variant="outline" className="font-mono">
-          BIAS · {report.direction} · 🐂{report.bias.bullScore.toFixed(1)} / 🐻{report.bias.bearScore.toFixed(1)}
+          BIAS · {report.direction} · 🐂{report.bias.bullScore.toFixed(1)} / 🐻
+          {report.bias.bearScore.toFixed(1)}
         </Badge>
       </div>
       {report.biasSplit && (
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-mono">
           <span>
             <span className="text-muted-foreground">Elliott: </span>
-            <span className={report.biasSplit.elliottBias === "BULLISH" ? "text-success" : report.biasSplit.elliottBias === "BEARISH" ? "text-destructive" : "text-muted-foreground"}>
-              {report.biasSplit.elliottBias} {report.biasSplit.elliottScore > 0 ? "+" : ""}{report.biasSplit.elliottScore.toFixed(1)}
+            <span
+              className={
+                report.biasSplit.elliottBias === "BULLISH"
+                  ? "text-success"
+                  : report.biasSplit.elliottBias === "BEARISH"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+              }
+            >
+              {report.biasSplit.elliottBias} {report.biasSplit.elliottScore > 0 ? "+" : ""}
+              {report.biasSplit.elliottScore.toFixed(1)}
             </span>
           </span>
           <span>
             <span className="text-muted-foreground">ICT: </span>
-            <span className={report.biasSplit.ictBias === "BULLISH" ? "text-success" : report.biasSplit.ictBias === "BEARISH" ? "text-destructive" : "text-muted-foreground"}>
-              {report.biasSplit.ictBias} {report.biasSplit.ictScore > 0 ? "+" : ""}{report.biasSplit.ictScore.toFixed(1)}
+            <span
+              className={
+                report.biasSplit.ictBias === "BULLISH"
+                  ? "text-success"
+                  : report.biasSplit.ictBias === "BEARISH"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+              }
+            >
+              {report.biasSplit.ictBias} {report.biasSplit.ictScore > 0 ? "+" : ""}
+              {report.biasSplit.ictScore.toFixed(1)}
             </span>
           </span>
           <span>
             <span className="text-muted-foreground">Final: </span>
-            <span className={report.biasSplit.finalBias === "MIXED" ? "text-amber-400 font-bold" : "text-foreground font-bold"}>
+            <span
+              className={
+                report.biasSplit.finalBias === "MIXED"
+                  ? "text-amber-400 font-bold"
+                  : "text-foreground font-bold"
+              }
+            >
               {report.biasSplit.finalBias}
             </span>
           </span>
@@ -78,22 +105,39 @@ export function DecisionBanner({
       {sig && (report.decision === "BUY" || report.decision === "SELL") && (
         <div className="mt-3 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
-            <div><span className="text-muted-foreground">Order </span>{sig.orderType}</div>
-            <div><span className="text-muted-foreground">Entry </span>{pxFmt(sig.entry)}</div>
-            <div><span className="text-muted-foreground">SL </span><span className="text-destructive">{pxFmt(sig.sl)}</span> <span className="text-muted-foreground">({sig.stopReason})</span></div>
-            <div><span className="text-muted-foreground">Score </span>{sig.scoreOut100}/100 · {sig.grade}</div>
+            <div>
+              <span className="text-muted-foreground">Order </span>
+              {sig.orderType}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Entry </span>
+              {pxFmt(sig.entry)}
+            </div>
+            <div>
+              <span className="text-muted-foreground">SL </span>
+              <span className="text-destructive">{pxFmt(sig.sl)}</span>{" "}
+              <span className="text-muted-foreground">({sig.stopReason})</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Score </span>
+              {sig.scoreOut100}/100 · {sig.grade}
+            </div>
             <div className="col-span-2 sm:col-span-4">
               <span className="text-muted-foreground">Zona </span>
               {pxFmt(sig.entryZone.bottom)}–{pxFmt(sig.entryZone.top)}
-              <span className="text-muted-foreground"> · POI </span>{sig.selectedPoi?.type ?? sig.poi.kind}
-              <span className="text-muted-foreground"> · política </span>{sig.entryPolicy}
+              <span className="text-muted-foreground"> · POI </span>
+              {sig.selectedPoi?.type ?? sig.poi.kind}
+              <span className="text-muted-foreground"> · política </span>
+              {sig.entryPolicy}
             </div>
           </div>
           <table className="w-full text-xs font-mono">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="text-left">Target</th><th className="text-right">Precio</th>
-                <th className="text-right">RR</th><th className="text-right">%</th>
+                <th className="text-left">Target</th>
+                <th className="text-right">Precio</th>
+                <th className="text-right">RR</th>
+                <th className="text-right">%</th>
                 <th className="text-left pl-3">Razón</th>
               </tr>
             </thead>
@@ -110,14 +154,19 @@ export function DecisionBanner({
             </tbody>
           </table>
           {sig.trigger && (
-            <div className={`rounded border p-2 text-xs ${sig.trigger.satisfied ? "border-success/40 bg-success/5" : "border-amber-400/40 bg-amber-400/5"}`}>
-              <span className="font-bold uppercase mr-2">Activación · {sig.trigger.type.replace(/_/g, " ")}</span>
+            <div
+              className={`rounded border p-2 text-xs ${sig.trigger.satisfied ? "border-success/40 bg-success/5" : "border-amber-400/40 bg-amber-400/5"}`}
+            >
+              <span className="font-bold uppercase mr-2">
+                Activación · {sig.trigger.type.replace(/_/g, " ")}
+              </span>
               {sig.trigger.description}
             </div>
           )}
           {sig.invalidation.price !== null && (
             <div className="text-xs text-muted-foreground">
-              Cancelar escenario si: cierre cruza <span className="font-mono text-destructive">{pxFmt(sig.invalidation.price)}</span>
+              Cancelar escenario si: cierre cruza{" "}
+              <span className="font-mono text-destructive">{pxFmt(sig.invalidation.price)}</span>
               {sig.invalidation.reason ? ` (${sig.invalidation.reason})` : ""}
             </div>
           )}
@@ -133,7 +182,11 @@ export function DecisionBanner({
           <div>
             <span className="text-muted-foreground">Sesgo: </span>
             <span className="text-foreground">
-              {report.direction === "BULLISH" ? "Alcista potencial" : report.direction === "BEARISH" ? "Bajista potencial" : "Sin sesgo claro"}
+              {report.direction === "BULLISH"
+                ? "Alcista potencial"
+                : report.direction === "BEARISH"
+                  ? "Bajista potencial"
+                  : "Sin sesgo claro"}
             </span>
           </div>
           {report.missing.length > 0 && (
@@ -142,7 +195,9 @@ export function DecisionBanner({
               <span className="text-foreground/90">{report.missing.join(" · ")}</span>
             </div>
           )}
-          <div className="text-xs text-muted-foreground">No operar todavía. El sistema seguirá vigilando la estructura.</div>
+          <div className="text-xs text-muted-foreground">
+            No operar todavía. El sistema seguirá vigilando la estructura.
+          </div>
         </div>
       )}
 
@@ -174,11 +229,17 @@ export function DecisionBanner({
             {report.bias.votes.map((v, i) => (
               <li key={i} className="flex items-center justify-between gap-3">
                 <span className="text-muted-foreground">{v.source}</span>
-                <span className={
-                  v.direction === "BULLISH" ? "text-success"
-                  : v.direction === "BEARISH" ? "text-destructive"
-                  : "text-muted-foreground"
-                }>{v.direction} · {v.weight.toFixed(1)}</span>
+                <span
+                  className={
+                    v.direction === "BULLISH"
+                      ? "text-success"
+                      : v.direction === "BEARISH"
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                  }
+                >
+                  {v.direction} · {v.weight.toFixed(1)}
+                </span>
                 <span className="text-foreground/70 flex-1 text-right">{v.reason}</span>
               </li>
             ))}

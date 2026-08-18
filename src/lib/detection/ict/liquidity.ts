@@ -115,7 +115,16 @@ function applyStateMachine(
 
 function pushLevel(
   out: LiquidityLevel[],
-  base: Omit<LiquidityLevel, "state" | "sweptAtIndex" | "sweptAtTime" | "brokenAtIndex" | "brokenAtTime" | "strength" | "provisional"> & { strength: number; provisional?: boolean },
+  base: Omit<
+    LiquidityLevel,
+    | "state"
+    | "sweptAtIndex"
+    | "sweptAtTime"
+    | "brokenAtIndex"
+    | "brokenAtTime"
+    | "strength"
+    | "provisional"
+  > & { strength: number; provisional?: boolean },
   candles: ReadonlyArray<CandleV2>,
   fromIndex: number,
 ): void {
@@ -194,15 +203,21 @@ export function detectLiquidity(
         used.add(i);
         const last = members[members.length - 1];
         const price = members.reduce((s, m) => s + m.price, 0) / members.length;
-        pushLevel(out, {
-          id: `liq-${kind}-${ref.index}`,
-          side, kind,
-          price,
-          time: last.time,
-          originIndices: members.map((m) => m.index),
-          touches: members.length,
-          strength: strengthOf(members.length, totalBars - last.index, totalBars),
-        }, candles, last.index);
+        pushLevel(
+          out,
+          {
+            id: `liq-${kind}-${ref.index}`,
+            side,
+            kind,
+            price,
+            time: last.time,
+            originIndices: members.map((m) => m.index),
+            touches: members.length,
+            strength: strengthOf(members.length, totalBars - last.index, totalBars),
+          },
+          candles,
+          last.index,
+        );
       }
     }
   };
@@ -218,15 +233,21 @@ export function detectLiquidity(
       if (clusteredIdx.has(p.index)) continue;
       const side: LiquiditySide = p.type === "HIGH" ? "BSL" : "SSL";
       const kind: LiquidityKind = p.type === "HIGH" ? "SWING_HIGH" : "SWING_LOW";
-      pushLevel(out, {
-        id: `liq-${kind}-${p.index}`,
-        side, kind,
-        price: p.price,
-        time: p.time,
-        originIndices: [p.index],
-        touches: 1,
-        strength: strengthOf(1, totalBars - p.index, totalBars),
-      }, candles, p.index);
+      pushLevel(
+        out,
+        {
+          id: `liq-${kind}-${p.index}`,
+          side,
+          kind,
+          price: p.price,
+          time: p.time,
+          originIndices: [p.index],
+          touches: 1,
+          strength: strengthOf(1, totalBars - p.index, totalBars),
+        },
+        candles,
+        p.index,
+      );
     }
   }
 
@@ -257,58 +278,106 @@ export function detectLiquidity(
   const lastDayIdx = days.findIndex(([k]) => k === lastDayKey);
   if (lastDayIdx > 0) {
     const [, prev] = days[lastDayIdx - 1];
-    pushLevel(out, {
-      id: `liq-PDH-${prev.hi.index}`,
-      side: "BSL", kind: "PDH",
-      price: prev.hi.high, time: prev.hi.time,
-      originIndices: [prev.hi.index], touches: 1,
-      strength: strengthOf(2, totalBars - prev.hi.index, totalBars),
-    }, candles, prev.hi.index);
-    pushLevel(out, {
-      id: `liq-PDL-${prev.lo.index}`,
-      side: "SSL", kind: "PDL",
-      price: prev.lo.low, time: prev.lo.time,
-      originIndices: [prev.lo.index], touches: 1,
-      strength: strengthOf(2, totalBars - prev.lo.index, totalBars),
-    }, candles, prev.lo.index);
+    pushLevel(
+      out,
+      {
+        id: `liq-PDH-${prev.hi.index}`,
+        side: "BSL",
+        kind: "PDH",
+        price: prev.hi.high,
+        time: prev.hi.time,
+        originIndices: [prev.hi.index],
+        touches: 1,
+        strength: strengthOf(2, totalBars - prev.hi.index, totalBars),
+      },
+      candles,
+      prev.hi.index,
+    );
+    pushLevel(
+      out,
+      {
+        id: `liq-PDL-${prev.lo.index}`,
+        side: "SSL",
+        kind: "PDL",
+        price: prev.lo.low,
+        time: prev.lo.time,
+        originIndices: [prev.lo.index],
+        touches: 1,
+        strength: strengthOf(2, totalBars - prev.lo.index, totalBars),
+      },
+      candles,
+      prev.lo.index,
+    );
   }
   const weeks = Array.from(weekBuckets.entries()).sort((a, b) => a[1].hi.time - b[1].hi.time);
   const lastWeekIdx = weeks.findIndex(([k]) => k === lastWeekKey);
   if (lastWeekIdx > 0) {
     const [, prev] = weeks[lastWeekIdx - 1];
-    pushLevel(out, {
-      id: `liq-PWH-${prev.hi.index}`,
-      side: "BSL", kind: "PWH",
-      price: prev.hi.high, time: prev.hi.time,
-      originIndices: [prev.hi.index], touches: 1,
-      strength: strengthOf(3, totalBars - prev.hi.index, totalBars),
-    }, candles, prev.hi.index);
-    pushLevel(out, {
-      id: `liq-PWL-${prev.lo.index}`,
-      side: "SSL", kind: "PWL",
-      price: prev.lo.low, time: prev.lo.time,
-      originIndices: [prev.lo.index], touches: 1,
-      strength: strengthOf(3, totalBars - prev.lo.index, totalBars),
-    }, candles, prev.lo.index);
+    pushLevel(
+      out,
+      {
+        id: `liq-PWH-${prev.hi.index}`,
+        side: "BSL",
+        kind: "PWH",
+        price: prev.hi.high,
+        time: prev.hi.time,
+        originIndices: [prev.hi.index],
+        touches: 1,
+        strength: strengthOf(3, totalBars - prev.hi.index, totalBars),
+      },
+      candles,
+      prev.hi.index,
+    );
+    pushLevel(
+      out,
+      {
+        id: `liq-PWL-${prev.lo.index}`,
+        side: "SSL",
+        kind: "PWL",
+        price: prev.lo.low,
+        time: prev.lo.time,
+        originIndices: [prev.lo.index],
+        touches: 1,
+        strength: strengthOf(3, totalBars - prev.lo.index, totalBars),
+      },
+      candles,
+      prev.lo.index,
+    );
   }
   if (intraday && lastDayIdx >= 0) {
     const [, cur] = days[lastDayIdx];
-    pushLevel(out, {
-      id: `liq-SH-${cur.hi.index}`,
-      side: "BSL", kind: "SESSION_HIGH",
-      price: cur.hi.high, time: cur.hi.time,
-      originIndices: [cur.hi.index], touches: 1,
-      strength: strengthOf(1, totalBars - cur.hi.index, totalBars),
-      provisional: true, // current session extremes can move on the next bar
-    }, candles, cur.hi.index);
-    pushLevel(out, {
-      id: `liq-SL-${cur.lo.index}`,
-      side: "SSL", kind: "SESSION_LOW",
-      price: cur.lo.low, time: cur.lo.time,
-      originIndices: [cur.lo.index], touches: 1,
-      strength: strengthOf(1, totalBars - cur.lo.index, totalBars),
-      provisional: true,
-    }, candles, cur.lo.index);
+    pushLevel(
+      out,
+      {
+        id: `liq-SH-${cur.hi.index}`,
+        side: "BSL",
+        kind: "SESSION_HIGH",
+        price: cur.hi.high,
+        time: cur.hi.time,
+        originIndices: [cur.hi.index],
+        touches: 1,
+        strength: strengthOf(1, totalBars - cur.hi.index, totalBars),
+        provisional: true, // current session extremes can move on the next bar
+      },
+      candles,
+      cur.hi.index,
+    );
+    pushLevel(
+      out,
+      {
+        id: `liq-SL-${cur.lo.index}`,
+        side: "SSL",
+        kind: "SESSION_LOW",
+        price: cur.lo.low,
+        time: cur.lo.time,
+        originIndices: [cur.lo.index],
+        touches: 1,
+        strength: strengthOf(1, totalBars - cur.lo.index, totalBars),
+        provisional: true,
+      },
+      candles,
+      cur.lo.index,
+    );
   }
 
   // --- Asia session of the last UTC day (intraday only) ---
@@ -316,25 +385,45 @@ export function detectLiquidity(
     ? candles.filter((c) => utcDayKey(c.time) === lastDayKey && isAsiaSession(c.time))
     : [];
   if (asiaCandles.length > 0) {
-    let aHi = asiaCandles[0], aLo = asiaCandles[0];
-    for (const c of asiaCandles) { if (c.high > aHi.high) aHi = c; if (c.low < aLo.low) aLo = c; }
-    pushLevel(out, {
-      id: `liq-AH-${aHi.index}`,
-      side: "BSL", kind: "ASIA_HIGH",
-      price: aHi.high, time: aHi.time,
-      originIndices: [aHi.index], touches: 1,
-      strength: strengthOf(2, totalBars - aHi.index, totalBars),
-      // Asia range is provisional while the Asia session is still open.
-      provisional: utcDayKey(last.time) === lastDayKey && isAsiaSession(last.time),
-    }, candles, aHi.index);
-    pushLevel(out, {
-      id: `liq-AL-${aLo.index}`,
-      side: "SSL", kind: "ASIA_LOW",
-      price: aLo.low, time: aLo.time,
-      originIndices: [aLo.index], touches: 1,
-      strength: strengthOf(2, totalBars - aLo.index, totalBars),
-      provisional: utcDayKey(last.time) === lastDayKey && isAsiaSession(last.time),
-    }, candles, aLo.index);
+    let aHi = asiaCandles[0],
+      aLo = asiaCandles[0];
+    for (const c of asiaCandles) {
+      if (c.high > aHi.high) aHi = c;
+      if (c.low < aLo.low) aLo = c;
+    }
+    pushLevel(
+      out,
+      {
+        id: `liq-AH-${aHi.index}`,
+        side: "BSL",
+        kind: "ASIA_HIGH",
+        price: aHi.high,
+        time: aHi.time,
+        originIndices: [aHi.index],
+        touches: 1,
+        strength: strengthOf(2, totalBars - aHi.index, totalBars),
+        // Asia range is provisional while the Asia session is still open.
+        provisional: utcDayKey(last.time) === lastDayKey && isAsiaSession(last.time),
+      },
+      candles,
+      aHi.index,
+    );
+    pushLevel(
+      out,
+      {
+        id: `liq-AL-${aLo.index}`,
+        side: "SSL",
+        kind: "ASIA_LOW",
+        price: aLo.low,
+        time: aLo.time,
+        originIndices: [aLo.index],
+        touches: 1,
+        strength: strengthOf(2, totalBars - aLo.index, totalBars),
+        provisional: utcDayKey(last.time) === lastDayKey && isAsiaSession(last.time),
+      },
+      candles,
+      aLo.index,
+    );
   }
 
   return out;

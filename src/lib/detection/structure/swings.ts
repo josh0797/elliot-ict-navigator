@@ -2,7 +2,10 @@ import type { PivotV2, Swing } from "../schemas/analysis";
 import { atr14 } from "../indicators/atr";
 import type { CandleV2 } from "../schemas/analysis";
 
-export function buildSwings(pivots: ReadonlyArray<PivotV2>, candles: ReadonlyArray<CandleV2>): Swing[] {
+export function buildSwings(
+  pivots: ReadonlyArray<PivotV2>,
+  candles: ReadonlyArray<CandleV2>,
+): Swing[] {
   if (pivots.length < 2) return [];
   const atrSeries = atr14(candles);
   const out: Swing[] = [];

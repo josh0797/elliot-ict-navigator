@@ -7,8 +7,14 @@ function pv(label: string, price: number): { label: string; pivot: PivotV2 } {
   return {
     label,
     pivot: {
-      id: label, index: 0, time: 0, price,
-      type: "HIGH", strength: "MAJOR", atrDistance: 1, confirmed: true,
+      id: label,
+      index: 0,
+      time: 0,
+      price,
+      type: "HIGH",
+      strength: "MAJOR",
+      atrDistance: 1,
+      confirmed: true,
     },
   };
 }
@@ -21,7 +27,12 @@ function longCount(currentWave: "2" | "4" | "B", labels: Array<[string, number]>
     labeled: labels.map(([l, p]) => pv(l, p)) as ElliottCountV2["labeled"],
     currentWave,
     score: 0.7,
-    fibScores: { wave2Retracement: null, wave3Extension: null, wave4Retracement: null, wave5Projection: null },
+    fibScores: {
+      wave2Retracement: null,
+      wave3Extension: null,
+      wave4Retracement: null,
+      wave5Projection: null,
+    },
     alternation: null,
     invalidations: [],
     notes: [],
@@ -33,10 +44,19 @@ const allocations = { TP1: 50, TP2: 30, TP3: 20 };
 describe("targets — fib projections (correct anchor)", () => {
   it("W3 projects 1.618 × |P1-P0| from P2 (not from P1)", () => {
     // P0=100, P1=110, P2=104 → leg=10, projected from 104 → 1.618 ⇒ 120.18
-    const primary = longCount("2", [["0", 100], ["1", 110], ["2", 104]]);
+    const primary = longCount("2", [
+      ["0", 100],
+      ["1", 110],
+      ["2", 104],
+    ]);
     const targets = pickTargets({
-      direction: "long", entry: 104, risk: 4, minRR: 1,
-      liquidity: [], primary, allocations,
+      direction: "long",
+      entry: 104,
+      risk: 4,
+      minRR: 1,
+      liquidity: [],
+      primary,
+      allocations,
     });
     const tp2 = targets[1];
     expect(tp2.reason).toMatch(/Fib 1\.618 W3/);
@@ -47,10 +67,21 @@ describe("targets — fib projections (correct anchor)", () => {
 
   it("W5 projects 1.618 × |P3-P2| from P4", () => {
     // P2=104, P3=120, P4=112 → leg=16, projected from 112 ⇒ 137.888
-    const primary = longCount("4", [["0", 100], ["1", 110], ["2", 104], ["3", 120], ["4", 112]]);
+    const primary = longCount("4", [
+      ["0", 100],
+      ["1", 110],
+      ["2", 104],
+      ["3", 120],
+      ["4", 112],
+    ]);
     const targets = pickTargets({
-      direction: "long", entry: 112, risk: 4, minRR: 1,
-      liquidity: [], primary, allocations,
+      direction: "long",
+      entry: 112,
+      risk: 4,
+      minRR: 1,
+      liquidity: [],
+      primary,
+      allocations,
     });
     const tp2 = targets[1];
     expect(tp2.reason).toMatch(/Fib 1\.618 W5/);
@@ -59,11 +90,20 @@ describe("targets — fib projections (correct anchor)", () => {
 
   it("WC projects 1.618 × |A-P5| from B", () => {
     // P5=120, A=108, B=116 → leg=12, projected from 116 (short direction) ⇒ 116 - 1.618*12
-    const primary = longCount("B" as "B", [["5", 120], ["A", 108], ["B", 116]]);
+    const primary = longCount("B" as const, [
+      ["5", 120],
+      ["A", 108],
+      ["B", 116],
+    ]);
     primary.direction = "short";
     const targets = pickTargets({
-      direction: "short", entry: 116, risk: 4, minRR: 1,
-      liquidity: [], primary, allocations,
+      direction: "short",
+      entry: 116,
+      risk: 4,
+      minRR: 1,
+      liquidity: [],
+      primary,
+      allocations,
     });
     const tp2 = targets[1];
     expect(tp2.reason).toMatch(/Fib 1\.618 WC/);
@@ -73,21 +113,40 @@ describe("targets — fib projections (correct anchor)", () => {
 
 describe("targets — validation & category", () => {
   it("throws on non-positive risk", () => {
-    expect(() => pickTargets({
-      direction: "long", entry: 100, risk: 0, minRR: 1,
-      liquidity: [], primary: null, allocations: { TP1: 50, TP2: 30, TP3: 20 },
-    })).toThrow();
+    expect(() =>
+      pickTargets({
+        direction: "long",
+        entry: 100,
+        risk: 0,
+        minRR: 1,
+        liquidity: [],
+        primary: null,
+        allocations: { TP1: 50, TP2: 30, TP3: 20 },
+      }),
+    ).toThrow();
   });
   it("throws when allocations do not sum to 100", () => {
-    expect(() => pickTargets({
-      direction: "long", entry: 100, risk: 1, minRR: 1,
-      liquidity: [], primary: null, allocations: { TP1: 40, TP2: 30, TP3: 20 },
-    })).toThrow();
+    expect(() =>
+      pickTargets({
+        direction: "long",
+        entry: 100,
+        risk: 1,
+        minRR: 1,
+        liquidity: [],
+        primary: null,
+        allocations: { TP1: 40, TP2: 30, TP3: 20 },
+      }),
+    ).toThrow();
   });
   it("with no liquidity & no primary → all targets are FALLBACK and monotonic for long", () => {
     const ts = pickTargets({
-      direction: "long", entry: 100, risk: 1, minRR: 1,
-      liquidity: [], primary: null, allocations: { TP1: 50, TP2: 30, TP3: 20 },
+      direction: "long",
+      entry: 100,
+      risk: 1,
+      minRR: 1,
+      liquidity: [],
+      primary: null,
+      allocations: { TP1: 50, TP2: 30, TP3: 20 },
     });
     expect(ts.map((t) => t.category)).toEqual(["FALLBACK", "FALLBACK", "FALLBACK"]);
     expect(ts[0].price).toBeLessThan(ts[1].price);

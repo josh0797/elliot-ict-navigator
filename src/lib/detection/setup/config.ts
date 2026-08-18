@@ -38,7 +38,7 @@ export interface SetupConfig {
 export const DEFAULT_CONFIG: SetupConfig = {
   minimumRiskReward: 1.5,
   preferredRiskReward: 2.0,
-  slAtrBufferMultiplier: 0.10,
+  slAtrBufferMultiplier: 0.1,
   buyScoreThreshold: 70,
   watchScoreThreshold: 45,
   weights: {

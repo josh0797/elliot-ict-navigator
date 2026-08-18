@@ -27,16 +27,30 @@ const ALIASES: Record<string, string> = {
   "2hour": "2h",
   "4hour": "4h",
   "1day": "1d",
-  "daily": "1d",
+  daily: "1d",
   "1week": "1w",
-  "weekly": "1w",
+  weekly: "1w",
   "1month": "1M",
-  "monthly": "1M",
+  monthly: "1M",
 };
 
 const INTRADAY = new Set([
-  "1m", "2m", "3m", "5m", "10m", "15m", "30m", "45m",
-  "60m", "1h", "2h", "3h", "4h", "6h", "8h", "12h",
+  "1m",
+  "2m",
+  "3m",
+  "5m",
+  "10m",
+  "15m",
+  "30m",
+  "45m",
+  "60m",
+  "1h",
+  "2h",
+  "3h",
+  "4h",
+  "6h",
+  "8h",
+  "12h",
 ]);
 
 export function normalizeTimeframe(value: string | undefined | null): string {

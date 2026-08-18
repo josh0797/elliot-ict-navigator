@@ -28,8 +28,12 @@ function TruncationDiagnostics({
   const confirmed = t.verdict === "CONFIRMED";
   const abcReason = (dto.notes ?? []).find((n) => n.startsWith("ABC lost"));
   return (
-    <div className={`rounded border p-2 space-y-1 ${confirmed ? "border-amber-400/60" : "border-border/60"}`}>
-      <div className={`text-[11px] font-mono uppercase tracking-wider ${confirmed ? "text-amber-400" : "text-muted-foreground"}`}>
+    <div
+      className={`rounded border p-2 space-y-1 ${confirmed ? "border-amber-400/60" : "border-border/60"}`}
+    >
+      <div
+        className={`text-[11px] font-mono uppercase tracking-wider ${confirmed ? "text-amber-400" : "text-muted-foreground"}`}
+      >
         {confirmed ? "TRUNCATED FIFTH" : "POSSIBLE TRUNCATED FIFTH — UNCONFIRMED"}
       </div>
       <div className="grid grid-cols-2 gap-x-3 text-[11px] font-mono">
@@ -45,10 +49,14 @@ function TruncationDiagnostics({
         <span className="text-muted-foreground">Subondas internas</span>
         <span className="text-right">{t.internalSubwaves}/5</span>
         <span className="text-muted-foreground">Agotamiento</span>
-        <span className="text-right">{t.exhaustion.length > 0 ? t.exhaustion.join(" · ") : "—"}</span>
+        <span className="text-right">
+          {t.exhaustion.length > 0 ? t.exhaustion.join(" · ") : "—"}
+        </span>
       </div>
       {!confirmed && t.missing.length > 0 && (
-        <div className="text-[10px] font-mono text-muted-foreground">Falta: {t.missing.join(" · ")}</div>
+        <div className="text-[10px] font-mono text-muted-foreground">
+          Falta: {t.missing.join(" · ")}
+        </div>
       )}
       {abcReason && <div className="text-[10px] font-mono text-muted-foreground">{abcReason}</div>}
     </div>
@@ -67,32 +75,56 @@ function Scenario({
   primary?: boolean;
 }) {
   return (
-    <div className={`rounded border p-3 space-y-2 ${primary ? "border-primary/50 bg-primary/5" : "border-border/60"}`}>
+    <div
+      className={`rounded border p-3 space-y-2 ${primary ? "border-primary/50 bg-primary/5" : "border-border/60"}`}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs uppercase tracking-widest text-muted-foreground">{title}</span>
         <div className="flex items-center gap-1">
           {dto.degree && (
-            <Badge variant="outline" className="font-mono text-[10px]" style={{ color: degreeColor(dto.degree), borderColor: degreeColor(dto.degree) }}>
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px]"
+              style={{ color: degreeColor(dto.degree), borderColor: degreeColor(dto.degree) }}
+            >
               {dto.degree}
             </Badge>
           )}
-          {dto.timeframe && <Badge variant="outline" className="font-mono text-[10px]">{dto.timeframe}</Badge>}
-          <Badge variant="outline" className={`font-mono text-[10px] ${statusTone(dto.status)}`}>{dto.status}</Badge>
+          {dto.timeframe && (
+            <Badge variant="outline" className="font-mono text-[10px]">
+              {dto.timeframe}
+            </Badge>
+          )}
+          <Badge variant="outline" className={`font-mono text-[10px] ${statusTone(dto.status)}`}>
+            {dto.status}
+          </Badge>
         </div>
       </div>
       <div className="text-sm font-mono">
-        <span className={dto.bias === "BULLISH" ? "text-success" : dto.bias === "BEARISH" ? "text-destructive" : ""}>
+        <span
+          className={
+            dto.bias === "BULLISH"
+              ? "text-success"
+              : dto.bias === "BEARISH"
+                ? "text-destructive"
+                : ""
+          }
+        >
           {dto.bias}
         </span>{" "}
         · {dto.pattern.replace(/_/g, " ")} · W{dto.currentWave ?? "?"}
         {dto.currentWave ? ` (${displayWaveLabel(dto.currentWave, dto.degree)})` : ""}
         {dto.nextWave ? ` → W${dto.nextWave}` : ""} · {dto.confidence}%
       </div>
-      {dto.scenario && <p className="text-xs text-muted-foreground leading-relaxed">{dto.scenario}</p>}
+      {dto.scenario && (
+        <p className="text-xs text-muted-foreground leading-relaxed">{dto.scenario}</p>
+      )}
       <TruncationDiagnostics dto={dto} pxFmt={pxFmt} />
       {(dto.hypotheses ?? []).length > 0 && (
         <div className="space-y-0.5">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Hipótesis</div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Hipótesis
+          </div>
           <ul className="text-[11px] font-mono space-y-0.5">
             {(dto.hypotheses ?? []).slice(0, 4).map((h, i) => (
               <li key={`${h.kind}-${i}`} className="flex justify-between gap-2">
@@ -105,11 +137,17 @@ function Scenario({
       )}
       <div className="grid grid-cols-2 gap-x-3 text-xs font-mono">
         <span className="text-muted-foreground">Confirmación</span>
-        <span className="text-right">{dto.confirmationLevel != null ? pxFmt(dto.confirmationLevel) : "—"}</span>
+        <span className="text-right">
+          {dto.confirmationLevel != null ? pxFmt(dto.confirmationLevel) : "—"}
+        </span>
         <span className="text-muted-foreground">Invalidación</span>
-        <span className="text-right text-destructive">{dto.invalidationLevel != null ? pxFmt(dto.invalidationLevel) : "—"}</span>
+        <span className="text-right text-destructive">
+          {dto.invalidationLevel != null ? pxFmt(dto.invalidationLevel) : "—"}
+        </span>
         <span className="text-muted-foreground">Objetivo activo</span>
-        <span className="text-right text-primary">{dto.activeTarget ? pxFmt(dto.activeTarget.price) : "—"}</span>
+        <span className="text-right text-primary">
+          {dto.activeTarget ? pxFmt(dto.activeTarget.price) : "—"}
+        </span>
         <span className="text-muted-foreground">Siguiente</span>
         <span className="text-right">{dto.nextTarget ? pxFmt(dto.nextTarget.price) : "—"}</span>
         <span className="text-muted-foreground">Alcanzados</span>
@@ -119,10 +157,15 @@ function Scenario({
       </div>
       {(dto.fibTargets ?? []).length > 0 && (
         <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Objetivos Fibonacci</div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Objetivos Fibonacci
+          </div>
           <ul className="text-xs font-mono space-y-0.5">
             {(dto.fibTargets ?? []).slice(0, 6).map((t) => (
-              <li key={t.label} className={`flex justify-between gap-2 ${TARGET_TONE[t.state ?? "PENDING"]}`}>
+              <li
+                key={t.label}
+                className={`flex justify-between gap-2 ${TARGET_TONE[t.state ?? "PENDING"]}`}
+              >
                 <span className="truncate">{t.label}</span>
                 <span className="whitespace-nowrap">
                   {pxFmt(t.price)}
@@ -135,7 +178,8 @@ function Scenario({
       )}
       {dto.consistency && dto.consistency.exhaustion.length > 0 && (
         <div className="text-[10px] font-mono text-muted-foreground">
-          Agotamiento ({dto.consistency.exhaustion.length}/2): {dto.consistency.exhaustion.join(" · ")}
+          Agotamiento ({dto.consistency.exhaustion.length}/2):{" "}
+          {dto.consistency.exhaustion.join(" · ")}
         </div>
       )}
       {dto.consistency?.corrected && (
@@ -160,7 +204,9 @@ export function ScenariosPanel({
   const alt = elliott.alternatives[0] ?? null;
   return (
     <div className="space-y-2">
-      <div className="text-xs uppercase tracking-widest text-muted-foreground">Escenarios Elliott</div>
+      <div className="text-xs uppercase tracking-widest text-muted-foreground">
+        Escenarios Elliott
+      </div>
       <Scenario title="Principal (gráfico)" dto={elliott} pxFmt={pxFmt} primary />
       {alt && <Scenario title="Alternativo" dto={alt} pxFmt={pxFmt} />}
       {macro && <Scenario title="Macro (HTF)" dto={macro} pxFmt={pxFmt} />}

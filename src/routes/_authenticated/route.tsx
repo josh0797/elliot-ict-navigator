@@ -1,4 +1,11 @@
-import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  Link,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
@@ -27,7 +34,9 @@ function AuthenticatedShell() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-    isAdminFn().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
+    isAdminFn()
+      .then((r) => setIsAdmin(r.isAdmin))
+      .catch(() => setIsAdmin(false));
   }, []);
 
   async function signOut() {
@@ -49,7 +58,9 @@ function AuthenticatedShell() {
           <Activity className="h-5 w-5 text-primary" />
           <div>
             <div className="font-mono text-sm font-bold tracking-tight">ELLIOTT × ICT</div>
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Pro Terminal</div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Pro Terminal
+            </div>
           </div>
         </div>
         <nav className="flex-1 px-2 py-4 space-y-1">

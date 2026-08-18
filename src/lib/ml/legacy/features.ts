@@ -29,14 +29,29 @@ export type LegacyFeatures = {
 };
 
 const WAVE_CODE_MAP: Record<string, number> = {
-  "1": 0.1, "(1)": 0.1, "i": 0.1, "(i)": 0.1,
-  "2": 0.2, "(2)": 0.2, "ii": 0.2, "(ii)": 0.2,
-  "3": 0.9, "(3)": 0.9, "iii": 0.9, "(iii)": 0.9,
-  "4": 0.4, "(4)": 0.4, "iv": 0.4, "(iv)": 0.4,
-  "5": 0.6, "(5)": 0.6, "v": 0.6, "(v)": 0.6,
-  "a": 0.3,
-  "b": 0.1,
-  "c": 0.7,
+  "1": 0.1,
+  "(1)": 0.1,
+  i: 0.1,
+  "(i)": 0.1,
+  "2": 0.2,
+  "(2)": 0.2,
+  ii: 0.2,
+  "(ii)": 0.2,
+  "3": 0.9,
+  "(3)": 0.9,
+  iii: 0.9,
+  "(iii)": 0.9,
+  "4": 0.4,
+  "(4)": 0.4,
+  iv: 0.4,
+  "(iv)": 0.4,
+  "5": 0.6,
+  "(5)": 0.6,
+  v: 0.6,
+  "(v)": 0.6,
+  a: 0.3,
+  b: 0.1,
+  c: 0.7,
 };
 
 export function waveCode(label: string | null | undefined): { value: number; known: boolean } {
@@ -74,10 +89,9 @@ export function extractLegacyFeatures(input: LegacyInput): LegacyFeatures {
   const slSize = Math.abs(conf - inv);
 
   // tpSize: from fibTarget1 if finite; else 2R fallback
-  const tpSize =
-    isFiniteNumber(input.fibTarget1)
-      ? Math.abs(conf - (input.fibTarget1 as number))
-      : slSize * 2;
+  const tpSize = isFiniteNumber(input.fibTarget1)
+    ? Math.abs(conf - (input.fibTarget1 as number))
+    : slSize * 2;
 
   // f0 — fvg size proxy (R-multiple proxy, NOT a real FVG measurement)
   const f0 = slSize > 0 ? Math.min(tpSize / slSize, 5) / 5 : 0;
@@ -96,7 +110,11 @@ export function extractLegacyFeatures(input: LegacyInput): LegacyFeatures {
 
   // f4 — dist OB proxy (price↔confirmation distance, NOT a real OB)
   let f4: number;
-  if (isFiniteNumber(input.currentPriceApprox) && (input.currentPriceApprox as number) > 0 && slSize > 0) {
+  if (
+    isFiniteNumber(input.currentPriceApprox) &&
+    (input.currentPriceApprox as number) > 0 &&
+    slSize > 0
+  ) {
     const d = Math.abs((input.currentPriceApprox as number) - conf) / slSize;
     f4 = Math.min(d, 3) / 3;
   } else {
@@ -111,7 +129,11 @@ export function extractLegacyFeatures(input: LegacyInput): LegacyFeatures {
   const f5 = wc.value;
 
   const raw = [f0, f1, f2, f3, f4, f5];
-  const normalized = normalizeLegacy(raw, PRETRAINED.minNorm as unknown as number[], PRETRAINED.maxNorm as unknown as number[]);
+  const normalized = normalizeLegacy(
+    raw,
+    PRETRAINED.minNorm as unknown as number[],
+    PRETRAINED.maxNorm as unknown as number[],
+  );
 
   return {
     raw,

@@ -20,11 +20,7 @@ export interface StabilityOptions {
 
 export interface StabilityDecision {
   replace: boolean;
-  reason:
-    | "NO_INCUMBENT"
-    | "MARGIN_NOT_MET"
-    | "AWAITING_CLOSED_CANDLE"
-    | "REPLACED";
+  reason: "NO_INCUMBENT" | "MARGIN_NOT_MET" | "AWAITING_CLOSED_CANDLE" | "REPLACED";
 }
 
 function restsOnClosedCandles(count: ElliottCountV2, lastClosedIndex?: number): boolean {

@@ -11,7 +11,12 @@ import type { TradeSetup } from "@/lib/detection/types";
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
 import type { IctContext } from "@/lib/detection/ict/types";
 import type { TradeSignal } from "@/lib/detection/setup/types";
-import { TradingChart, type LayerToggles, type PivotTooltip, type ChartViewMode } from "@/components/chart/TradingChart";
+import {
+  TradingChart,
+  type LayerToggles,
+  type PivotTooltip,
+  type ChartViewMode,
+} from "@/components/chart/TradingChart";
 import { LayerControls } from "@/components/chart/LayerControls";
 import { ChartViewToggle } from "@/components/chart/ChartViewToggle";
 import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
@@ -22,7 +27,12 @@ import { DecisionBanner } from "@/components/chart/DecisionBanner";
 import type { OperationalReport } from "@/lib/detection/decision/types";
 import { HISTORY_PRESETS } from "@/lib/symbols";
 import { cached, chartKey, Timings, invalidate } from "@/lib/chart/cache";
-import { composeSnapshot, SnapshotController, snapshotKey, type AnalysisSnapshot } from "@/lib/chart/snapshot";
+import {
+  composeSnapshot,
+  SnapshotController,
+  snapshotKey,
+  type AnalysisSnapshot,
+} from "@/lib/chart/snapshot";
 import {
   clearDesyncGuard,
   isServerFnDesyncError,
@@ -59,7 +69,11 @@ function decodeSymbolParam(raw: string): string {
   let value = raw;
   // If a stray %25 still encodes a percent, decode one more time.
   if (/%25[0-9A-Fa-f]{2}/.test(value)) {
-    try { value = decodeURIComponent(value); } catch { /* ignore */ }
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      /* ignore */
+    }
   }
   return value;
 }
@@ -107,8 +121,6 @@ function formatAge(seconds: number): string {
   return `${Math.round(h / 24)}d`;
 }
 
-
-
 const DEFAULT_LAYERS: LayerToggles = {
   primaryCount: true,
   internalWaves: true,
@@ -149,7 +161,11 @@ function ChartPage() {
   const [phase, setPhase] = useState<string | null>("Loading market data...");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
-  const [horizon, setHorizon] = useState<{ candles: number; pivots: number; pivotsUsed: number } | null>(null);
+  const [horizon, setHorizon] = useState<{
+    candles: number;
+    pivots: number;
+    pivotsUsed: number;
+  } | null>(null);
   const [degreePref, setDegreePref] = useState<"auto" | ElliottDegree>("auto");
   const [interval, setInterval] = useState(tf);
   const [outputsize, setOutputsize] = useState(bars);
@@ -200,9 +216,9 @@ function ChartPage() {
     try {
       // ── Stage A: OHLC (closed candles, freshness-validated cascade) ───────
       const full = await t.measureAsync("apiFetchMs", () =>
-        cached(chartKey(["ohlc", sym, ivl, barsReq]), () => withRetry(() =>
-          fetch({ data: { symbol: sym, interval: ivl, outputsize: barsReq } }),
-        )),
+        cached(chartKey(["ohlc", sym, ivl, barsReq]), () =>
+          withRetry(() => fetch({ data: { symbol: sym, interval: ivl, outputsize: barsReq } })),
+        ),
       );
       if (!alive()) return;
       if (!full.candles.length) {
@@ -244,19 +260,21 @@ function ChartPage() {
       setPhase(`Calculando Elliott ${ivl}…`);
       const lastTime = full.candles[full.candles.length - 1]?.time ?? 0;
       const ana = await t.measureAsync("elliottMs", () =>
-        cached(chartKey(["ana", sym, ivl, barsReq, degreePref, lastTime, asOf]), () => withRetry(() =>
-          analyze({
-            data: {
-              symbol: sym,
-              interval: ivl,
-              outputsize: barsReq,
-              degree: degreePref === "auto" ? undefined : degreePref,
-              candles: full.candles,
-              includeMacro: true,
-              asOf,
-              dataStale: false,
-            },
-          })),
+        cached(chartKey(["ana", sym, ivl, barsReq, degreePref, lastTime, asOf]), () =>
+          withRetry(() =>
+            analyze({
+              data: {
+                symbol: sym,
+                interval: ivl,
+                outputsize: barsReq,
+                degree: degreePref === "auto" ? undefined : degreePref,
+                candles: full.candles,
+                includeMacro: true,
+                asOf,
+                dataStale: false,
+              },
+            }),
+          ),
         ),
       );
       if (!alive()) return;
@@ -264,12 +282,21 @@ function ChartPage() {
       // ── Stage C: setups + operational decision ────────────────────────────
       setPhase("Scanning setups...");
       const sigs = await t.measureAsync("setupsMs", () =>
-        cached(chartKey(["setups", sym, ivl, barsReq, lastTime, asOf]), () => withRetry(() =>
-          // Exact same OHLC snapshot the chart is rendering.
-          findSetups({
-            data: { symbol: sym, interval: ivl, outputsize: barsReq, topN: 3, candles: full.candles, dataStale: false },
-          }),
-        )),
+        cached(chartKey(["setups", sym, ivl, barsReq, lastTime, asOf]), () =>
+          withRetry(() =>
+            // Exact same OHLC snapshot the chart is rendering.
+            findSetups({
+              data: {
+                symbol: sym,
+                interval: ivl,
+                outputsize: barsReq,
+                topN: 3,
+                candles: full.candles,
+                dataStale: false,
+              },
+            }),
+          ),
+        ),
       );
       if (!alive()) return;
 
@@ -288,7 +315,7 @@ function ChartPage() {
         setSnapshot(value);
         setHorizon(ana.horizon ?? null);
         setSelectedSignalId((prev) =>
-          prev && value.signals.some((s) => s.id === prev) ? prev : value.signals[0]?.id ?? null,
+          prev && value.signals.some((s) => s.id === prev) ? prev : (value.signals[0]?.id ?? null),
         );
       });
       if (!published) return;
@@ -369,31 +396,53 @@ function ChartPage() {
             </Link>
           </Button>
           <SymbolPicker symbol={decoded} tf={interval} bars={outputsize} />
-          <Badge variant="outline" className="font-mono text-[10px]" title="Timeframe contextual — conteo macro">
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px]"
+            title="Timeframe contextual — conteo macro"
+          >
             Contexto: {contextTf} — Conteo macro
           </Badge>
-          <Badge variant="outline" className="font-mono text-[10px]" title="Timeframe de ejecución — subconteo local">
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px]"
+            title="Timeframe de ejecución — subconteo local"
+          >
             Ejecución: {interval} — Subconteo local
           </Badge>
-          {provider && <Badge variant="secondary" className="font-mono text-[10px]">{provider}</Badge>}
+          {provider && (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {provider}
+            </Badge>
+          )}
           {snapshot && (
             <Badge
               variant="outline"
               className={`font-mono text-[10px] ${stale ? "text-destructive border-destructive/50" : "text-muted-foreground"}`}
               title={`Proveedor ${snapshot.provider} · última vela cerrada ${new Date(snapshot.lastClosedCandleTime * 1000).toISOString()} · ${snapshot.candles.length} velas · asOf ${new Date(snapshot.asOf * 1000).toISOString()} · build ${snapshot.buildId.slice(0, 8)}`}
             >
-              {new Date(snapshot.lastClosedCandleTime * 1000).toISOString().slice(5, 16).replace("T", " ")}Z ·{" "}
-              {px(snapshot.candles[snapshot.candles.length - 1]?.close ?? 0)} ·{" "}
-              {formatAge(snapshot.freshness.ageSeconds)}{stale ? " · STALE" : ""}
+              {new Date(snapshot.lastClosedCandleTime * 1000)
+                .toISOString()
+                .slice(5, 16)
+                .replace("T", " ")}
+              Z · {px(snapshot.candles[snapshot.candles.length - 1]?.close ?? 0)} ·{" "}
+              {formatAge(snapshot.freshness.ageSeconds)}
+              {stale ? " · STALE" : ""}
             </Badge>
           )}
           {loading && (
-            <Badge variant="outline" className="font-mono text-[10px] text-amber-400 border-amber-400/50">
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-amber-400 border-amber-400/50"
+            >
               Cargando {pending?.tf}
             </Badge>
           )}
           {elliott && elliott.status !== "NO_COUNT" && (
-            <Badge variant="outline" className={`font-mono ${elliott.bias === "BULLISH" ? "text-success" : elliott.bias === "BEARISH" ? "text-destructive" : ""}`}>
+            <Badge
+              variant="outline"
+              className={`font-mono ${elliott.bias === "BULLISH" ? "text-success" : elliott.bias === "BEARISH" ? "text-destructive" : ""}`}
+            >
               {elliott.bias} · W{elliott.currentWave ?? "?"} · {elliott.confidence}
             </Badge>
           )}
@@ -435,15 +484,18 @@ function ChartPage() {
               </button>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={() => load({ force: true })} disabled={loading}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => load({ force: true })}
+            disabled={loading}
+          >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
-      {decision && (
-        <DecisionBanner report={decision} pxFmt={px} />
-      )}
+      {decision && <DecisionBanner report={decision} pxFmt={px} />}
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-4">
         <Card className="border-border/60">
@@ -462,11 +514,17 @@ function ChartPage() {
                 {phase ?? "Loading market data..."}
               </div>
             )}
-            <div className={outdated || snapshot?.partial ? "opacity-50 transition-opacity" : "transition-opacity"}>
+            <div
+              className={
+                outdated || snapshot?.partial
+                  ? "opacity-50 transition-opacity"
+                  : "transition-opacity"
+              }
+            >
               <TradingChart
                 candles={candles}
                 elliott={elliott}
-                internal={viewMode === "diagnostic" ? elliott?.internal ?? null : null}
+                internal={viewMode === "diagnostic" ? (elliott?.internal ?? null) : null}
                 ict={ict}
                 layers={layers}
                 signal={activeSignal}
@@ -498,8 +556,10 @@ function ChartPage() {
               <LayerControls layers={layers} onChange={setLayers} />
             ) : (
               <div className="rounded border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
-                Vista <span className="font-mono text-foreground">Operational</span> activa. Solo se dibuja el setup primario.
-                Cambia a <span className="font-mono text-foreground">Diagnostic</span> para ver todas las capas Elliott × ICT.
+                Vista <span className="font-mono text-foreground">Operational</span> activa. Solo se
+                dibuja el setup primario. Cambia a{" "}
+                <span className="font-mono text-foreground">Diagnostic</span> para ver todas las
+                capas Elliott × ICT.
               </div>
             )}
             <InvalidationLegend elliott={elliott} />
@@ -507,8 +567,8 @@ function ChartPage() {
               <div className="rounded border border-border/60 p-2 text-[11px] font-mono text-muted-foreground space-y-0.5">
                 {horizon && (
                   <div>
-                    horizon: {horizon.candles} candles · {horizon.pivots} pivots · pool {horizon.pivotsUsed} ·{" "}
-                    degree {elliott?.degree ?? "—"}
+                    horizon: {horizon.candles} candles · {horizon.pivots} pivots · pool{" "}
+                    {horizon.pivotsUsed} · degree {elliott?.degree ?? "—"}
                   </div>
                 )}
                 {snapshot && (
@@ -517,9 +577,12 @@ function ChartPage() {
                     <div>macro scenario: {snapshot.macroScenarioId ?? "—"}</div>
                   </>
                 )}
-                {import.meta.env.DEV && metrics &&
+                {import.meta.env.DEV &&
+                  metrics &&
                   Object.entries(metrics).map(([k, v]) => (
-                    <div key={k}>{k}: {v}ms</div>
+                    <div key={k}>
+                      {k}: {v}ms
+                    </div>
                   ))}
               </div>
             )}
@@ -540,7 +603,11 @@ function ChartPage() {
                     </>
                   )}
                   <Row label="Wave" value={setup.wave.currentWave ?? "—"} />
-                  <Row label="Score" value={`${Math.round(setup.score * 100)}%`} cls="text-primary" />
+                  <Row
+                    label="Score"
+                    value={`${Math.round(setup.score * 100)}%`}
+                    cls="text-primary"
+                  />
                 </div>
               ) : (
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -550,27 +617,43 @@ function ChartPage() {
             </div>
             {setup && (
               <div>
-                <div className="text-xs uppercase tracking-widest text-muted-foreground">Rationale</div>
+                <div className="text-xs uppercase tracking-widest text-muted-foreground">
+                  Rationale
+                </div>
                 <p className="mt-2 text-sm text-foreground/90 leading-relaxed">{setup.rationale}</p>
               </div>
             )}
             {ict && (
               <div>
-                <div className="text-xs uppercase tracking-widest text-muted-foreground">ICT context</div>
+                <div className="text-xs uppercase tracking-widest text-muted-foreground">
+                  ICT context
+                </div>
                 <ul className="mt-2 text-xs text-muted-foreground space-y-1">
-                  <li>Bias: <span className="text-foreground">{ict.bias}</span></li>
+                  <li>
+                    Bias: <span className="text-foreground">{ict.bias}</span>
+                  </li>
                   <li>
                     Order Blocks: {ict.orderBlocks.length} (
                     {ict.orderBlocks.filter((o) => o.state === "FRESH").length} fresh,{" "}
                     {ict.orderBlocks.filter((o) => o.state === "BREAKER").length} breaker)
                   </li>
-                  {ict.orderBlocks.slice(-3).reverse().map((ob) => (
-                    <li key={ob.id} className="pl-2">
-                      <span className={ob.type === "BULLISH" ? "text-success" : "text-destructive"}>{ob.type}</span>{" "}
-                      Q{ob.quality} · {ob.state} · {px(ob.bottom)}–{px(ob.top)}
-                    </li>
-                  ))}
-                  <li>Fair Value Gaps: {ict.fvgs.length} ({ict.fvgs.filter((f) => !f.mitigated).length} fresh)</li>
+                  {ict.orderBlocks
+                    .slice(-3)
+                    .reverse()
+                    .map((ob) => (
+                      <li key={ob.id} className="pl-2">
+                        <span
+                          className={ob.type === "BULLISH" ? "text-success" : "text-destructive"}
+                        >
+                          {ob.type}
+                        </span>{" "}
+                        Q{ob.quality} · {ob.state} · {px(ob.bottom)}–{px(ob.top)}
+                      </li>
+                    ))}
+                  <li>
+                    Fair Value Gaps: {ict.fvgs.length} (
+                    {ict.fvgs.filter((f) => !f.mitigated).length} fresh)
+                  </li>
                   <li>
                     Liquidity: {ict.liquidity.length} (
                     {ict.liquidity.filter((l) => l.state === "ACTIVE").length} active,{" "}
@@ -582,24 +665,36 @@ function ChartPage() {
                     .slice(0, 3)
                     .map((l) => (
                       <li key={l.id} className="pl-2">
-                        <span className={l.side === "BSL" ? "text-success" : "text-destructive"}>{l.kind}</span>{" "}
+                        <span className={l.side === "BSL" ? "text-success" : "text-destructive"}>
+                          {l.kind}
+                        </span>{" "}
                         {px(l.price)} · S{l.strength}
                       </li>
                     ))}
                   <li>Liquidity Sweeps: {ict.sweeps.length}</li>
-                  {ict.sweeps.slice(-3).reverse().map((s) => (
-                    <li key={s.id} className="pl-2">
-                      <span className={s.type === "sell_side" ? "text-success" : "text-destructive"}>
-                        {s.type === "buy_side" ? "BSL raid" : "SSL raid"}
-                      </span>{" "}
-                      @ {px(s.price)} · Q{s.quality}
-                      {s.closeBack ? " · hunt" : ""}
-                      {s.displacementAfter ? " · displaced" : ""}
-                    </li>
-                  ))}
+                  {ict.sweeps
+                    .slice(-3)
+                    .reverse()
+                    .map((s) => (
+                      <li key={s.id} className="pl-2">
+                        <span
+                          className={s.type === "sell_side" ? "text-success" : "text-destructive"}
+                        >
+                          {s.type === "buy_side" ? "BSL raid" : "SSL raid"}
+                        </span>{" "}
+                        @ {px(s.price)} · Q{s.quality}
+                        {s.closeBack ? " · hunt" : ""}
+                        {s.displacementAfter ? " · displaced" : ""}
+                      </li>
+                    ))}
                   <li>Structure events: {ict.structure.length}</li>
                   <li>Killzone: {ict.killzone?.name ?? "—"}</li>
-                  <li>PD Array: {ict.pdArray ? `${ict.pdArray.zone} (${(ict.pdArray.position * 100).toFixed(0)}%)` : "—"}</li>
+                  <li>
+                    PD Array:{" "}
+                    {ict.pdArray
+                      ? `${ict.pdArray.zone} (${(ict.pdArray.position * 100).toFixed(0)}%)`
+                      : "—"}
+                  </li>
                 </ul>
               </div>
             )}

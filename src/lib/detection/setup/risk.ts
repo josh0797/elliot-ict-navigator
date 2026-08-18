@@ -11,7 +11,11 @@ export type StopReason =
   | "BEYOND_PROTECTED_SWING"
   | "ELLIOTT_INVALIDATION";
 
-export type StopLossError = "NO_VALID_STRUCTURAL_STOP" | "INVALID_ATR" | "INVALID_INPUT" | "STOP_TOO_FAR";
+export type StopLossError =
+  | "NO_VALID_STRUCTURAL_STOP"
+  | "INVALID_ATR"
+  | "INVALID_INPUT"
+  | "STOP_TOO_FAR";
 
 export type StopLossResult =
   | { valid: true; price: number; basis: SLBasis; reason: StopReason }
@@ -32,7 +36,11 @@ export function computeStopLoss(args: {
 }): StopLossResult {
   const { direction, entry, poiDistal, atr, atrBufferMultiplier } = args;
   if (!Number.isFinite(atr) || atr <= 0) return { valid: false, error: "INVALID_ATR" };
-  if (!Number.isFinite(entry) || !Number.isFinite(poiDistal) || !Number.isFinite(atrBufferMultiplier)) {
+  if (
+    !Number.isFinite(entry) ||
+    !Number.isFinite(poiDistal) ||
+    !Number.isFinite(atrBufferMultiplier)
+  ) {
     return { valid: false, error: "INVALID_INPUT" };
   }
   const buffer = atr * atrBufferMultiplier;
@@ -52,21 +60,21 @@ export function computeStopLoss(args: {
   }
 
   // Only keep structural levels on the correct side of entry.
-  const parts = raw.filter((p) =>
-    direction === "long" ? p.value < entry : p.value > entry,
-  );
+  const parts = raw.filter((p) => (direction === "long" ? p.value < entry : p.value > entry));
   if (parts.length === 0) return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
 
   // Pick the most conservative side.
-  const ranked = parts.slice().sort((a, b) =>
-    direction === "long" ? a.value - b.value : b.value - a.value,
-  );
+  const ranked = parts
+    .slice()
+    .sort((a, b) => (direction === "long" ? a.value - b.value : b.value - a.value));
   const chosen = ranked[0];
   const sl = direction === "long" ? chosen.value - buffer : chosen.value + buffer;
   if (!Number.isFinite(sl)) return { valid: false, error: "INVALID_INPUT" };
   // Side sanity.
-  if (direction === "long" && !(sl < entry)) return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
-  if (direction === "short" && !(sl > entry)) return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
+  if (direction === "long" && !(sl < entry))
+    return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
+  if (direction === "short" && !(sl > entry))
+    return { valid: false, error: "NO_VALID_STRUCTURAL_STOP" };
   // Distance sanity.
   if (Math.abs(entry - sl) > MAX_STOP_DISTANCE_ATR * atr) {
     return { valid: false, error: "STOP_TOO_FAR" };

@@ -7,21 +7,10 @@
  * forces an impulse.
  */
 import type { PivotV2 } from "../schemas/analysis";
-import type {
-  CountState,
-  ElliottCountV2,
-  LabeledPivot,
-  WaveLabel,
-  WavePattern,
-} from "./types";
+import type { CountState, ElliottCountV2, LabeledPivot, WaveLabel, WavePattern } from "./types";
 import type { TruncationEvidence } from "./truncation";
 
-export type HypothesisKind =
-  | "ABC"
-  | "IMPULSE"
-  | "DIAGONAL"
-  | "TRUNCATED_FIFTH"
-  | "UNCONFIRMED";
+export type HypothesisKind = "ABC" | "IMPULSE" | "DIAGONAL" | "TRUNCATED_FIFTH" | "UNCONFIRMED";
 
 export interface HypothesisScore {
   kind: HypothesisKind;
@@ -46,7 +35,8 @@ export function hypothesisKind(
   truncation?: TruncationEvidence | null,
 ): HypothesisKind {
   if (CORRECTIVE_PATTERNS.includes(count.pattern)) return "ABC";
-  if (count.pattern === "ENDING_DIAGONAL" || count.pattern === "LEADING_DIAGONAL") return "DIAGONAL";
+  if (count.pattern === "ENDING_DIAGONAL" || count.pattern === "LEADING_DIAGONAL")
+    return "DIAGONAL";
   if (truncation?.verdict === "CONFIRMED") return "TRUNCATED_FIFTH";
   if (truncation?.verdict === "UNCONFIRMED") return "UNCONFIRMED";
   return "IMPULSE";

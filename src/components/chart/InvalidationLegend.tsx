@@ -21,15 +21,15 @@ export function InvalidationLegend({ elliott }: { elliott: ElliottResultDTO | nu
         {elliott.rules.map((r) => (
           <li key={r.code} className="flex items-start justify-between gap-2">
             <span className="text-foreground/80">{r.code}</span>
-            <span className={STATUS_COLOR[r.status] ?? ""}>
-              {r.status}
-            </span>
+            <span className={STATUS_COLOR[r.status] ?? ""}>{r.status}</span>
           </li>
         ))}
       </ul>
       {elliott.invalidationLevel !== null && (
         <div className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs">
-          <div className="text-destructive font-mono">Invalidation @ {elliott.invalidationLevel.toFixed(5)}</div>
+          <div className="text-destructive font-mono">
+            Invalidation @ {elliott.invalidationLevel.toFixed(5)}
+          </div>
           <div className="text-muted-foreground mt-1">
             Break of this level invalidates the current {elliott.pattern} count.
           </div>

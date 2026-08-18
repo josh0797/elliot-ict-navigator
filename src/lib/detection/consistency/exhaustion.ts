@@ -50,8 +50,10 @@ export function collectExhaustion(input: ExhaustionInput): ExhaustionSignalCode[
     const last = candles[n - 1];
     const atr = a[n - 1];
     if (Number.isFinite(atr) && atr > 0) {
-      const wick = dir === "long" ? last.high - Math.max(last.open, last.close)
-                                  : Math.min(last.open, last.close) - last.low;
+      const wick =
+        dir === "long"
+          ? last.high - Math.max(last.open, last.close)
+          : Math.min(last.open, last.close) - last.low;
       const body = Math.abs(last.close - last.open);
       if (wick > atr * 0.8 && wick > body) out.push("STRUCTURAL_REJECTION");
     }
@@ -59,9 +61,7 @@ export function collectExhaustion(input: ExhaustionInput): ExhaustionSignalCode[
 
   // Counter BOS/CHoCH confirmed against the count direction.
   if (ict) {
-    const counter = ict.structure.filter(
-      (e) => e.state === "CONFIRMED" && e.direction !== dir,
-    );
+    const counter = ict.structure.filter((e) => e.state === "CONFIRMED" && e.direction !== dir);
     const lastCounter = counter[counter.length - 1];
     if (lastCounter) {
       const horizon = (candles?.length ?? 0) - 20;
@@ -75,9 +75,10 @@ export function collectExhaustion(input: ExhaustionInput): ExhaustionSignalCode[
     const pivots = internal.waves;
     const lastSwing = pivots[pivots.length - 2];
     if (lastSwing) {
-      const broken = dir === "long"
-        ? input.currentPrice < lastSwing.price
-        : input.currentPrice > lastSwing.price;
+      const broken =
+        dir === "long"
+          ? input.currentPrice < lastSwing.price
+          : input.currentPrice > lastSwing.price;
       if (broken) out.push("INTERNAL_SWING_BREAK");
     }
     // Five complete internal subwaves.

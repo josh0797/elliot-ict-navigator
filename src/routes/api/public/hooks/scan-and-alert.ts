@@ -3,7 +3,16 @@ import { detectSetup } from "@/lib/detection/engine";
 import type { Candle } from "@/lib/detection/types";
 import { scoreSetupML } from "@/lib/detection/model";
 
-const PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "XAU/USD"];
+const PAIRS = [
+  "EUR/USD",
+  "GBP/USD",
+  "USD/JPY",
+  "USD/CHF",
+  "AUD/USD",
+  "USD/CAD",
+  "NZD/USD",
+  "XAU/USD",
+];
 const TFS = ["15min", "1h", "4h"];
 
 async function fetchCandles(symbol: string, interval: string, apiKey: string): Promise<Candle[]> {
@@ -28,7 +37,10 @@ async function fetchCandles(symbol: string, interval: string, apiKey: string): P
     }));
 }
 
-async function sendTelegram(chatId: string, text: string): Promise<{ ok: boolean; error?: string }> {
+async function sendTelegram(
+  chatId: string,
+  text: string,
+): Promise<{ ok: boolean; error?: string }> {
   const lovableKey = process.env.LOVABLE_API_KEY;
   const tgKey = process.env.TELEGRAM_API_KEY;
   if (!lovableKey || !tgKey) return { ok: false, error: "Telegram connector not configured" };
@@ -40,7 +52,12 @@ async function sendTelegram(chatId: string, text: string): Promise<{ ok: boolean
         "X-Connection-Api-Key": tgKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
     });
     if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
     return { ok: true };
@@ -70,7 +87,17 @@ export const Route = createFileRoute("/api/public/hooks/scan-and-alert")({
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
         // 1) Scan
-        const inserted: Array<{ id: string; symbol: string; tf: string; dir: string; e: number; sl: number; tp1: number; tp2: number; score: number }> = [];
+        const inserted: Array<{
+          id: string;
+          symbol: string;
+          tf: string;
+          dir: string;
+          e: number;
+          sl: number;
+          tp1: number;
+          tp2: number;
+          score: number;
+        }> = [];
         for (const symbol of PAIRS) {
           for (const tf of TFS) {
             const candles = await fetchCandles(symbol, tf, apiKey);

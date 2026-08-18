@@ -31,21 +31,29 @@ export function detectSetup(
     dir === "long" ? f.type === "bullish" : f.type === "bearish",
   );
 
-  const nearOB = candidatesOB.reverse().find((ob) =>
-    dir === "long" ? last.low <= ob.top && last.close >= ob.bottom : last.high >= ob.bottom && last.close <= ob.top,
-  );
-  const nearFVG = candidatesFVG.reverse().find((f) =>
-    dir === "long" ? last.low <= f.top && last.close >= f.bottom : last.high >= f.bottom && last.close <= f.top,
-  );
+  const nearOB = candidatesOB
+    .reverse()
+    .find((ob) =>
+      dir === "long"
+        ? last.low <= ob.top && last.close >= ob.bottom
+        : last.high >= ob.bottom && last.close <= ob.top,
+    );
+  const nearFVG = candidatesFVG
+    .reverse()
+    .find((f) =>
+      dir === "long"
+        ? last.low <= f.top && last.close >= f.bottom
+        : last.high >= f.bottom && last.close <= f.top,
+    );
 
   const zone = nearOB ?? nearFVG;
   if (!zone) return null;
 
   // Confluence with recent BOS/CHoCH in same direction
   const struct = ict.structure.slice(-3).find((s) => s.direction === dir);
-  const sweep = ict.sweeps.slice(-3).find((s) =>
-    dir === "long" ? s.type === "sell_side" : s.type === "buy_side",
-  );
+  const sweep = ict.sweeps
+    .slice(-3)
+    .find((s) => (dir === "long" ? s.type === "sell_side" : s.type === "buy_side"));
 
   const entry = dir === "long" ? zone.top : zone.bottom;
   const sl = dir === "long" ? zone.bottom * 0.999 : zone.top * 1.001;

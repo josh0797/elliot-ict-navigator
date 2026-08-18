@@ -28,9 +28,7 @@ export interface RecoveryHost {
   buildId: string;
 }
 
-export type RecoveryOutcome =
-  | { action: "reloaded" }
-  | { action: "blocked"; message: string };
+export type RecoveryOutcome = { action: "reloaded" } | { action: "blocked"; message: string };
 
 /**
  * At most ONE full reload per build id. If the same build already reloaded,

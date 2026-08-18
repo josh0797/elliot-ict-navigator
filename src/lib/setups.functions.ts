@@ -24,14 +24,16 @@ const Input = z.object({
    * analyse the very same candles — no second fetch, no drift.
    */
   candles: z
-    .array(z.object({
-      time: z.number(),
-      open: z.number(),
-      high: z.number(),
-      low: z.number(),
-      close: z.number(),
-      volume: z.number().optional(),
-    }))
+    .array(
+      z.object({
+        time: z.number(),
+        open: z.number(),
+        high: z.number(),
+        low: z.number(),
+        close: z.number(),
+        volume: z.number().optional(),
+      }),
+    )
     .optional(),
   /** Caller-known staleness: blocks any new signal. */
   dataStale: z.boolean().default(false),
@@ -64,14 +66,18 @@ export const detectSetups = createServerFn({ method: "POST" })
           error: undefined,
           status: (data.dataStale ? "DATA_STALE" : "OK") as "OK" | "DATA_STALE",
         }
-      : await fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } });
+      : await fetchOhlcv({
+          data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize },
+        });
     const { candles, provider, error } = snapshot;
     const meta = snapshot.meta ?? null;
     const emptyElliott = emptyElliottDto();
     if (error || candles.length === 0 || snapshot.status === "DATA_STALE") {
       return {
-        symbol: data.symbol, timeframe: data.interval,
-        signals: [], elliott: emptyElliott,
+        symbol: data.symbol,
+        timeframe: data.interval,
+        signals: [],
+        elliott: emptyElliott,
         decision: {
           decision: "NO_TRADE",
           status: "NO_SETUP",
@@ -86,7 +92,8 @@ export const detectSetups = createServerFn({ method: "POST" })
               : "NO TRADE — sin datos.",
           missing: [],
         },
-        provider, error: error ?? (snapshot.status === "DATA_STALE" ? "DATA_STALE" : "No candles"),
+        provider,
+        error: error ?? (snapshot.status === "DATA_STALE" ? "DATA_STALE" : "No candles"),
       };
     }
     const lifted = liftCandles(candles);
@@ -145,7 +152,9 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
             error: undefined,
             status: (data.dataStale ? "DATA_STALE" : "OK") as "OK" | "DATA_STALE",
           })
-        : fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } }),
+        : fetchOhlcv({
+            data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize },
+          }),
     ]);
     const ltfMeta = ltfRes.meta ?? null;
 

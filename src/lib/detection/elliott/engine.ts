@@ -15,13 +15,7 @@ import {
   type HypothesisScore,
 } from "./hypotheses";
 import { shouldReplaceScenario, type StabilityOptions } from "./stability";
-import {
-  alternationScore,
-  wave2Score,
-  wave3Score,
-  wave4Score,
-  wave5Score,
-} from "./scoring";
+import { alternationScore, wave2Score, wave3Score, wave4Score, wave5Score } from "./scoring";
 import type {
   CountState,
   ElliottAnalysis,
@@ -55,7 +49,14 @@ function evaluateCandidate(cand: PivotCandidate): ElliottCountV2 {
   const pattern = detectPattern(seq, direction);
 
   const prices = seq.map((p) => p.price);
-  const [p0, p1, p2, p3, p4, p5] = [prices[0], prices[1], prices[2], prices[3], prices[4], prices[5]];
+  const [p0, p1, p2, p3, p4, p5] = [
+    prices[0],
+    prices[1],
+    prices[2],
+    prices[3],
+    prices[4],
+    prices[5],
+  ];
 
   const rule = checkImpulseRules({
     direction,
@@ -77,8 +78,13 @@ function evaluateCandidate(cand: PivotCandidate): ElliottCountV2 {
   const alternation = p4 !== undefined ? alternationScore(p0, p1, p2, p3!, p4) : null;
 
   // Aggregate score: hard rules pass → start at 0.5, +soft components averaged.
-  const softs = [fibScores.wave2Retracement, fibScores.wave3Extension, fibScores.wave4Retracement, fibScores.wave5Projection, alternation]
-    .filter((v): v is number => v !== null);
+  const softs = [
+    fibScores.wave2Retracement,
+    fibScores.wave3Extension,
+    fibScores.wave4Retracement,
+    fibScores.wave5Projection,
+    alternation,
+  ].filter((v): v is number => v !== null);
   const softAvg = softs.length ? softs.reduce((a, b) => a + b, 0) / softs.length : 0;
 
   let state: CountState;
@@ -166,14 +172,22 @@ export function detectCorrective(
       labeled: complexLabeled,
       currentWave: complexLabeled[complexLabeled.length - 1].label,
       score: isTriple ? 0.6 : 0.5,
-      fibScores: { wave2Retracement: null, wave3Extension: null, wave4Retracement: null, wave5Projection: null },
+      fibScores: {
+        wave2Retracement: null,
+        wave3Extension: null,
+        wave4Retracement: null,
+        wave5Projection: null,
+      },
       alternation: null,
       invalidations: [],
       notes: [isTriple ? "triple combination W-X-Y-X-Z" : "double zigzag W-X-Y"],
     };
   }
 
-  const labeled: LabeledPivot[] = [{ pivot: impulseEnd, label: "5" }, { pivot: a, label: "A" }];
+  const labeled: LabeledPivot[] = [
+    { pivot: impulseEnd, label: "5" },
+    { pivot: a, label: "A" },
+  ];
   let pattern: WavePattern = "SIMPLE_CORRECTION";
   let state: CountState = "DEVELOPING";
 
@@ -181,7 +195,8 @@ export function detectCorrective(
     const b = after[1];
     if (b.type === a.type) return null;
     // B must retrace but not exceed start (i.e. impulseEnd) for classic flat/zigzag.
-    const exceeds = impulseDirection === "long" ? b.price > impulseEnd.price : b.price < impulseEnd.price;
+    const exceeds =
+      impulseDirection === "long" ? b.price > impulseEnd.price : b.price < impulseEnd.price;
     if (exceeds) return null;
     labeled.push({ pivot: b, label: "B" });
 
@@ -214,7 +229,12 @@ export function detectCorrective(
     labeled,
     currentWave: labeled[labeled.length - 1].label,
     score,
-    fibScores: { wave2Retracement: null, wave3Extension: null, wave4Retracement: null, wave5Projection: null },
+    fibScores: {
+      wave2Retracement: null,
+      wave3Extension: null,
+      wave4Retracement: null,
+      wave5Projection: null,
+    },
     alternation: null,
     invalidations: [],
     notes: [],
@@ -239,7 +259,9 @@ export function analyzeElliott(
   const abc = detectAbcHypothesis(pool);
   if (evaluated.length === 0 && !abc) {
     // Surface the best invalidated one for diagnostics.
-    const invalid = cands.map(evaluateCandidate).sort((a, b) => b.labeled.length - a.labeled.length)[0];
+    const invalid = cands
+      .map(evaluateCandidate)
+      .sort((a, b) => b.labeled.length - a.labeled.length)[0];
     return { primary: invalid ?? null, alternatives: [] };
   }
 
@@ -265,8 +287,7 @@ export function analyzeElliott(
 
   // Stability: the best count resting on closed candles is the incumbent; a
   // challenger must beat it by a margin (and be closed-candle based) to win.
-  const incumbent =
-    ranked.find((c) => c.labeled.every((l) => l.pivot.confirmed)) ?? ranked[0];
+  const incumbent = ranked.find((c) => c.labeled.every((l) => l.pivot.confirmed)) ?? ranked[0];
   const challenger = ranked[0];
   let primary = incumbent;
   if (challenger !== incumbent) {
@@ -335,7 +356,12 @@ function truncationEvidenceFor(count: ElliottCountV2): TruncationEvidence | null
   return evaluateTruncation({
     direction: count.direction,
     pattern: count.pattern,
-    p0: p("0"), p1: p("1"), p2: p("2"), p3: p("3"), p4: p("4"), p5: p("5"),
+    p0: p("0"),
+    p1: p("1"),
+    p2: p("2"),
+    p3: p("3"),
+    p4: p("4"),
+    p5: p("5"),
     invalidations: count.invalidations,
   });
 }
@@ -357,9 +383,10 @@ function enforceWave4Discipline(count: ElliottCountV2, pool: ReadonlyArray<Pivot
   const three = count.labeled.find((l) => l.label === "3");
   if (!four || !five || !three) return;
 
-  const violated = pool.some((p) =>
-    p.index > five.pivot.index &&
-    (count.direction === "long" ? p.price < four.pivot.price : p.price > four.pivot.price),
+  const violated = pool.some(
+    (p) =>
+      p.index > five.pivot.index &&
+      (count.direction === "long" ? p.price < four.pivot.price : p.price > four.pivot.price),
   );
   if (!violated) return;
 
@@ -373,7 +400,10 @@ function enforceWave4Discipline(count: ElliottCountV2, pool: ReadonlyArray<Pivot
     if (afterThree[i].type === prev.type) break;
     corrective.push({ pivot: afterThree[i], label: COMPLEX[i] });
   }
-  count.labeled = [...count.labeled.filter((l) => ["0", "1", "2", "3"].includes(l.label)), ...corrective];
+  count.labeled = [
+    ...count.labeled.filter((l) => ["0", "1", "2", "3"].includes(l.label)),
+    ...corrective,
+  ];
   count.currentWave = corrective.length ? corrective[corrective.length - 1].label : "3";
   count.state = "DEVELOPING";
   count.pattern = corrective.length >= 3 ? "DOUBLE_ZIGZAG" : "SIMPLE_CORRECTION";
