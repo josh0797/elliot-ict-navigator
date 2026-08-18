@@ -272,10 +272,19 @@ export function TradingChart({
     const isDiag = viewMode === "diagnostic";
 
     if (elliott) {
-      // The primary count is always drawn (both views): it is the core reading.
-      renderCount(elliott.waves, 1, isDiag ? layers.elliottLines : true, isDiag ? layers.elliottLabels : true);
-      if (isDiag && layers.alternativeCount && elliott.alternatives.length > 0) {
-        renderCount(elliott.alternatives[0].waves, 0.4, true, true);
+      // Operative count = primary unless it was retired/invalidated, in which
+      // case the best surviving alternative (e.g. an A-B-C) takes the stage so
+      // the labels never disappear from the chart.
+      const retired =
+        elliott.consistency?.stale === true ||
+        elliott.status === "INVALIDATED" ||
+        elliott.waves.length === 0;
+      const fallback = elliott.alternatives.find((a) => a.waves.length > 0) ?? null;
+      const operative = retired && fallback ? fallback : elliott;
+      const secondary = operative === elliott ? fallback : elliott;
+      renderCount(operative.waves, 1, isDiag ? layers.elliottLines : true, isDiag ? layers.elliottLabels : true);
+      if (layers.alternativeCount && secondary && secondary.waves.length > 0) {
+        renderCount(secondary.waves, 0.4, true, true);
       }
     }
 
