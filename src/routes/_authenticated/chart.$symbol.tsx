@@ -85,6 +85,25 @@ interface DataHealth {
   candles: number;
 }
 
+/** Human age of the last closed candle. */
+function formatAge(seconds: number): string {
+  if (seconds < 90) return `${seconds}s`;
+  const m = Math.round(seconds / 60);
+  if (m < 90) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+
+interface DataHealthUnused {
+  provider: string;
+  lastCandleIso: string;
+  lastClose: number;
+  ageSeconds: number;
+  stale: boolean;
+  candles: number;
+}
+
 const DEFAULT_LAYERS: LayerToggles = {
   elliottLines: true,
   elliottLabels: true,
