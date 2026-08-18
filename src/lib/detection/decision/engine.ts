@@ -100,6 +100,9 @@ function pickSignalForDirection(
 function statusFromSignal(signal: TradeSignal): OperationalSetupStatus {
   switch (signal.status) {
     case "TRIGGERED": return "TRIGGERED";
+    case "ARMED": return "ARMED";
+    // Watch-only: an unconfirmed potential B never becomes an actionable order.
+    case "POTENTIAL_B": return "WATCHING";
     case "WAITING_RETRACE":
       // Only "armed" when a concrete pending order can be placed; otherwise
       // the user is still waiting for the retrace to materialise.
@@ -118,8 +121,8 @@ function decisionFromSignal(signal: TradeSignal): OperationalDecision {
   // A plain "WAITING_RETRACE" without a pending order means the trader has
   // nothing to place yet — surface as WAIT, not BUY/SELL.
   const actionable =
-    signal.status === "TRIGGERED" ||
-    PENDING_ORDER_TYPES.has(signal.orderType);
+    signal.status !== "POTENTIAL_B" &&
+    (signal.status === "TRIGGERED" || PENDING_ORDER_TYPES.has(signal.orderType));
   if (!actionable) return "WAIT";
   return signal.direction === "long" ? "BUY" : "SELL";
 }
