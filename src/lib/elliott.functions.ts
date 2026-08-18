@@ -50,7 +50,7 @@ export interface AnalyzeResponse {
   /** Macro count on the higher timeframe (context / bias). */
   macro: ElliottResultDTO | null;
   ict: IctContext | null;
-  provider?: "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+  provider?: MarketProvider;
   error?: string;
   /** Timeframe the macro count ran on. */
   countTimeframe?: string;
