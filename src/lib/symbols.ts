@@ -46,4 +46,6 @@ export const HISTORY_PRESETS: ReadonlyArray<{ label: string; value: number }> = 
   { label: "500 candles",  value: 500 },
   { label: "1000 candles", value: 1000 },
   { label: "2000 candles", value: 2000 },
+  { label: "3000 candles", value: 3000 },
+  { label: "5000 candles", value: 5000 },
 ];
