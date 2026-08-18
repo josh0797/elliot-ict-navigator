@@ -212,7 +212,7 @@ it("anticipation: wave-2 + fresh sweep + POI produces ARMED BUY_LIMIT even witho
   expect(out.length).toBeGreaterThan(0);
   const s = out[0];
   expect(s.orderType).toBe("BUY_LIMIT");
-  expect(s.status).toBe("WAITING_RETRACE");
+  expect(s.status).toBe("ARMED");
   expect(s.warnings).toContain("ANTICIPATION_NO_STRUCTURAL_CONFIRMATION");
   expect(s.gatesPassed).toContain("ANTICIPATION_MODE");
 });
