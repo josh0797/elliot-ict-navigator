@@ -95,14 +95,7 @@ function formatAge(seconds: number): string {
   return `${Math.round(h / 24)}d`;
 }
 
-interface DataHealthUnused {
-  provider: string;
-  lastCandleIso: string;
-  lastClose: number;
-  ageSeconds: number;
-  stale: boolean;
-  candles: number;
-}
+
 
 const DEFAULT_LAYERS: LayerToggles = {
   elliottLines: true,
