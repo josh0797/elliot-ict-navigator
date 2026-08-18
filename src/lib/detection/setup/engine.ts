@@ -487,7 +487,7 @@ export function detectSignals(
     }
 
     const gatesPassed = [
-      "ELLIOTT_PRIMARY",
+      `ELLIOTT_OPERATIVE:${operative.source}`,
       "POI_ACTIVE",
       "FINITE_LEVELS",
       "SL_SIDE",
@@ -498,11 +498,16 @@ export function detectSignals(
       "CONFIRMED_PIVOTS",
       conf.ok ? `STRUCTURAL_CONFIRMATION:${conf.via}` : "ANTICIPATION_MODE",
     ];
+    if (operative.source === "PRIMARY") gatesPassed.push("ELLIOTT_PRIMARY");
+    for (const c of confirmations) gatesPassed.push(`CONFIRMATION:${c}`);
     if (anticipation) warnings.push("ANTICIPATION_NO_STRUCTURAL_CONFIRMATION");
+    if (potentialB && !anticipation) warnings.push("POTENTIAL_B_UNCONFIRMED");
 
-    // Anticipation setups must never be executed at market: force LIMIT.
-    if (anticipation && (cls.orderType === "MARKET_BUY" || cls.orderType === "MARKET_SELL")) {
-      continue;
+    // Anticipated setups must never be executed at market: downgrade a market
+    // classification to a STOP order so a confirmed break is still required.
+    let orderType = cls.orderType;
+    if (anticipated && (orderType === "MARKET_BUY" || orderType === "MARKET_SELL")) {
+      orderType = orderType === "MARKET_BUY" ? "BUY_STOP" : "SELL_STOP";
     }
 
     const entryZone = { top: Math.max(poi.top, poi.bottom), bottom: Math.min(poi.top, poi.bottom) };
@@ -518,7 +523,7 @@ export function detectSignals(
     );
     const trigger = deriveTrigger({
       direction,
-      orderType: cls.orderType,
+      orderType,
       entry,
       entryZone,
       currentPrice: lastClose,
@@ -528,12 +533,15 @@ export function detectSignals(
     });
     // Upgrade status when a pending order has actually been triggered by price.
     let finalStatus = cls.status;
-    if (trigger.satisfied && cls.status === "WAITING_RETRACE") {
+    if (anticipated) {
+      finalStatus = anticipation ? "ARMED" : "POTENTIAL_B";
+    }
+    if (trigger.satisfied && (finalStatus === "WAITING_RETRACE" || finalStatus === "ARMED")) {
       finalStatus = "TRIGGERED";
     }
 
     const nextAction = trigger.satisfied
-      ? `Ejecutar ${cls.orderType} en ${entry.toFixed(5)} con SL ${sl.toFixed(5)}.`
+      ? `Ejecutar ${orderType} en ${entry.toFixed(5)} con SL ${sl.toFixed(5)}.`
       : trigger.description;
 
     const invalidationReason =
@@ -552,7 +560,7 @@ export function detectSignals(
       timeframe: opts.timeframe,
       direction,
       directionUpper: direction === "long" ? "LONG" : "SHORT",
-      orderType: cls.orderType,
+      orderType,
       status: finalStatus,
       entry,
       sl,
