@@ -128,7 +128,107 @@ function flatSymbol(symbol: string): string {
   return symbol.toUpperCase().replace("/", "");
 }
 
-// ─── Financial Modeling Prep (primary) ───────────────────────────────────────
+// ─── MetalPrice API (primary) ────────────────────────────────────────────────
+
+const METALPRICE_BASE = "https://api.metalpriceapi.com/v1";
+
+function ymd(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(0, 10);
+}
+
+/** Live rate for BASE/QUOTE from MetalPrice API (base=BASE, currencies=QUOTE). */
+async function fetchMetalPriceLatest(symbol: string): Promise<{ price: number | null; error?: string }> {
+  const apiKey = process.env['METALPRICE_API_KEY'];
+  if (!apiKey) return { price: null, error: "METALPRICE_API_KEY missing" };
+  const { base, quote } = classify(symbol);
+  try {
+    const res = await fetch(`${METALPRICE_BASE}/latest?api_key=${apiKey}&base=${base}&currencies=${quote}`);
+    const json = (await res.json()) as {
+      success?: boolean;
+      rates?: Record<string, number>;
+      error?: { message?: string } | string;
+    };
+    const rate = json.rates?.[quote] ?? json.rates?.[`${base}${quote}`];
+    if (!res.ok || json.success === false || !Number.isFinite(rate)) {
+      const msg = typeof json.error === "string" ? json.error : json.error?.message;
+      return { price: null, error: msg ?? `metalpriceapi ${res.status}` };
+    }
+    return { price: rate as number };
+  } catch (err) {
+    return { price: null, error: (err as Error).message };
+  }
+}
+
+/**
+ * Daily / weekly series from MetalPrice API `/v1/timeframe` (close-per-day).
+ * The endpoint publishes one rate per day, so OHLC is reconstructed from the
+ * close sequence (open = previous close, high/low = envelope of the bar).
+ */
+async function fetchMetalPrice(symbol: string, interval: string, limit: number): Promise<{ candles: Candle[]; error?: string }> {
+  const apiKey = process.env['METALPRICE_API_KEY'];
+  if (!apiKey) return { candles: [], error: "METALPRICE_API_KEY missing" };
+  const ivl = canonInterval(interval);
+  if (ivl !== "1d" && ivl !== "1w") return { candles: [], error: "metalpriceapi: intraday not supported" };
+  const { base, quote } = classify(symbol);
+
+  const days = Math.min(365, ivl === "1w" ? limit * 7 + 14 : limit + 10);
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - days * 86400;
+
+  try {
+    const url =
+      `${METALPRICE_BASE}/timeframe?api_key=${apiKey}` +
+      `&start_date=${ymd(start)}&end_date=${ymd(end)}&base=${base}&currencies=${quote}`;
+    const res = await fetch(url);
+    const json = (await res.json()) as {
+      success?: boolean;
+      rates?: Record<string, Record<string, number>>;
+      error?: { message?: string } | string;
+    };
+    if (!res.ok || json.success === false || !json.rates) {
+      const msg = typeof json.error === "string" ? json.error : json.error?.message;
+      return { candles: [], error: msg ?? `metalpriceapi ${res.status}` };
+    }
+    const closes = Object.entries(json.rates)
+      .map(([date, row]) => ({ time: parseUtc(date), close: row[quote] ?? row[`${base}${quote}`] }))
+      .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.close) && (r.close as number) > 0)
+      .sort((a, b) => a.time - b.time);
+    if (closes.length === 0) return { candles: [], error: "metalpriceapi: empty series" };
+
+    const daily: Candle[] = closes.map((r, i) => {
+      const open = i === 0 ? r.close : closes[i - 1].close;
+      return {
+        time: r.time,
+        open,
+        high: Math.max(open, r.close),
+        low: Math.min(open, r.close),
+        close: r.close,
+      };
+    });
+    const out = ivl === "1w" ? aggregate(daily, CANON_SECONDS["1w"]) : daily;
+    return { candles: sanitize(out, limit) };
+  } catch (err) {
+    return { candles: [], error: (err as Error).message };
+  }
+}
+
+/**
+ * Re-anchor the most recent candle to the MetalPrice live rate so the UI price
+ * never drifts from the primary provider (fixes 1h/30m cross-provider skew).
+ */
+function anchorLast(candles: Candle[], livePrice: number | null): Candle[] {
+  if (!candles.length || livePrice == null || !Number.isFinite(livePrice) || livePrice <= 0) return candles;
+  const last = candles[candles.length - 1];
+  const patched: Candle = {
+    ...last,
+    close: livePrice,
+    high: Math.max(last.high, livePrice),
+    low: Math.min(last.low, livePrice),
+  };
+  return [...candles.slice(0, -1), patched];
+}
+
+// ─── Financial Modeling Prep ─────────────────────────────────────────────────
 
 const FMP_INTRADAY: Partial<Record<CanonInterval, string>> = {
   "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "1hour", "4h": "4hour",
