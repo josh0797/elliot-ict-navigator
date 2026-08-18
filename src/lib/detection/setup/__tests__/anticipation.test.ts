@@ -82,6 +82,7 @@ it("invalidated primary + valid bearish alternative still produces an ARMED shor
   const out = detectSignals(candles, [], invalidatedPrimaryWithBearishAlt(), bearishIct(candles.length - 1), opts);
   expect(out.length > 0).toBeTruthy();
   const s = out[0];
+  console.log(JSON.stringify({st:s.status,ot:s.orderType,rr:s.rrToTp1,g:s.gatesPassed}));
   expect(s.direction).toBe("short");
   expect(["ARMED", "POTENTIAL_B", "TRIGGERED"].includes(s.status)).toBeTruthy();
   expect(s.orderType === "SELL_LIMIT" || s.orderType === "SELL_STOP").toBeTruthy();
