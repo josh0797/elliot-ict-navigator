@@ -140,18 +140,12 @@ function ChartPage() {
   const analyze = useServerFn(analyzeSymbol);
   const findSetups = useServerFn(detectSetupsMTF);
 
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [setup, setSetup] = useState<TradeSetup | null>(null);
-  const [elliott, setElliott] = useState<ElliottResultDTO | null>(null);
-  const [macro, setMacro] = useState<ElliottResultDTO | null>(null);
-  const [provider, setProvider] = useState<string | null>(null);
-  const [dataHealth, setDataHealth] = useState<DataHealth | null>(null);
-  const [ict, setIct] = useState<IctContext | null>(null);
-  const [signals, setSignals] = useState<TradeSignal[]>([]);
-  const [decision, setDecision] = useState<OperationalReport | null>(null);
+  // ONE atomic snapshot drives every panel: candles, macro count, local count,
+  // ICT and decision always belong to the same timeframe and the same `asOf`.
+  const [snapshot, setSnapshot] = useState<AnalysisSnapshot | null>(null);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<PivotTooltip | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState<{ tf: string; bars: number } | null>({ tf, bars });
   const [phase, setPhase] = useState<string | null>("Loading market data...");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
@@ -161,8 +155,23 @@ function ChartPage() {
   const [outputsize, setOutputsize] = useState(bars);
   const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
   const [viewMode, setViewMode] = useState<ChartViewMode>("operational");
-  const latestRequestRef = useRef(0);
+  const ctlRef = useRef<SnapshotController>(new SnapshotController());
   const prevSymbolRef = useRef(decoded);
+
+  const loading = pending !== null;
+  const candles = snapshot?.candles ?? [];
+  const elliott = snapshot?.localElliottCount ?? null;
+  const macro = snapshot?.macroElliottCount ?? null;
+  const ict = snapshot?.ictAnalysis ?? null;
+  const signals = snapshot?.signals ?? [];
+  const decision = snapshot?.decision ?? null;
+  const provider = snapshot?.provider ?? null;
+  /** Timeframe actually rendered — read from the snapshot, never from the selector. */
+  const shownTf = snapshot?.executionTimeframe ?? null;
+  const contextTf = contextTimeframeFor(interval);
+  const stale = snapshot?.freshness.stale ?? false;
+  /** Snapshot belongs to another timeframe/bars → its drawing is dimmed. */
+  const outdated = snapshot != null && (shownTf !== interval || snapshot.bars !== outputsize);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -170,129 +179,152 @@ function ChartPage() {
   }, [layers]);
 
   /**
-   * Staged pipeline — candles never wait for Elliott/ICT:
-   *   A) 200-bar OHLC → render candles
-   *   B) full history (lazy) → re-render candles
-   *   C) pivots + Elliott (multi-degree) + ICT
-   *   D) MTF setups + decision
-   * Every stage is cached and deduplicated by symbol|tf|bars.
+   * Atomic pipeline. Every stage writes into local variables; the snapshot is
+   * only published while its `requestId` is still the active epoch, so a late
+   * 4h answer can never overwrite a current 1h view, and candles are never
+   * paired with counts from another timeframe.
    */
   async function load(opts: { force?: boolean } = {}) {
-    const requestId = ++latestRequestRef.current;
-    const alive = () => requestId === latestRequestRef.current;
+    const ctl = ctlRef.current;
+    const { requestId } = ctl.begin();
+    const alive = () => ctl.isCurrent(requestId);
     const sym = decoded;
     const ivl = interval;
+    const barsReq = outputsize;
     const t = new Timings();
     if (opts.force) invalidate(chartKey(["ohlc", sym, ivl]));
-    setLoading(true);
+    setPending({ tf: ivl, bars: barsReq });
     setErrorMsg(null);
-    setPhase("Loading market data...");
+    setPhase(`Cargando ${ivl}…`);
 
     try {
-      // ── Stage A: fast first paint (200 bars) ──────────────────────────────
-      const quickBars = Math.min(200, outputsize);
-      const quick = await t.measureAsync("apiFetchMs", () =>
-        cached(chartKey(["ohlc", sym, ivl, quickBars]), () => withRetry(() =>
-          fetch({ data: { symbol: sym, interval: ivl, outputsize: quickBars } }),
+      // ── Stage A: OHLC (closed candles, freshness-validated cascade) ───────
+      const full = await t.measureAsync("apiFetchMs", () =>
+        cached(chartKey(["ohlc", sym, ivl, barsReq]), () => withRetry(() =>
+          fetch({ data: { symbol: sym, interval: ivl, outputsize: barsReq } }),
         )),
       );
       if (!alive()) return;
-      if (quick.candles.length) {
-        setCandles(quick.candles);
-        setProvider(quick.provider);
-        if (quick.meta) setDataHealth(quick.meta);
-        t.mark("firstPaintMs");
-      }
-
-      // ── Stage B: extended history (lazy, non-blocking for first paint) ────
-      let full = quick;
-      if (outputsize > quickBars) {
-        setPhase("Loading extended history...");
-        full = await t.measureAsync("historyFetchMs", () =>
-          cached(chartKey(["ohlc", sym, ivl, outputsize]), () => withRetry(() =>
-            fetch({ data: { symbol: sym, interval: ivl, outputsize } }),
-          )),
-        );
-        if (!alive()) return;
-        if (full.candles.length) {
-          setCandles(full.candles);
-          setProvider(full.provider);
-          if (full.meta) setDataHealth(full.meta);
-        } else {
-          full = quick;
-        }
-      }
-
       if (!full.candles.length) {
-        setErrorMsg(full.error ?? quick.error ?? "No market data returned by any provider");
+        setSnapshot(null);
+        setErrorMsg(full.error ?? "No market data returned by any provider");
         setPhase(null);
         return;
       }
-      setSetup(detectSetup(sym, ivl, full.candles));
 
-      // ── Stage C: Elliott (multi-degree) + ICT ─────────────────────────────
-      setPhase("Calculating Elliott structure...");
+      const asOf = full.asOf ?? Math.floor(Date.now() / 1000);
+      const freshness = full.meta?.freshness ?? OK_FRESHNESS;
+      const base = {
+        symbol: sym,
+        executionTimeframe: ivl,
+        bars: barsReq,
+        provider: full.provider,
+        asOf,
+        freshness,
+        candles: full.candles,
+        buildId: APP_BUILD_ID,
+        livePrice: full.livePrice ?? null,
+      };
+      // Candles-only publish: coherent by construction (counts explicitly null,
+      // UI labels it as loading) and already tagged with the new timeframe.
+      ctl.publish(requestId, composeSnapshot({ ...base, partial: true }), setSnapshot);
+      t.mark("firstPaintMs");
+
+      if (freshness.stale || full.status === "DATA_STALE") {
+        // DATA_STALE: no new count, no new signal.
+        setErrorMsg(
+          `DATA_STALE — ${full.provider} @ ${full.meta?.lastCandleIso ?? "?"}: análisis bloqueado`,
+        );
+        setPhase(null);
+        setMetrics(t.snapshot());
+        return;
+      }
+
+      // ── Stage B: Elliott (macro context + local execution) + ICT ──────────
+      setPhase(`Calculando Elliott ${ivl}…`);
       const lastTime = full.candles[full.candles.length - 1]?.time ?? 0;
       const ana = await t.measureAsync("elliottMs", () =>
-        cached(chartKey(["ana", sym, ivl, outputsize, degreePref, lastTime]), () => withRetry(() =>
+        cached(chartKey(["ana", sym, ivl, barsReq, degreePref, lastTime, asOf]), () => withRetry(() =>
           analyze({
             data: {
               symbol: sym,
               interval: ivl,
-              outputsize,
+              outputsize: barsReq,
               degree: degreePref === "auto" ? undefined : degreePref,
               candles: full.candles,
               includeMacro: true,
+              asOf,
+              dataStale: false,
             },
           })),
         ),
       );
       if (!alive()) return;
-      setElliott(ana.elliott);
-      setMacro(ana.macro);
-      setIct(ana.ict);
-      setHorizon(ana.horizon ?? null);
 
-      // ── Stage D: setups + operational decision ────────────────────────────
+      // ── Stage C: setups + operational decision ────────────────────────────
       setPhase("Scanning setups...");
       const sigs = await t.measureAsync("setupsMs", () =>
-        cached(chartKey(["setups", sym, ivl, outputsize, lastTime]), () => withRetry(() =>
+        cached(chartKey(["setups", sym, ivl, barsReq, lastTime, asOf]), () => withRetry(() =>
           // Exact same OHLC snapshot the chart is rendering.
-          findSetups({ data: { symbol: sym, interval: ivl, outputsize, topN: 3, candles: full.candles } }),
+          findSetups({
+            data: { symbol: sym, interval: ivl, outputsize: barsReq, topN: 3, candles: full.candles, dataStale: false },
+          }),
         )),
       );
       if (!alive()) return;
-      setSignals(sigs.signals);
-      setDecision(sigs.decision);
-      setSelectedSignalId((prev) =>
-        prev && sigs.signals.some((s) => s.id === prev) ? prev : sigs.signals[0]?.id ?? null,
-      );
+
+      // ── Atomic publish ────────────────────────────────────────────────────
+      const next = composeSnapshot({
+        ...base,
+        localElliottCount: ana.elliott,
+        macroElliottCount: ana.macro,
+        macroScenarioId: ana.macroScenarioId ?? null,
+        ictAnalysis: ana.ict,
+        decision: sigs.decision,
+        signals: sigs.signals,
+        partial: false,
+      });
+      const published = ctl.publish(requestId, next, (value) => {
+        setSnapshot(value);
+        setHorizon(ana.horizon ?? null);
+        setSelectedSignalId((prev) =>
+          prev && value.signals.some((s) => s.id === prev) ? prev : value.signals[0]?.id ?? null,
+        );
+      });
+      if (!published) return;
       setPhase(null);
       setMetrics(t.snapshot());
+      if (typeof window !== "undefined") clearDesyncGuard(window.sessionStorage);
     } catch (err) {
       if (alive()) {
         console.error("[chart] load failed", err);
-        setErrorMsg((err as Error).message || "Failed to load market data");
+        if (isServerFnDesyncError(err) && typeof window !== "undefined") {
+          const outcome = recoverFromServerFnDesync({
+            storage: window.sessionStorage,
+            reload: () => window.location.reload(),
+            buildId: APP_BUILD_ID,
+          });
+          setErrorMsg(
+            outcome.action === "blocked" ? outcome.message : "Actualizando la aplicación…",
+          );
+        } else {
+          setErrorMsg((err as Error).message || "Failed to load market data");
+        }
+        // Never keep a previous timeframe's result under the new label.
+        setSnapshot(null);
         setPhase(null);
       }
     } finally {
-      if (alive()) setLoading(false);
+      if (alive()) setPending(null);
     }
   }
 
   useEffect(() => {
-    latestRequestRef.current++;
-    // Only a symbol switch wipes the canvas; timeframe/bars/degree changes keep
-    // the previous drawing visible until fresh data arrives.
+    // Any switch invalidates in-flight work; a symbol switch also wipes state.
+    ctlRef.current.invalidate();
     if (prevSymbolRef.current !== decoded) {
       prevSymbolRef.current = decoded;
-      setCandles([]);
-      setSetup(null);
-      setElliott(null);
-      setMacro(null);
-      setIct(null);
-      setSignals([]);
-      setDecision(null);
+      setSnapshot(null);
       setSelectedSignalId(null);
       setTooltip(null);
     }
@@ -301,6 +333,14 @@ function ChartPage() {
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decoded, interval, outputsize, degreePref]);
+
+  const setup = useMemo<TradeSetup | null>(
+    () =>
+      snapshot && !snapshot.partial && !snapshot.freshness.stale
+        ? detectSetup(snapshot.symbol, snapshot.executionTimeframe, snapshot.candles)
+        : null,
+    [snapshot],
+  );
 
   const dirColor = setup?.direction === "long" ? "text-success" : "text-destructive";
 
