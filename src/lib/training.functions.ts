@@ -133,7 +133,7 @@ function bucketWave(s: string | undefined): (typeof WAVE_BUCKETS)[number] | null
   const t = s
     .trim()
     .toLowerCase()
-    .replace(/[()\[\]]/g, "");
+    .replace(/[()[\]]/g, "");
   if (/^[abc]$/.test(t)) return "abc";
   if (/^[xyz]$/.test(t) || /^w[xyz]?$/.test(t)) return "wxy";
   if (/^(1|3|5|i|iii|v)$/.test(t)) return "impulsive_135";
