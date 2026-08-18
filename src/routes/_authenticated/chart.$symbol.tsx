@@ -462,16 +462,18 @@ function ChartPage() {
                 {phase ?? "Loading market data..."}
               </div>
             )}
-            <TradingChart
-              candles={candles}
-              elliott={elliott}
-              internal={viewMode === "diagnostic" ? elliott?.internal ?? null : null}
-              ict={ict}
-              layers={layers}
-              signal={activeSignal}
-              onPivotHover={setTooltip}
-              viewMode={viewMode}
-            />
+            <div className={outdated || snapshot?.partial ? "opacity-50 transition-opacity" : "transition-opacity"}>
+              <TradingChart
+                candles={candles}
+                elliott={elliott}
+                internal={viewMode === "diagnostic" ? elliott?.internal ?? null : null}
+                ict={ict}
+                layers={layers}
+                signal={activeSignal}
+                onPivotHover={setTooltip}
+                viewMode={viewMode}
+              />
+            </div>
             {tooltip && (
               <div
                 className="pointer-events-none absolute z-10 rounded border border-border bg-popover/95 px-2 py-1 text-xs font-mono shadow"
@@ -508,6 +510,12 @@ function ChartPage() {
                     horizon: {horizon.candles} candles · {horizon.pivots} pivots · pool {horizon.pivotsUsed} ·{" "}
                     degree {elliott?.degree ?? "—"}
                   </div>
+                )}
+                {snapshot && (
+                  <>
+                    <div className="break-all">snapshot: {snapshotKey(snapshot)}</div>
+                    <div>macro scenario: {snapshot.macroScenarioId ?? "—"}</div>
+                  </>
                 )}
                 {import.meta.env.DEV && metrics &&
                   Object.entries(metrics).map(([k, v]) => (
