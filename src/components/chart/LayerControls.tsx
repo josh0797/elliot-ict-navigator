@@ -3,6 +3,8 @@ import { Label } from "@/components/ui/label";
 import type { LayerToggles } from "./TradingChart";
 
 const OPTIONS: { key: keyof LayerToggles; label: string }[] = [
+  { key: "primaryCount",      label: "Primary Elliott count" },
+  { key: "internalWaves",     label: "Internal waves" },
   { key: "elliottLines",      label: "Elliott lines" },
   { key: "elliottLabels",     label: "Elliott labels" },
   { key: "alternativeCount",  label: "Alternative count" },

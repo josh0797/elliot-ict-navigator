@@ -7,6 +7,14 @@ import type { PivotV2 } from "../schemas/analysis";
 import { generateCandidates, type PivotCandidate } from "./candidates";
 import { degreePool, type ElliottDegree } from "./degrees";
 import { checkImpulseRules, isTruncation } from "./rules";
+import { evaluateTruncation, type TruncationEvidence } from "./truncation";
+import {
+  buildHypothesis,
+  detectAbcHypothesis,
+  hypothesisKind,
+  type HypothesisScore,
+} from "./hypotheses";
+import { shouldReplaceScenario, type StabilityOptions } from "./stability";
 import {
   alternationScore,
   wave2Score,
@@ -215,7 +223,7 @@ export function detectCorrective(
 
 export function analyzeElliott(
   pivots: ReadonlyArray<PivotV2>,
-  opts: { degree?: ElliottDegree } = {},
+  opts: { degree?: ElliottDegree } & StabilityOptions = {},
 ): ElliottAnalysis {
   const degree = opts.degree ?? "INTERMEDIATE";
   const pool = selectElliottPool(pivots, degree);
@@ -228,16 +236,59 @@ export function analyzeElliott(
     .filter((c) => c.state !== "INVALIDATED" && c.state !== "NO_COUNT")
     .sort((a, b) => b.score - a.score);
 
-  if (evaluated.length === 0) {
+  const abc = detectAbcHypothesis(pool);
+  if (evaluated.length === 0 && !abc) {
     // Surface the best invalidated one for diagnostics.
     const invalid = cands.map(evaluateCandidate).sort((a, b) => b.labeled.length - a.labeled.length)[0];
     return { primary: invalid ?? null, alternatives: [] };
   }
 
-  const primary = evaluated[0];
+  // ── Objective hypothesis comparison ───────────────────────────────────────
+  // Every reading (impulse, diagonal, truncated fifth, A-B-C) is scored on its
+  // own merits; nothing is forced in either direction.
+  const contenders: ElliottCountV2[] = [...evaluated];
+  if (abc) contenders.push(abc);
+
+  const truncationOf = new Map<ElliottCountV2, TruncationEvidence | null>();
+  const hypothesisOf = new Map<ElliottCountV2, HypothesisScore>();
+  for (const c of contenders) {
+    const trunc = truncationEvidenceFor(c);
+    truncationOf.set(c, trunc);
+    const h = buildHypothesis(c, trunc);
+    hypothesisOf.set(c, h);
+    c.score = h.score;
+    c.notes = h.notes;
+  }
+  const ranked = [...contenders].sort(
+    (a, b) => hypothesisOf.get(b)!.score - hypothesisOf.get(a)!.score,
+  );
+
+  // Stability: the best count resting on closed candles is the incumbent; a
+  // challenger must beat it by a margin (and be closed-candle based) to win.
+  const incumbent =
+    ranked.find((c) => c.labeled.every((l) => l.pivot.confirmed)) ?? ranked[0];
+  const challenger = ranked[0];
+  let primary = incumbent;
+  if (challenger !== incumbent) {
+    const decision = shouldReplaceScenario(incumbent, challenger, opts);
+    primary = decision.replace ? challenger : incumbent;
+    if (!decision.replace) {
+      primary.notes = [...primary.notes, `scenario kept (${decision.reason})`];
+    }
+  }
   // Primary and alternatives come from the SAME structural pool, so they
   // differ by interpretation and not by an arbitrary history window.
-  const alternatives = evaluated.slice(1, 4);
+  const alternatives = ranked.filter((c) => c !== primary).slice(0, 3);
+
+  // Record why the corrective reading lost (or won) against the impulse family.
+  if (abc && primary !== abc) {
+    const hp = hypothesisOf.get(primary)!;
+    const ha = hypothesisOf.get(abc)!;
+    primary.notes = [
+      ...primary.notes,
+      `ABC lost: ABC score ${ha.score.toFixed(2)} vs ${hp.kind} ${hp.score.toFixed(2)}`,
+    ];
+  }
 
   // Wave-4 discipline: a wave 4 is only "done" while price has not violated it
   // again. If pivots after the labeled wave 5 push beyond wave 4 against the
@@ -259,7 +310,34 @@ export function analyzeElliott(
     }
   }
 
-  return { primary, alternatives, degree, pivotsUsed: pool.length };
+  const truncation = truncationOf.get(primary) ?? null;
+  return {
+    primary,
+    alternatives,
+    hypotheses: ranked.map((c) => hypothesisOf.get(c)!),
+    truncation,
+    scenarioKind: hypothesisKind(primary, truncation),
+    degree,
+    pivotsUsed: pool.length,
+  };
+}
+
+/**
+ * Geometry-stage truncation evidence. Internal subwaves and exhaustion are
+ * unknown here (they arrive with the lower-degree subdivision and the live
+ * price in the consistency layer), so the best verdict at this stage is
+ * UNCONFIRMED — never CONFIRMED from a failed W5 projection alone.
+ */
+function truncationEvidenceFor(count: ElliottCountV2): TruncationEvidence | null {
+  const p = (label: WaveLabel) => count.labeled.find((l) => l.label === label)?.pivot.price;
+  const five = count.labeled.find((l) => l.label === "5")?.pivot;
+  if (!five) return null;
+  return evaluateTruncation({
+    direction: count.direction,
+    pattern: count.pattern,
+    p0: p("0"), p1: p("1"), p2: p("2"), p3: p("3"), p4: p("4"), p5: p("5"),
+    invalidations: count.invalidations,
+  });
 }
 
 /** Counts for every degree, computed from the same full pivot set. */

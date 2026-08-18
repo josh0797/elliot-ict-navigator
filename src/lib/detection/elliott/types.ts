@@ -1,7 +1,10 @@
 import type { PivotV2 } from "../schemas/analysis";
 import type { ElliottDegree } from "./degrees";
+import type { HypothesisKind, HypothesisScore } from "./hypotheses";
+import type { TruncationEvidence } from "./truncation";
 
 export type { ElliottDegree };
+export type { HypothesisKind, HypothesisScore, TruncationEvidence };
 
 export type WaveLabel =
   | "0" | "1" | "2" | "3" | "4" | "5"
@@ -54,6 +57,12 @@ export interface ElliottCountV2 {
 export interface ElliottAnalysis {
   primary: ElliottCountV2 | null;
   alternatives: ElliottCountV2[];
+  /** Independent scores for ABC / impulse / diagonal / truncated fifth. */
+  hypotheses?: HypothesisScore[];
+  /** Truncation evidence for the primary count (geometry stage). */
+  truncation?: TruncationEvidence | null;
+  /** Hypothesis kind chosen for the primary count. */
+  scenarioKind?: HypothesisKind;
   /** Degree the count was computed at. */
   degree?: ElliottDegree;
   /** Number of pivots in the structural pool (diagnostics). */
@@ -188,4 +197,12 @@ export interface ElliottResultDTO {
   nextTarget?: FibTargetDTO | null;
   /** Targets already reached/exceeded by price. */
   hitTargets?: FibTargetDTO[];
+  /** Hypothesis kind for this scenario (ABC / IMPULSE / DIAGONAL / …). */
+  scenarioKind?: HypothesisKind;
+  /** Independent hypothesis scores compared for this count. */
+  hypotheses?: HypothesisScore[];
+  /** Concrete truncated-fifth evidence (null when not applicable). */
+  truncation?: TruncationEvidence | null;
+  /** Engine diagnostics (why a hypothesis won/lost, corrections applied). */
+  notes?: string[];
 }

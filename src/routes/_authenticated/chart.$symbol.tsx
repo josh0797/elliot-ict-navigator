@@ -98,6 +98,8 @@ function formatAge(seconds: number): string {
 
 
 const DEFAULT_LAYERS: LayerToggles = {
+  primaryCount: true,
+  internalWaves: true,
   elliottLines: true,
   elliottLabels: true,
   alternativeCount: true,

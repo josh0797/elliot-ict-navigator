@@ -1,5 +1,6 @@
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
 import { Badge } from "@/components/ui/badge";
+import { degreeColor, displayWaveLabel } from "@/lib/detection/elliott/display";
 
 function statusTone(status: string): string {
   if (status === "INVALIDATED" || status === "STALE") return "text-destructive";
@@ -14,6 +15,45 @@ const TARGET_TONE: Record<string, string> = {
   NEXT: "text-foreground",
   PENDING: "text-muted-foreground",
 };
+
+function TruncationDiagnostics({
+  dto,
+  pxFmt,
+}: {
+  dto: ElliottResultDTO;
+  pxFmt: (n: number) => string;
+}) {
+  const t = dto.truncation;
+  if (!t || t.verdict === "NONE") return null;
+  const confirmed = t.verdict === "CONFIRMED";
+  const abcReason = (dto.notes ?? []).find((n) => n.startsWith("ABC lost"));
+  return (
+    <div className={`rounded border p-2 space-y-1 ${confirmed ? "border-amber-400/60" : "border-border/60"}`}>
+      <div className={`text-[11px] font-mono uppercase tracking-wider ${confirmed ? "text-amber-400" : "text-muted-foreground"}`}>
+        {confirmed ? "TRUNCATED FIFTH" : "POSSIBLE TRUNCATED FIFTH — UNCONFIRMED"}
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 text-[11px] font-mono">
+        <span className="text-muted-foreground">Extremo onda 3</span>
+        <span className="text-right">{t.wave3Extreme != null ? pxFmt(t.wave3Extreme) : "—"}</span>
+        <span className="text-muted-foreground">Extremo onda 5</span>
+        <span className="text-right">{t.wave5Extreme != null ? pxFmt(t.wave5Extreme) : "—"}</span>
+        <span className="text-muted-foreground">Diferencia</span>
+        <span className="text-right">
+          {t.gapPrice != null ? pxFmt(t.gapPrice) : "—"}
+          {t.gapAtr != null ? ` · ${t.gapAtr.toFixed(2)} ATR` : ""}
+        </span>
+        <span className="text-muted-foreground">Subondas internas</span>
+        <span className="text-right">{t.internalSubwaves}/5</span>
+        <span className="text-muted-foreground">Agotamiento</span>
+        <span className="text-right">{t.exhaustion.length > 0 ? t.exhaustion.join(" · ") : "—"}</span>
+      </div>
+      {!confirmed && t.missing.length > 0 && (
+        <div className="text-[10px] font-mono text-muted-foreground">Falta: {t.missing.join(" · ")}</div>
+      )}
+      {abcReason && <div className="text-[10px] font-mono text-muted-foreground">{abcReason}</div>}
+    </div>
+  );
+}
 
 function Scenario({
   title,
@@ -31,6 +71,11 @@ function Scenario({
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs uppercase tracking-widest text-muted-foreground">{title}</span>
         <div className="flex items-center gap-1">
+          {dto.degree && (
+            <Badge variant="outline" className="font-mono text-[10px]" style={{ color: degreeColor(dto.degree), borderColor: degreeColor(dto.degree) }}>
+              {dto.degree}
+            </Badge>
+          )}
           {dto.timeframe && <Badge variant="outline" className="font-mono text-[10px]">{dto.timeframe}</Badge>}
           <Badge variant="outline" className={`font-mono text-[10px] ${statusTone(dto.status)}`}>{dto.status}</Badge>
         </div>
@@ -40,9 +85,24 @@ function Scenario({
           {dto.bias}
         </span>{" "}
         · {dto.pattern.replace(/_/g, " ")} · W{dto.currentWave ?? "?"}
+        {dto.currentWave ? ` (${displayWaveLabel(dto.currentWave, dto.degree)})` : ""}
         {dto.nextWave ? ` → W${dto.nextWave}` : ""} · {dto.confidence}%
       </div>
       {dto.scenario && <p className="text-xs text-muted-foreground leading-relaxed">{dto.scenario}</p>}
+      <TruncationDiagnostics dto={dto} pxFmt={pxFmt} />
+      {(dto.hypotheses ?? []).length > 0 && (
+        <div className="space-y-0.5">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Hipótesis</div>
+          <ul className="text-[11px] font-mono space-y-0.5">
+            {(dto.hypotheses ?? []).slice(0, 4).map((h, i) => (
+              <li key={`${h.kind}-${i}`} className="flex justify-between gap-2">
+                <span className="truncate">{h.kind.replace(/_/g, " ")}</span>
+                <span className="whitespace-nowrap">{h.score.toFixed(2)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-x-3 text-xs font-mono">
         <span className="text-muted-foreground">Confirmación</span>
         <span className="text-right">{dto.confirmationLevel != null ? pxFmt(dto.confirmationLevel) : "—"}</span>

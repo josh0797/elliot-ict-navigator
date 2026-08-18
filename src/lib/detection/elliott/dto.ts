@@ -408,6 +408,10 @@ export function toElliottResult(
       waves: toWaveDTO(count.labeled),
       alternatives: withAlts ? analysis.alternatives.map((a) => toDTO(a, false)) : [],
       breakdown,
+      scenarioKind: withAlts ? analysis.scenarioKind : undefined,
+      hypotheses: withAlts ? analysis.hypotheses : undefined,
+      truncation: withAlts ? analysis.truncation ?? null : null,
+      notes: count.notes.slice(),
     };
   };
 
