@@ -26,7 +26,7 @@ const CandleSchema = z.object({
 const Input = z.object({
   symbol: z.string().min(2),
   interval: z.string().default("1h"),
-  outputsize: z.number().int().min(50).max(2000).default(500),
+  outputsize: z.number().int().min(50).max(5000).default(500),
   /** Elliott degree to use for the primary count. `undefined` = auto by timeframe. */
   degree: z.enum(["MAJOR", "INTERMEDIATE", "MINOR"]).optional(),
   /** Reuse candles already fetched by the client (avoids a duplicate provider call). */
