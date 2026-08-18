@@ -255,18 +255,54 @@ function buildRationale(
 /** Minimum score an alternative must reach before it can drive orders. */
 const ALT_MIN_SCORE = 0.4;
 
+export type OperativeCountSource = "PRIMARY" | "ALTERNATIVE";
+
+export interface OperativeCount {
+  count: ElliottCountV2;
+  source: OperativeCountSource;
+}
+
+/** Anticipation confirmations (at least one is required to ARM a setup). */
+export type AnticipationConfirmation =
+  | "CHOCH_CLOSED"
+  | "SWEEP_CLOSE_BACK"
+  | "DIAGONAL_BREAKOUT";
+
+function collectConfirmations(
+  ict: IctContext,
+  direction: SignalDirection,
+  candleCount: number,
+  diagonalBreakout: boolean,
+): AnticipationConfirmation[] {
+  const out: AnticipationConfirmation[] = [];
+  const cutoff = candleCount - STRUCTURE_RECENT_BARS;
+  const choch = [...ict.structure].reverse().find(
+    (e: StructureEvent) =>
+      e.type === "CHoCH" && e.state === "CONFIRMED" && e.direction === direction && e.index >= cutoff,
+  );
+  if (choch) out.push("CHOCH_CLOSED");
+  const wantSweep = direction === "long" ? "sell_side" : "buy_side";
+  const sweep = [...ict.sweeps].reverse().find(
+    (s: LiquiditySweep) =>
+      s.type === wantSweep && s.wickBeyond && s.closeBack && s.index >= candleCount - SWEEP_RECENT_BARS,
+  );
+  if (sweep) out.push("SWEEP_CLOSE_BACK");
+  if (diagonalBreakout) out.push("DIAGONAL_BREAKOUT");
+  return out;
+}
+
 /**
  * The count the operational layer trades from. Mirrors the decision engine's
  * arbitration: primary while it is not INVALIDATED, otherwise the highest
  * scoring non-invalidated alternative above `ALT_MIN_SCORE`.
  */
-function pickOperativeCount(elliott: ElliottAnalysis): ElliottCountV2 | null {
+export function pickOperativeCount(elliott: ElliottAnalysis): OperativeCount | null {
   const primary = elliott.primary;
-  if (primary && primary.state !== "INVALIDATED") return primary;
+  if (primary && primary.state !== "INVALIDATED") return { count: primary, source: "PRIMARY" };
   const alt = [...elliott.alternatives]
     .filter((c) => c.state !== "INVALIDATED" && c.state !== "NO_COUNT" && c.score >= ALT_MIN_SCORE)
     .sort((a, b) => b.score - a.score)[0];
-  return alt ?? null;
+  return alt ? { count: alt, source: "ALTERNATIVE" } : null;
 }
 
 export function detectSignals(
@@ -277,13 +313,16 @@ export function detectSignals(
   opts: SetupEngineOptions,
 ): TradeSignal[] {
   const config = resolveConfig(opts.config);
+  // ── Gate 0: the snapshot must be fresh. Stale data can never arm an order.
+  if (opts.dataStale) return [];
   // ── Gate 1: an OPERABLE Elliott count must exist.
   // Consistency with the decision engine: when the primary count is missing or
   // INVALIDATED, the best valid alternative takes over as the operative count
   // (the decision engine already lets it vote). Previously the alternative
   // could vote but never produce an order — a logical inconsistency.
-  const primary = pickOperativeCount(elliott);
-  if (!primary) return [];
+  const operative = pickOperativeCount(elliott);
+  if (!operative) return [];
+  const primary = operative.count;
   if (candles.length === 0) return [];
 
   const direction = primary.direction;
@@ -306,14 +345,27 @@ export function detectSignals(
   // (already handled downstream by `deriveTrigger`) elevates to TRIGGERED.
   const conf = structuralConfirmation(ict, direction, candles.length);
   const wave = primary.currentWave;
-  const inAnticipationWave = wave === "2" || wave === "4";
-  const recentSweepCutoffAll = candles.length - SWEEP_RECENT_BARS;
-  const wantSweep = direction === "long" ? "sell_side" : "buy_side";
-  const hasRecentSweep = ict.sweeps.some(
-    (s) => s.index >= recentSweepCutoffAll && s.type === wantSweep,
+  const inAnticipationWave = wave === "2" || wave === "4" || wave === "B";
+  const confirmations = collectConfirmations(
+    ict, direction, candles.length, opts.diagonalBreakout === true,
   );
-  const anticipation = !conf.ok && inAnticipationWave && hasRecentSweep;
-  if (!conf.ok && !anticipation) return [];
+  // Anticipation needs an entry wave AND at least one hard confirmation
+  // (closed CHoCH, sweep with close-back, or confirmed diagonal breakout).
+  const anticipation = !conf.ok && inAnticipationWave && confirmations.length > 0;
+  // POTENTIAL_B: an alternative count of sufficient quality reading a B in the
+  // opposite premium/discount zone — watch-only, no confirmation yet.
+  const pdZone = ict.pdArray?.zone ?? null;
+  const potentialB =
+    operative.source === "ALTERNATIVE" &&
+    wave === "B" &&
+    primary.score >= 0.5 &&
+    ((direction === "short" && pdZone === "PREMIUM") || (direction === "long" && pdZone === "DISCOUNT"));
+  if (!conf.ok && !anticipation && !potentialB) return [];
+  const anticipated = !conf.ok;
+  // Anticipated setups demand a better payoff than confirmed ones.
+  const effectiveMinRR = anticipated
+    ? Math.max(opts.minRR ?? MIN_RR, ANTICIPATION_MIN_RR)
+    : (opts.minRR ?? MIN_RR);
 
   const elliottInv = elliottInvalidationLevel(primary, direction);
 
@@ -331,7 +383,7 @@ export function detectSignals(
   });
 
   const minScore = opts.minScore ?? MIN_SCORE;
-  const minRR = opts.minRR ?? MIN_RR;
+  const minRR = effectiveMinRR;
   const topN = opts.topN ?? config.topN;
 
   const setups: TradeSignal[] = [];
