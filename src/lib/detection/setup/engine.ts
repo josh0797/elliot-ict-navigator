@@ -43,7 +43,17 @@ export interface SetupEngineOptions {
   minScore?: number;
   minRR?: number;
   config?: Partial<SetupConfig>;
+  /**
+   * Ending-diagonal breakout confirmed on this timeframe. Counts as a
+   * structural confirmation for anticipation setups.
+   */
+  diagonalBreakout?: boolean;
+  /** True when the OHLC snapshot lags more than one interval → no signals. */
+  dataStale?: boolean;
 }
+
+/** Minimum RR an anticipated (ARMED) setup must offer. */
+const ANTICIPATION_MIN_RR = 1.5;
 
 function isFinitePositive(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n > 0;
@@ -58,6 +68,11 @@ function elliottInvalidationLevel(count: ElliottCountV2, direction: SignalDirect
   void direction;
   // Long impulse: wave 2 cannot retrace below wave 0. Wave 4 cannot enter wave 1.
   const p0 = priceAtLabel(count, "0");
+  // Corrective B: the count dies if price trades beyond the B extreme.
+  if (count.currentWave === "B") {
+    const pb = priceAtLabel(count, "B");
+    if (isFinitePositive(pb)) return pb!;
+  }
   if (count.currentWave === "2" && isFinitePositive(p0)) return p0!;
   if (count.currentWave === "4") {
     const p1 = priceAtLabel(count, "1");
