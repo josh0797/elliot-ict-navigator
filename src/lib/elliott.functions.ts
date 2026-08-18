@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { fetchOhlcv } from "./marketData.functions";
+import { fetchOhlcv, type MarketProvider } from "./marketData.functions";
 import { liftCandles } from "./detection/schemas/analysis";
 import { detectPivots } from "./detection/structure/pivots";
 import { currentBias } from "./detection/structure/market-structure";
