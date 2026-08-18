@@ -144,7 +144,7 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
     const emptyElliott = emptyElliottDto();
 
     const [htfRes, ltfRes] = await Promise.all([
-      fetchOhlcv({ data: { ...data, interval: htfInterval, outputsize: 300 } }),
+      fetchOhlcv({ data: { symbol: data.symbol, interval: htfInterval, outputsize: 300 } }),
       data.candles?.length
         ? Promise.resolve({ candles: data.candles, provider: "none" as const, meta: undefined, error: undefined })
         : fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } }),
