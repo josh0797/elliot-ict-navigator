@@ -22,6 +22,15 @@ import { DecisionBanner } from "@/components/chart/DecisionBanner";
 import type { OperationalReport } from "@/lib/detection/decision/types";
 import { HISTORY_PRESETS } from "@/lib/symbols";
 import { cached, chartKey, Timings, invalidate } from "@/lib/chart/cache";
+import { composeSnapshot, SnapshotController, snapshotKey, type AnalysisSnapshot } from "@/lib/chart/snapshot";
+import {
+  clearDesyncGuard,
+  isServerFnDesyncError,
+  recoverFromServerFnDesync,
+} from "@/lib/chart/server-fn-recovery";
+import { APP_BUILD_ID } from "@/lib/build-id";
+import { contextTimeframeFor } from "@/lib/detection/mtf";
+import type { Freshness } from "@/lib/marketData/freshness";
 import type { ElliottDegree } from "@/lib/detection/elliott/degrees";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -56,19 +65,23 @@ function decodeSymbolParam(raw: string): string {
 }
 
 /**
- * Server functions can transiently 404 ("Server function <id> not found")
- * right after a deploy/HMR boundary. Retry those once before surfacing an
- * error to the trader.
+ * Retry genuinely transient transport failures only.
+ *
+ * "Server function info not found" is NOT transient: the loaded client bundle
+ * and the deployed server bundle come from different builds, so retrying the
+ * same hashed id can only fail again. It is rethrown immediately and handled by
+ * the single-reload recovery path.
  */
-async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, tries = 2): Promise<T> {
   let last: unknown;
   for (let attempt = 0; attempt < tries; attempt++) {
     try {
       return await fn();
     } catch (err) {
       last = err;
+      if (isServerFnDesyncError(err)) throw err;
       const msg = String((err as Error)?.message ?? "");
-      const transient = /not found|failed to fetch|networkerror|load failed|502|503|504/i.test(msg);
+      const transient = /failed to fetch|networkerror|load failed|502|503|504/i.test(msg);
       if (!transient) throw err;
       await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
     }
@@ -76,14 +89,13 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
   throw last;
 }
 
-interface DataHealth {
-  provider: string;
-  lastCandleIso: string;
-  lastClose: number;
-  ageSeconds: number;
-  stale: boolean;
-  candles: number;
-}
+const OK_FRESHNESS: Freshness = {
+  status: "OK",
+  ageSeconds: 0,
+  stale: false,
+  marketOpen: true,
+  toleranceSeconds: 0,
+};
 
 /** Human age of the last closed candle. */
 function formatAge(seconds: number): string {

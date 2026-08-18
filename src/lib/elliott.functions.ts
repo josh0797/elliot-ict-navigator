@@ -13,6 +13,7 @@ import { scenarioConsistencyCheck } from "./detection/consistency/scenario";
 import type { ElliottResultDTO } from "./detection/elliott/types";
 import type { IctContext } from "./detection/ict/types";
 import type { Candle } from "./twelvedata.functions";
+import { closedCandlesAsOf, contextTimeframeFor, macroScenarioId } from "./detection/mtf";
 
 const CandleSchema = z.object({
   time: z.number(),
@@ -33,6 +34,10 @@ const Input = z.object({
   candles: z.array(CandleSchema).optional(),
   /** Skip the higher-timeframe macro count for a faster first paint. */
   includeMacro: z.boolean().default(true),
+  /** Shared snapshot timestamp (UTC seconds). Every timeframe aligns to it. */
+  asOf: z.number().int().positive().optional(),
+  /** When true the caller already knows the series is stale: block analysis. */
+  dataStale: z.boolean().default(false),
 });
 
 export interface AnalyzeResponse {
@@ -56,18 +61,12 @@ export interface AnalyzeResponse {
   countTimeframe?: string;
   /** Timeframe used for ICT + execution. */
   executionTimeframe?: string;
+  /** Stable macro scenario identity — equal for every execution timeframe
+   *  sharing the same context timeframe and `asOf`. */
+  macroScenarioId?: string | null;
+  /** Snapshot timestamp actually used. */
+  asOf?: number;
 }
-
-/**
- * LTF (execution / ICT) → HTF (macro Elliott count). Kept in sync with the
- * MTF pipeline in `setups.functions.ts`.
- */
-const HTF_MAP: Record<string, string> = {
-  "1m": "15min", "5min": "1h", "5m": "1h",
-  "15min": "4h", "15m": "4h", "30min": "4h", "30m": "4h",
-  "1h": "1day", "2h": "1day", "4h": "1day",
-  "1day": "1week", "1d": "1week",
-};
 
 function emptyElliott(): ElliottResultDTO {
   return {
@@ -88,8 +87,23 @@ function emptyElliott(): ElliottResultDTO {
 export const analyzeSymbol = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<AnalyzeResponse> => {
-    const htfInterval = data.includeMacro ? HTF_MAP[data.interval] : undefined;
+    const asOf = data.asOf ?? Math.floor(Date.now() / 1000);
+    const htfInterval = data.includeMacro ? contextTimeframeFor(data.interval) : undefined;
     const reqBase = { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize };
+    const emptyDegreesOnly = (): Record<ElliottDegree, ElliottResultDTO> => ({
+      MAJOR: emptyElliott(), INTERMEDIATE: emptyElliott(), MINOR: emptyElliott(),
+    });
+    // Stale series must never produce a new count.
+    if (data.dataStale) {
+      return {
+        elliott: emptyElliott(), degrees: emptyDegreesOnly(), degree: "INTERMEDIATE",
+        macro: null, ict: null, error: "DATA_STALE",
+        executionTimeframe: data.interval,
+        countTimeframe: htfInterval ?? data.interval,
+        macroScenarioId: null,
+        asOf,
+      };
+    }
     const [ltfRes, htfRes] = await Promise.all([
       data.candles && data.candles.length > 0
         ? Promise.resolve({ candles: data.candles as Candle[], provider: "none" as const, error: undefined })
@@ -99,9 +113,7 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
         : Promise.resolve(null),
     ]);
     const { candles, provider, error } = ltfRes;
-    const emptyDegrees = (): Record<ElliottDegree, ElliottResultDTO> => ({
-      MAJOR: emptyElliott(), INTERMEDIATE: emptyElliott(), MINOR: emptyElliott(),
-    });
+    const emptyDegrees = emptyDegreesOnly;
     if (error || candles.length === 0) {
       return {
         elliott: emptyElliott(), degrees: emptyDegrees(), degree: "INTERMEDIATE",
@@ -150,18 +162,38 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
 
     // Macro count on the higher timeframe (context only).
     let macro: ElliottResultDTO | null = null;
+    let macroId: string | null = null;
     let countTf = data.interval;
     if (htfRes && !htfRes.error && htfRes.candles.length > 0) {
-      const htfLifted = liftCandles(htfRes.candles);
+      // Only candles CLOSED at `asOf` may shape the macro scenario, so 1h and 4h
+      // views of the same instant share the exact same context series.
+      const htfClosed = closedCandlesAsOf(htfRes.candles, htfInterval!, asOf);
+      const htfLifted = liftCandles(htfClosed.length >= 20 ? htfClosed : htfRes.candles);
       const htfPivots = detectPivots(htfLifted);
       macro = toElliottResult(analyzeElliott(htfPivots, { degree: "MAJOR" }), currentBias(htfPivots));
       countTf = htfInterval!;
       macro.timeframe = countTf;
+      const htfPrice = htfLifted[htfLifted.length - 1].close;
       macro = scenarioConsistencyCheck(macro, {
-        currentPrice,
+        // Context-timeframe facts only — never the execution timeframe price.
+        currentPrice: htfPrice,
         candles: htfLifted,
         ict: null,
       }).scenario;
+      macroId = macroScenarioId({
+        symbol: data.symbol,
+        contextTimeframe: countTf,
+        asOf,
+        pattern: macro.pattern,
+        bias: macro.bias,
+        anchors: macro.waves.map((w) => ({
+          label: String(w.label),
+          // Anchors are keyed by timestamp + price, never by array index.
+          time: Math.floor(new Date(w.time).getTime() / 1000),
+          price: w.price,
+        })),
+      });
+      macro.scenarioId = macroId;
     }
     return {
       elliott: local,
@@ -177,5 +209,7 @@ export const analyzeSymbol = createServerFn({ method: "POST" })
       provider,
       countTimeframe: countTf,
       executionTimeframe: data.interval,
+      macroScenarioId: macroId,
+      asOf,
     };
   });

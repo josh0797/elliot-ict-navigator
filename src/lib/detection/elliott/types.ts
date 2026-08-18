@@ -176,6 +176,11 @@ export interface ElliottResultDTO {
   fibTargets?: FibTargetDTO[];
   /** Timeframe the count was computed on. */
   timeframe?: string;
+  /**
+   * Stable macro scenario identity (context timeframe + asOf + anchors).
+   * Two execution timeframes sharing the same context must share this id.
+   */
+  scenarioId?: string | null;
   /** Elliott degree of this count. */
   degree?: ElliottDegree;
   /** Pivots used by the structural pool (diagnostics). */
