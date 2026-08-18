@@ -119,6 +119,7 @@ function ChartPage() {
   const [elliott, setElliott] = useState<ElliottResultDTO | null>(null);
   const [macro, setMacro] = useState<ElliottResultDTO | null>(null);
   const [provider, setProvider] = useState<string | null>(null);
+  const [dataHealth, setDataHealth] = useState<DataHealth | null>(null);
   const [ict, setIct] = useState<IctContext | null>(null);
   const [signals, setSignals] = useState<TradeSignal[]>([]);
   const [decision, setDecision] = useState<OperationalReport | null>(null);
@@ -165,14 +166,15 @@ function ChartPage() {
       // ── Stage A: fast first paint (200 bars) ──────────────────────────────
       const quickBars = Math.min(200, outputsize);
       const quick = await t.measureAsync("apiFetchMs", () =>
-        cached(chartKey(["ohlc", sym, ivl, quickBars]), () =>
+        cached(chartKey(["ohlc", sym, ivl, quickBars]), () => withRetry(() =>
           fetch({ data: { symbol: sym, interval: ivl, outputsize: quickBars } }),
-        ),
+        )),
       );
       if (!alive()) return;
       if (quick.candles.length) {
         setCandles(quick.candles);
         setProvider(quick.provider);
+        if (quick.meta) setDataHealth(quick.meta);
         t.mark("firstPaintMs");
       }
 
@@ -181,14 +183,15 @@ function ChartPage() {
       if (outputsize > quickBars) {
         setPhase("Loading extended history...");
         full = await t.measureAsync("historyFetchMs", () =>
-          cached(chartKey(["ohlc", sym, ivl, outputsize]), () =>
+          cached(chartKey(["ohlc", sym, ivl, outputsize]), () => withRetry(() =>
             fetch({ data: { symbol: sym, interval: ivl, outputsize } }),
-          ),
+          )),
         );
         if (!alive()) return;
         if (full.candles.length) {
           setCandles(full.candles);
           setProvider(full.provider);
+          if (full.meta) setDataHealth(full.meta);
         } else {
           full = quick;
         }
@@ -205,7 +208,7 @@ function ChartPage() {
       setPhase("Calculating Elliott structure...");
       const lastTime = full.candles[full.candles.length - 1]?.time ?? 0;
       const ana = await t.measureAsync("elliottMs", () =>
-        cached(chartKey(["ana", sym, ivl, outputsize, degreePref, lastTime]), () =>
+        cached(chartKey(["ana", sym, ivl, outputsize, degreePref, lastTime]), () => withRetry(() =>
           analyze({
             data: {
               symbol: sym,
@@ -215,7 +218,7 @@ function ChartPage() {
               candles: full.candles,
               includeMacro: true,
             },
-          }),
+          })),
         ),
       );
       if (!alive()) return;
@@ -227,9 +230,10 @@ function ChartPage() {
       // ── Stage D: setups + operational decision ────────────────────────────
       setPhase("Scanning setups...");
       const sigs = await t.measureAsync("setupsMs", () =>
-        cached(chartKey(["setups", sym, ivl, outputsize, lastTime]), () =>
-          findSetups({ data: { symbol: sym, interval: ivl, outputsize, topN: 3 } }),
-        ),
+        cached(chartKey(["setups", sym, ivl, outputsize, lastTime]), () => withRetry(() =>
+          // Exact same OHLC snapshot the chart is rendering.
+          findSetups({ data: { symbol: sym, interval: ivl, outputsize, topN: 3, candles: full.candles } }),
+        )),
       );
       if (!alive()) return;
       setSignals(sigs.signals);
