@@ -4,10 +4,17 @@ import { fetchCandles, type Candle } from "./twelvedata.functions";
 
 /**
  * Market data adapter — provider cascade:
- *   1. Financial Modeling Prep (FMP_API_KEY)      ← primary
- *   2. Alpha Vantage (ALPHA_VANTAGE_API_KEY)      ← secondary / cross-check
- *   3. Polygon (MASSIVE_API_KEY)                  ← tertiary
- *   4. Twelve Data                                ← last resort
+ *   1. MetalPrice API (METALPRICE_API_KEY)        ← primary
+ *   2. Financial Modeling Prep (FMP_API_KEY)
+ *   3. Alpha Vantage (ALPHA_VANTAGE_API_KEY)
+ *   4. Polygon (MASSIVE_API_KEY)
+ *   5. Twelve Data                                ← last resort
+ *
+ * MetalPrice API serves daily/weekly series natively (`/v1/timeframe`) and the
+ * live rate (`/v1/latest`) for every pair (metals AND currencies). Because it
+ * does not publish intraday OHLC, intraday requests fall through the cascade
+ * and the LAST candle is re-anchored to the MetalPrice live rate so the app
+ * price always matches the primary provider.
  *
  * Interval contract (canonical): "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d" | "1w".
  * Also accepts Twelve Data style ("1min" | "5min" | "15min" | "1h" | "4h" | "1day") for compatibility.
