@@ -245,10 +245,13 @@ export function detectSignals(
   opts: SetupEngineOptions,
 ): TradeSignal[] {
   const config = resolveConfig(opts.config);
-  // ── Gate 1: Elliott primary exists and is not INVALIDATED.
-  const primary = elliott.primary;
+  // ── Gate 1: an OPERABLE Elliott count must exist.
+  // Consistency with the decision engine: when the primary count is missing or
+  // INVALIDATED, the best valid alternative takes over as the operative count
+  // (the decision engine already lets it vote). Previously the alternative
+  // could vote but never produce an order — a logical inconsistency.
+  const primary = pickOperativeCount(elliott);
   if (!primary) return [];
-  if (primary.state === "INVALIDATED") return [];
   if (candles.length === 0) return [];
 
   const direction = primary.direction;
