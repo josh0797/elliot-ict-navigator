@@ -393,16 +393,91 @@ async function fetchPolygon(symbol: string, interval: string, limit: number): Pr
 const Input = z.object({
   symbol: z.string().min(3),
   interval: z.string().default("1h"),
-  outputsize: z.number().int().min(50).max(2000).default(500),
+  outputsize: z.number().int().min(50).max(5000).default(500),
 });
 
 export interface OhlcvResponse {
   candles: Candle[];
   provider: MarketProvider;
+  /** Freshness contract for the snapshot (last CLOSED candle). */
+  meta?: DataMeta;
   error?: string;
 }
 
 export type MarketProvider = "metalpriceapi" | "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+
+export interface DataMeta {
+  provider: MarketProvider;
+  interval: string;
+  intervalSeconds: number;
+  /** UTC epoch seconds of the last CLOSED candle. */
+  lastCandleTime: number;
+  lastCandleIso: string;
+  lastClose: number;
+  /** Seconds between now and the last closed candle open time. */
+  ageSeconds: number;
+  /** True when data lags more than one full interval beyond the expected bar. */
+  stale: boolean;
+  candles: number;
+}
+
+/** Seconds per canonical bucket for freshness math. */
+function bucketSeconds(interval: string): number {
+  const ivl = canonInterval(interval);
+  return ivl ? CANON_SECONDS[ivl] : 3600;
+}
+
+/**
+ * Drop the still-forming candle: any bar whose bucket equals the bucket the
+ * current time falls into is incomplete and must never reach the engines.
+ */
+function dropOpenCandle(candles: Candle[], interval: string): Candle[] {
+  if (candles.length === 0) return candles;
+  const sec = bucketSeconds(interval);
+  const currentBucket = Math.floor(Date.now() / 1000 / sec) * sec;
+  const last = candles[candles.length - 1];
+  return last.time >= currentBucket ? candles.slice(0, -1) : candles;
+}
+
+/** Weekends have no forex/metal prints — do not flag them as stale data. */
+function marketLikelyClosed(now = new Date()): boolean {
+  const day = now.getUTCDay();
+  if (day === 6) return true;                     // Saturday
+  if (day === 0 && now.getUTCHours() < 22) return true;  // Sunday before open
+  if (day === 5 && now.getUTCHours() >= 22) return true; // Friday after close
+  return false;
+}
+
+function buildMeta(candles: Candle[], provider: MarketProvider, interval: string): DataMeta | undefined {
+  if (candles.length === 0) return undefined;
+  const sec = bucketSeconds(interval);
+  const last = candles[candles.length - 1];
+  const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - last.time);
+  // One closed candle is expected to be up to 2 intervals old (open + close lag).
+  const stale = !marketLikelyClosed() && ageSeconds > sec * 2;
+  return {
+    provider,
+    interval,
+    intervalSeconds: sec,
+    lastCandleTime: last.time,
+    lastCandleIso: new Date(last.time * 1000).toISOString(),
+    lastClose: last.close,
+    ageSeconds,
+    stale,
+    candles: candles.length,
+  };
+}
+
+/** Normalise every provider result into the canonical closed-candle snapshot. */
+function finalize(candles: Candle[], provider: MarketProvider, interval: string, livePrice: number | null): OhlcvResponse {
+  const closed = dropOpenCandle(sanitizeAscending(candles), interval);
+  const anchored = anchorLast(closed, livePrice);
+  return { candles: anchored, provider, meta: buildMeta(anchored, provider, interval) };
+}
+
+function sanitizeAscending(candles: Candle[]): Candle[] {
+  return [...candles].sort((a, b) => a.time - b.time);
+}
 
 /**
  * Provider cascade: MetalPrice API → FMP → Alpha Vantage → Polygon → Twelve Data.
@@ -420,20 +495,20 @@ export const fetchOhlcv = createServerFn({ method: "POST" })
 
     const mp = await fetchMetalPrice(data.symbol, data.interval, data.outputsize);
     if (mp.candles.length > 0) {
-      return { candles: anchorLast(mp.candles, live.price), provider: "metalpriceapi" };
+      return finalize(mp.candles, "metalpriceapi", data.interval, live.price);
     }
     if (mp.error) errors.push(`metalpriceapi: ${mp.error}`);
 
     const fmp = await fetchFmp(data.symbol, data.interval, data.outputsize);
-    if (fmp.candles.length > 0) return { candles: anchorLast(fmp.candles, live.price), provider: "fmp" };
+    if (fmp.candles.length > 0) return finalize(fmp.candles, "fmp", data.interval, live.price);
     if (fmp.error) errors.push(`fmp: ${fmp.error}`);
 
     const av = await fetchAlphaVantage(data.symbol, data.interval, data.outputsize);
-    if (av.candles.length > 0) return { candles: anchorLast(av.candles, live.price), provider: "alphavantage" };
+    if (av.candles.length > 0) return finalize(av.candles, "alphavantage", data.interval, live.price);
     if (av.error) errors.push(`alphavantage: ${av.error}`);
 
     const poly = await fetchPolygon(data.symbol, data.interval, data.outputsize);
-    if (poly.candles.length > 0) return { candles: anchorLast(poly.candles, live.price), provider: "polygon" };
+    if (poly.candles.length > 0) return finalize(poly.candles, "polygon", data.interval, live.price);
     if (poly.error) errors.push(`polygon: ${poly.error}`);
 
     const td = await fetchCandles({
@@ -443,7 +518,7 @@ export const fetchOhlcv = createServerFn({ method: "POST" })
         outputsize: data.outputsize,
       },
     });
-    if (td.candles.length > 0) return { candles: anchorLast(td.candles, live.price), provider: "twelvedata" };
+    if (td.candles.length > 0) return finalize(td.candles, "twelvedata", data.interval, live.price);
     if (td.error) errors.push(`twelvedata: ${td.error}`);
 
     return { candles: [], provider: "none", error: errors.join(" | ") || "no data from any provider" };

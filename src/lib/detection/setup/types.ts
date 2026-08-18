@@ -38,6 +38,10 @@ export type OrderType =
 export type SetupStatus =
   | "READY"
   | "WAITING_RETRACE"
+  /** Bearish/bullish alternative count detects a potential B — watch only. */
+  | "POTENTIAL_B"
+  /** Pending order placed, waiting for price; never market-executed. */
+  | "ARMED"
   | "TRIGGERED"
   | "INVALIDATED"
   | "NO_SETUP";
@@ -164,5 +168,16 @@ export interface DetectSetupsResult {
   decision: OperationalReport;
   diagonal?: DiagonalPattern | null;
   provider?: "metalpriceapi" | "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+  /** Snapshot freshness contract (provider, UTC timestamp, age, last close). */
+  meta?: {
+    provider: string;
+    interval: string;
+    lastCandleTime: number;
+    lastCandleIso: string;
+    lastClose: number;
+    ageSeconds: number;
+    stale: boolean;
+    candles: number;
+  } | null;
   error?: string;
 }

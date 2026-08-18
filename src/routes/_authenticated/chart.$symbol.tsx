@@ -30,7 +30,7 @@ import { ArrowLeft, RefreshCw } from "lucide-react";
 
 const Search = z.object({
   tf: z.string().default("1h"),
-  bars: z.coerce.number().int().min(50).max(2000).default(500),
+  bars: z.coerce.number().int().min(50).max(5000).default(500),
 });
 
 export const Route = createFileRoute("/_authenticated/chart/$symbol")({
@@ -55,10 +55,52 @@ function decodeSymbolParam(raw: string): string {
   return value;
 }
 
+/**
+ * Server functions can transiently 404 ("Server function <id> not found")
+ * right after a deploy/HMR boundary. Retry those once before surfacing an
+ * error to the trader.
+ */
+async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      last = err;
+      const msg = String((err as Error)?.message ?? "");
+      const transient = /not found|failed to fetch|networkerror|load failed|502|503|504/i.test(msg);
+      if (!transient) throw err;
+      await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
+    }
+  }
+  throw last;
+}
+
+interface DataHealth {
+  provider: string;
+  lastCandleIso: string;
+  lastClose: number;
+  ageSeconds: number;
+  stale: boolean;
+  candles: number;
+}
+
+/** Human age of the last closed candle. */
+function formatAge(seconds: number): string {
+  if (seconds < 90) return `${seconds}s`;
+  const m = Math.round(seconds / 60);
+  if (m < 90) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+
+
+
 const DEFAULT_LAYERS: LayerToggles = {
   elliottLines: true,
   elliottLabels: true,
-  alternativeCount: false,
+  alternativeCount: true,
   invalidation: true,
   fibonacciElliott: false,
   liquidity: true,
@@ -89,6 +131,7 @@ function ChartPage() {
   const [elliott, setElliott] = useState<ElliottResultDTO | null>(null);
   const [macro, setMacro] = useState<ElliottResultDTO | null>(null);
   const [provider, setProvider] = useState<string | null>(null);
+  const [dataHealth, setDataHealth] = useState<DataHealth | null>(null);
   const [ict, setIct] = useState<IctContext | null>(null);
   const [signals, setSignals] = useState<TradeSignal[]>([]);
   const [decision, setDecision] = useState<OperationalReport | null>(null);
@@ -135,14 +178,15 @@ function ChartPage() {
       // ── Stage A: fast first paint (200 bars) ──────────────────────────────
       const quickBars = Math.min(200, outputsize);
       const quick = await t.measureAsync("apiFetchMs", () =>
-        cached(chartKey(["ohlc", sym, ivl, quickBars]), () =>
+        cached(chartKey(["ohlc", sym, ivl, quickBars]), () => withRetry(() =>
           fetch({ data: { symbol: sym, interval: ivl, outputsize: quickBars } }),
-        ),
+        )),
       );
       if (!alive()) return;
       if (quick.candles.length) {
         setCandles(quick.candles);
         setProvider(quick.provider);
+        if (quick.meta) setDataHealth(quick.meta);
         t.mark("firstPaintMs");
       }
 
@@ -151,14 +195,15 @@ function ChartPage() {
       if (outputsize > quickBars) {
         setPhase("Loading extended history...");
         full = await t.measureAsync("historyFetchMs", () =>
-          cached(chartKey(["ohlc", sym, ivl, outputsize]), () =>
+          cached(chartKey(["ohlc", sym, ivl, outputsize]), () => withRetry(() =>
             fetch({ data: { symbol: sym, interval: ivl, outputsize } }),
-          ),
+          )),
         );
         if (!alive()) return;
         if (full.candles.length) {
           setCandles(full.candles);
           setProvider(full.provider);
+          if (full.meta) setDataHealth(full.meta);
         } else {
           full = quick;
         }
@@ -175,7 +220,7 @@ function ChartPage() {
       setPhase("Calculating Elliott structure...");
       const lastTime = full.candles[full.candles.length - 1]?.time ?? 0;
       const ana = await t.measureAsync("elliottMs", () =>
-        cached(chartKey(["ana", sym, ivl, outputsize, degreePref, lastTime]), () =>
+        cached(chartKey(["ana", sym, ivl, outputsize, degreePref, lastTime]), () => withRetry(() =>
           analyze({
             data: {
               symbol: sym,
@@ -185,7 +230,7 @@ function ChartPage() {
               candles: full.candles,
               includeMacro: true,
             },
-          }),
+          })),
         ),
       );
       if (!alive()) return;
@@ -197,9 +242,10 @@ function ChartPage() {
       // ── Stage D: setups + operational decision ────────────────────────────
       setPhase("Scanning setups...");
       const sigs = await t.measureAsync("setupsMs", () =>
-        cached(chartKey(["setups", sym, ivl, outputsize, lastTime]), () =>
-          findSetups({ data: { symbol: sym, interval: ivl, outputsize, topN: 3 } }),
-        ),
+        cached(chartKey(["setups", sym, ivl, outputsize, lastTime]), () => withRetry(() =>
+          // Exact same OHLC snapshot the chart is rendering.
+          findSetups({ data: { symbol: sym, interval: ivl, outputsize, topN: 3, candles: full.candles } }),
+        )),
       );
       if (!alive()) return;
       setSignals(sigs.signals);
@@ -271,6 +317,16 @@ function ChartPage() {
           <SymbolPicker symbol={decoded} tf={interval} bars={outputsize} />
           <Badge variant="outline" className="font-mono">{interval}</Badge>
           {provider && <Badge variant="secondary" className="font-mono text-[10px]">{provider}</Badge>}
+          {dataHealth && (
+            <Badge
+              variant="outline"
+              className={`font-mono text-[10px] ${dataHealth.stale ? "text-destructive border-destructive/50" : "text-muted-foreground"}`}
+              title={`Última vela cerrada ${dataHealth.lastCandleIso} · ${dataHealth.candles} velas`}
+            >
+              {dataHealth.lastCandleIso.slice(5, 16).replace("T", " ")}Z · {px(dataHealth.lastClose)} ·{" "}
+              {formatAge(dataHealth.ageSeconds)}{dataHealth.stale ? " · STALE" : ""}
+            </Badge>
+          )}
           {elliott && elliott.status !== "NO_COUNT" && (
             <Badge variant="outline" className={`font-mono ${elliott.bias === "BULLISH" ? "text-success" : elliott.bias === "BEARISH" ? "text-destructive" : ""}`}>
               {elliott.bias} · W{elliott.currentWave ?? "?"} · {elliott.confidence}

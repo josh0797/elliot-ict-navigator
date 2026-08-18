@@ -16,8 +16,22 @@ import { detectEndingDiagonal } from "./detection/elliott/diagonal";
 const Input = z.object({
   symbol: z.string().min(2),
   interval: z.string().default("1h"),
-  outputsize: z.number().int().min(50).max(2000).default(500),
+  outputsize: z.number().int().min(50).max(5000).default(500),
   topN: z.number().int().min(1).max(10).default(3),
+  /**
+   * Exact OHLC snapshot the chart is rendering. When present the engines
+   * analyse the very same candles — no second fetch, no drift.
+   */
+  candles: z
+    .array(z.object({
+      time: z.number(),
+      open: z.number(),
+      high: z.number(),
+      low: z.number(),
+      close: z.number(),
+      volume: z.number().optional(),
+    }))
+    .optional(),
 });
 
 /**
@@ -59,7 +73,11 @@ function emptyElliottDto() {
 export const detectSetups = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<DetectSetupsResult> => {
-    const { candles, provider, error } = await fetchOhlcv({ data });
+    const snapshot = data.candles?.length
+      ? { candles: data.candles, provider: "none" as const, meta: undefined, error: undefined }
+      : await fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } });
+    const { candles, provider, error } = snapshot;
+    const meta = snapshot.meta ?? null;
     const emptyElliott = emptyElliottDto();
     if (error || candles.length === 0) {
       return {
@@ -89,6 +107,8 @@ export const detectSetups = createServerFn({ method: "POST" })
       symbol: data.symbol,
       timeframe: data.interval,
       topN: data.topN,
+      diagonalBreakout: diagonal?.brokenOut === true,
+      dataStale: meta?.stale === true,
     });
     const currentPrice = lifted[lifted.length - 1].close;
     const check = scenarioConsistencyCheck(toElliottResult(analysis, bias), {
@@ -107,6 +127,7 @@ export const detectSetups = createServerFn({ method: "POST" })
       decision,
       diagonal,
       provider,
+      meta,
     };
   });
 
@@ -123,9 +144,12 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
     const emptyElliott = emptyElliottDto();
 
     const [htfRes, ltfRes] = await Promise.all([
-      fetchOhlcv({ data: { ...data, interval: htfInterval, outputsize: 300 } }),
-      fetchOhlcv({ data }),
+      fetchOhlcv({ data: { symbol: data.symbol, interval: htfInterval, outputsize: 300 } }),
+      data.candles?.length
+        ? Promise.resolve({ candles: data.candles, provider: "none" as const, meta: undefined, error: undefined })
+        : fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } }),
     ]);
+    const ltfMeta = ltfRes.meta ?? null;
 
     const ltfError = ltfRes.error;
     if (ltfError || ltfRes.candles.length === 0) {
@@ -175,6 +199,8 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
       symbol: data.symbol,
       timeframe: data.interval,
       topN: data.topN,
+      diagonalBreakout: diagonal?.brokenOut === true,
+      dataStale: ltfMeta?.stale === true,
     });
     const currentPrice = ltfLifted[ltfLifted.length - 1].close;
     const check = scenarioConsistencyCheck(toElliottResult(analysis, elliottBias), {
@@ -195,5 +221,6 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
       decision,
       diagonal,
       provider: ltfRes.provider,
+      meta: ltfMeta,
     };
   });

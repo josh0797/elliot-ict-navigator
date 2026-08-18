@@ -43,7 +43,17 @@ export interface SetupEngineOptions {
   minScore?: number;
   minRR?: number;
   config?: Partial<SetupConfig>;
+  /**
+   * Ending-diagonal breakout confirmed on this timeframe. Counts as a
+   * structural confirmation for anticipation setups.
+   */
+  diagonalBreakout?: boolean;
+  /** True when the OHLC snapshot lags more than one interval → no signals. */
+  dataStale?: boolean;
 }
+
+/** Minimum RR an anticipated (ARMED) setup must offer. */
+const ANTICIPATION_MIN_RR = 1.5;
 
 function isFinitePositive(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n > 0;
@@ -58,6 +68,11 @@ function elliottInvalidationLevel(count: ElliottCountV2, direction: SignalDirect
   void direction;
   // Long impulse: wave 2 cannot retrace below wave 0. Wave 4 cannot enter wave 1.
   const p0 = priceAtLabel(count, "0");
+  // Corrective B: the count dies if price trades beyond the B extreme.
+  if (count.currentWave === "B") {
+    const pb = priceAtLabel(count, "B");
+    if (isFinitePositive(pb)) return pb!;
+  }
   if (count.currentWave === "2" && isFinitePositive(p0)) return p0!;
   if (count.currentWave === "4") {
     const p1 = priceAtLabel(count, "1");
@@ -240,18 +255,54 @@ function buildRationale(
 /** Minimum score an alternative must reach before it can drive orders. */
 const ALT_MIN_SCORE = 0.4;
 
+export type OperativeCountSource = "PRIMARY" | "ALTERNATIVE";
+
+export interface OperativeCount {
+  count: ElliottCountV2;
+  source: OperativeCountSource;
+}
+
+/** Anticipation confirmations (at least one is required to ARM a setup). */
+export type AnticipationConfirmation =
+  | "CHOCH_CLOSED"
+  | "SWEEP_CLOSE_BACK"
+  | "DIAGONAL_BREAKOUT";
+
+function collectConfirmations(
+  ict: IctContext,
+  direction: SignalDirection,
+  candleCount: number,
+  diagonalBreakout: boolean,
+): AnticipationConfirmation[] {
+  const out: AnticipationConfirmation[] = [];
+  const cutoff = candleCount - STRUCTURE_RECENT_BARS;
+  const choch = [...ict.structure].reverse().find(
+    (e: StructureEvent) =>
+      e.type === "CHoCH" && e.state === "CONFIRMED" && e.direction === direction && e.index >= cutoff,
+  );
+  if (choch) out.push("CHOCH_CLOSED");
+  const wantSweep = direction === "long" ? "sell_side" : "buy_side";
+  const sweep = [...ict.sweeps].reverse().find(
+    (s: LiquiditySweep) =>
+      s.type === wantSweep && s.wickBeyond && s.closeBack && s.index >= candleCount - SWEEP_RECENT_BARS,
+  );
+  if (sweep) out.push("SWEEP_CLOSE_BACK");
+  if (diagonalBreakout) out.push("DIAGONAL_BREAKOUT");
+  return out;
+}
+
 /**
  * The count the operational layer trades from. Mirrors the decision engine's
  * arbitration: primary while it is not INVALIDATED, otherwise the highest
  * scoring non-invalidated alternative above `ALT_MIN_SCORE`.
  */
-function pickOperativeCount(elliott: ElliottAnalysis): ElliottCountV2 | null {
+export function pickOperativeCount(elliott: ElliottAnalysis): OperativeCount | null {
   const primary = elliott.primary;
-  if (primary && primary.state !== "INVALIDATED") return primary;
+  if (primary && primary.state !== "INVALIDATED") return { count: primary, source: "PRIMARY" };
   const alt = [...elliott.alternatives]
     .filter((c) => c.state !== "INVALIDATED" && c.state !== "NO_COUNT" && c.score >= ALT_MIN_SCORE)
     .sort((a, b) => b.score - a.score)[0];
-  return alt ?? null;
+  return alt ? { count: alt, source: "ALTERNATIVE" } : null;
 }
 
 export function detectSignals(
@@ -262,13 +313,16 @@ export function detectSignals(
   opts: SetupEngineOptions,
 ): TradeSignal[] {
   const config = resolveConfig(opts.config);
+  // ── Gate 0: the snapshot must be fresh. Stale data can never arm an order.
+  if (opts.dataStale) return [];
   // ── Gate 1: an OPERABLE Elliott count must exist.
   // Consistency with the decision engine: when the primary count is missing or
   // INVALIDATED, the best valid alternative takes over as the operative count
   // (the decision engine already lets it vote). Previously the alternative
   // could vote but never produce an order — a logical inconsistency.
-  const primary = pickOperativeCount(elliott);
-  if (!primary) return [];
+  const operative = pickOperativeCount(elliott);
+  if (!operative) return [];
+  const primary = operative.count;
   if (candles.length === 0) return [];
 
   const direction = primary.direction;
@@ -291,14 +345,27 @@ export function detectSignals(
   // (already handled downstream by `deriveTrigger`) elevates to TRIGGERED.
   const conf = structuralConfirmation(ict, direction, candles.length);
   const wave = primary.currentWave;
-  const inAnticipationWave = wave === "2" || wave === "4";
-  const recentSweepCutoffAll = candles.length - SWEEP_RECENT_BARS;
-  const wantSweep = direction === "long" ? "sell_side" : "buy_side";
-  const hasRecentSweep = ict.sweeps.some(
-    (s) => s.index >= recentSweepCutoffAll && s.type === wantSweep,
+  const inAnticipationWave = wave === "2" || wave === "4" || wave === "B";
+  const confirmations = collectConfirmations(
+    ict, direction, candles.length, opts.diagonalBreakout === true,
   );
-  const anticipation = !conf.ok && inAnticipationWave && hasRecentSweep;
-  if (!conf.ok && !anticipation) return [];
+  // Anticipation needs an entry wave AND at least one hard confirmation
+  // (closed CHoCH, sweep with close-back, or confirmed diagonal breakout).
+  const anticipation = !conf.ok && inAnticipationWave && confirmations.length > 0;
+  // POTENTIAL_B: an alternative count of sufficient quality reading a B in the
+  // opposite premium/discount zone — watch-only, no confirmation yet.
+  const pdZone = ict.pdArray?.zone ?? null;
+  const potentialB =
+    operative.source === "ALTERNATIVE" &&
+    wave === "B" &&
+    primary.score >= 0.5 &&
+    ((direction === "short" && pdZone === "PREMIUM") || (direction === "long" && pdZone === "DISCOUNT"));
+  if (!conf.ok && !anticipation && !potentialB) return [];
+  const anticipated = !conf.ok;
+  // Anticipated setups demand a better payoff than confirmed ones.
+  const effectiveMinRR = anticipated
+    ? Math.max(opts.minRR ?? MIN_RR, ANTICIPATION_MIN_RR)
+    : (opts.minRR ?? MIN_RR);
 
   const elliottInv = elliottInvalidationLevel(primary, direction);
 
@@ -316,7 +383,7 @@ export function detectSignals(
   });
 
   const minScore = opts.minScore ?? MIN_SCORE;
-  const minRR = opts.minRR ?? MIN_RR;
+  const minRR = effectiveMinRR;
   const topN = opts.topN ?? config.topN;
 
   const setups: TradeSignal[] = [];
@@ -420,7 +487,7 @@ export function detectSignals(
     }
 
     const gatesPassed = [
-      "ELLIOTT_PRIMARY",
+      `ELLIOTT_OPERATIVE:${operative.source}`,
       "POI_ACTIVE",
       "FINITE_LEVELS",
       "SL_SIDE",
@@ -431,11 +498,16 @@ export function detectSignals(
       "CONFIRMED_PIVOTS",
       conf.ok ? `STRUCTURAL_CONFIRMATION:${conf.via}` : "ANTICIPATION_MODE",
     ];
+    if (operative.source === "PRIMARY") gatesPassed.push("ELLIOTT_PRIMARY");
+    for (const c of confirmations) gatesPassed.push(`CONFIRMATION:${c}`);
     if (anticipation) warnings.push("ANTICIPATION_NO_STRUCTURAL_CONFIRMATION");
+    if (potentialB && !anticipation) warnings.push("POTENTIAL_B_UNCONFIRMED");
 
-    // Anticipation setups must never be executed at market: force LIMIT.
-    if (anticipation && (cls.orderType === "MARKET_BUY" || cls.orderType === "MARKET_SELL")) {
-      continue;
+    // Anticipated setups must never be executed at market: downgrade a market
+    // classification to a STOP order so a confirmed break is still required.
+    let orderType = cls.orderType;
+    if (anticipated && (orderType === "MARKET_BUY" || orderType === "MARKET_SELL")) {
+      orderType = orderType === "MARKET_BUY" ? "BUY_STOP" : "SELL_STOP";
     }
 
     const entryZone = { top: Math.max(poi.top, poi.bottom), bottom: Math.min(poi.top, poi.bottom) };
@@ -451,7 +523,7 @@ export function detectSignals(
     );
     const trigger = deriveTrigger({
       direction,
-      orderType: cls.orderType,
+      orderType,
       entry,
       entryZone,
       currentPrice: lastClose,
@@ -461,12 +533,15 @@ export function detectSignals(
     });
     // Upgrade status when a pending order has actually been triggered by price.
     let finalStatus = cls.status;
-    if (trigger.satisfied && cls.status === "WAITING_RETRACE") {
+    if (anticipated) {
+      finalStatus = anticipation ? "ARMED" : "POTENTIAL_B";
+    }
+    if (trigger.satisfied && (finalStatus === "WAITING_RETRACE" || finalStatus === "ARMED")) {
       finalStatus = "TRIGGERED";
     }
 
     const nextAction = trigger.satisfied
-      ? `Ejecutar ${cls.orderType} en ${entry.toFixed(5)} con SL ${sl.toFixed(5)}.`
+      ? `Ejecutar ${orderType} en ${entry.toFixed(5)} con SL ${sl.toFixed(5)}.`
       : trigger.description;
 
     const invalidationReason =
@@ -485,7 +560,7 @@ export function detectSignals(
       timeframe: opts.timeframe,
       direction,
       directionUpper: direction === "long" ? "LONG" : "SHORT",
-      orderType: cls.orderType,
+      orderType,
       status: finalStatus,
       entry,
       sl,
