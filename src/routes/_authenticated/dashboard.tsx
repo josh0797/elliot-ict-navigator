@@ -142,7 +142,7 @@ function PairCard({ row, tf }: { row: Row; tf: string }) {
           {row.loading ? (
             <Skeleton className="h-16 w-full" />
           ) : row.error ? (
-            <div className="text-xs text-destructive">{row.error}</div>
+            <div className="text-xs text-muted-foreground">Sin datos disponibles ahora mismo.</div>
           ) : (
             <>
               <div className="flex items-baseline justify-between">
