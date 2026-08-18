@@ -16,8 +16,22 @@ import { detectEndingDiagonal } from "./detection/elliott/diagonal";
 const Input = z.object({
   symbol: z.string().min(2),
   interval: z.string().default("1h"),
-  outputsize: z.number().int().min(50).max(2000).default(500),
+  outputsize: z.number().int().min(50).max(5000).default(500),
   topN: z.number().int().min(1).max(10).default(3),
+  /**
+   * Exact OHLC snapshot the chart is rendering. When present the engines
+   * analyse the very same candles — no second fetch, no drift.
+   */
+  candles: z
+    .array(z.object({
+      time: z.number(),
+      open: z.number(),
+      high: z.number(),
+      low: z.number(),
+      close: z.number(),
+      volume: z.number().optional(),
+    }))
+    .optional(),
 });
 
 /**
