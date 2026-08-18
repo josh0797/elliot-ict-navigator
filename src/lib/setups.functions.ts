@@ -73,7 +73,11 @@ function emptyElliottDto() {
 export const detectSetups = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<DetectSetupsResult> => {
-    const { candles, provider, error } = await fetchOhlcv({ data });
+    const snapshot = data.candles?.length
+      ? { candles: data.candles, provider: "none" as const, meta: undefined, error: undefined }
+      : await fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } });
+    const { candles, provider, error } = snapshot;
+    const meta = snapshot.meta ?? null;
     const emptyElliott = emptyElliottDto();
     if (error || candles.length === 0) {
       return {
@@ -103,6 +107,8 @@ export const detectSetups = createServerFn({ method: "POST" })
       symbol: data.symbol,
       timeframe: data.interval,
       topN: data.topN,
+      diagonalBreakout: diagonal?.brokenOut === true,
+      dataStale: meta?.stale === true,
     });
     const currentPrice = lifted[lifted.length - 1].close;
     const check = scenarioConsistencyCheck(toElliottResult(analysis, bias), {
@@ -121,6 +127,7 @@ export const detectSetups = createServerFn({ method: "POST" })
       decision,
       diagonal,
       provider,
+      meta,
     };
   });
 
