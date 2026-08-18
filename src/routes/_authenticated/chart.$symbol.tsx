@@ -30,7 +30,7 @@ import { ArrowLeft, RefreshCw } from "lucide-react";
 
 const Search = z.object({
   tf: z.string().default("1h"),
-  bars: z.coerce.number().int().min(50).max(2000).default(500),
+  bars: z.coerce.number().int().min(50).max(5000).default(500),
 });
 
 export const Route = createFileRoute("/_authenticated/chart/$symbol")({
@@ -55,10 +55,40 @@ function decodeSymbolParam(raw: string): string {
   return value;
 }
 
+/**
+ * Server functions can transiently 404 ("Server function <id> not found")
+ * right after a deploy/HMR boundary. Retry those once before surfacing an
+ * error to the trader.
+ */
+async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      last = err;
+      const msg = String((err as Error)?.message ?? "");
+      const transient = /not found|failed to fetch|networkerror|load failed|502|503|504/i.test(msg);
+      if (!transient) throw err;
+      await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
+    }
+  }
+  throw last;
+}
+
+interface DataHealth {
+  provider: string;
+  lastCandleIso: string;
+  lastClose: number;
+  ageSeconds: number;
+  stale: boolean;
+  candles: number;
+}
+
 const DEFAULT_LAYERS: LayerToggles = {
   elliottLines: true,
   elliottLabels: true,
-  alternativeCount: false,
+  alternativeCount: true,
   invalidation: true,
   fibonacciElliott: false,
   liquidity: true,
