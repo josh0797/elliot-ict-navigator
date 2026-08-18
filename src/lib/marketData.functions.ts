@@ -402,27 +402,38 @@ export interface OhlcvResponse {
   error?: string;
 }
 
-export type MarketProvider = "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
+export type MarketProvider = "metalpriceapi" | "fmp" | "alphavantage" | "polygon" | "twelvedata" | "none";
 
 /**
- * Provider cascade: FMP → Alpha Vantage → Polygon → Twelve Data.
+ * Provider cascade: MetalPrice API → FMP → Alpha Vantage → Polygon → Twelve Data.
  * The first provider returning usable candles wins; the rest are never called.
+ * Whatever provider serves the series, the last candle is anchored to the
+ * MetalPrice live rate when available.
  */
 export const fetchOhlcv = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<OhlcvResponse> => {
     const errors: string[] = [];
 
+    const live = await fetchMetalPriceLatest(data.symbol);
+    if (live.error) errors.push(`metalpriceapi(latest): ${live.error}`);
+
+    const mp = await fetchMetalPrice(data.symbol, data.interval, data.outputsize);
+    if (mp.candles.length > 0) {
+      return { candles: anchorLast(mp.candles, live.price), provider: "metalpriceapi" };
+    }
+    if (mp.error) errors.push(`metalpriceapi: ${mp.error}`);
+
     const fmp = await fetchFmp(data.symbol, data.interval, data.outputsize);
-    if (fmp.candles.length > 0) return { candles: fmp.candles, provider: "fmp" };
+    if (fmp.candles.length > 0) return { candles: anchorLast(fmp.candles, live.price), provider: "fmp" };
     if (fmp.error) errors.push(`fmp: ${fmp.error}`);
 
     const av = await fetchAlphaVantage(data.symbol, data.interval, data.outputsize);
-    if (av.candles.length > 0) return { candles: av.candles, provider: "alphavantage" };
+    if (av.candles.length > 0) return { candles: anchorLast(av.candles, live.price), provider: "alphavantage" };
     if (av.error) errors.push(`alphavantage: ${av.error}`);
 
     const poly = await fetchPolygon(data.symbol, data.interval, data.outputsize);
-    if (poly.candles.length > 0) return { candles: poly.candles, provider: "polygon" };
+    if (poly.candles.length > 0) return { candles: anchorLast(poly.candles, live.price), provider: "polygon" };
     if (poly.error) errors.push(`polygon: ${poly.error}`);
 
     const td = await fetchCandles({
@@ -432,7 +443,7 @@ export const fetchOhlcv = createServerFn({ method: "POST" })
         outputsize: data.outputsize,
       },
     });
-    if (td.candles.length > 0) return { candles: td.candles, provider: "twelvedata" };
+    if (td.candles.length > 0) return { candles: anchorLast(td.candles, live.price), provider: "twelvedata" };
     if (td.error) errors.push(`twelvedata: ${td.error}`);
 
     return { candles: [], provider: "none", error: errors.join(" | ") || "no data from any provider" };
