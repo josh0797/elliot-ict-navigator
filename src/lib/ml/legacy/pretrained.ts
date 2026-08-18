@@ -1,5 +1,8 @@
 // AUTO-GENERATED from elliott-ict-pro2.html MLEngine.PRETRAINED
 // DO NOT EDIT. Frozen schema: legacy-pretrained-html-v1
+// Weights are copied verbatim from the trained model; float64 rounding of the
+// last digits is expected and must not be "fixed".
+/* eslint-disable no-loss-of-precision */
 export const PRETRAINED = {
   weights: [
     [
