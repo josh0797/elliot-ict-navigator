@@ -145,8 +145,11 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
 
     const [htfRes, ltfRes] = await Promise.all([
       fetchOhlcv({ data: { ...data, interval: htfInterval, outputsize: 300 } }),
-      fetchOhlcv({ data }),
+      data.candles?.length
+        ? Promise.resolve({ candles: data.candles, provider: "none" as const, meta: undefined, error: undefined })
+        : fetchOhlcv({ data: { symbol: data.symbol, interval: data.interval, outputsize: data.outputsize } }),
     ]);
+    const ltfMeta = ltfRes.meta ?? null;
 
     const ltfError = ltfRes.error;
     if (ltfError || ltfRes.candles.length === 0) {
@@ -196,6 +199,8 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
       symbol: data.symbol,
       timeframe: data.interval,
       topN: data.topN,
+      diagonalBreakout: diagonal?.brokenOut === true,
+      dataStale: ltfMeta?.stale === true,
     });
     const currentPrice = ltfLifted[ltfLifted.length - 1].close;
     const check = scenarioConsistencyCheck(toElliottResult(analysis, elliottBias), {
@@ -216,5 +221,6 @@ export const detectSetupsMTF = createServerFn({ method: "POST" })
       decision,
       diagonal,
       provider: ltfRes.provider,
+      meta: ltfMeta,
     };
   });
