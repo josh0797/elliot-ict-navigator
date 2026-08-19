@@ -12,7 +12,21 @@
  */
 import { evaluateFreshness, pickLeastStale, type Freshness } from "./freshness";
 import { fetchTwelveDataCandles } from "./twelvedata.server";
+import { AsyncCache, ohlcvKey, ttlForTimeframe } from "./async-cache";
+import { GuardRegistry, parseRetryAfter } from "./limiter";
+import { logDataEvent, newRequestId } from "./instrumentation";
 import type { Candle, DataMeta, MarketProvider, OhlcvResponse } from "./types";
+
+/** Result contract every provider fetcher returns. */
+export interface ProviderResult {
+  candles: Candle[];
+  error?: string;
+  /** HTTP status, when the provider answered at all (429 trips the breaker). */
+  httpStatus?: number;
+  retryAfterMs?: number;
+  /** Provider rejected the request for quota/plan reasons (premium-only, credits). */
+  quota?: boolean;
+}
 
 const CRYPTO_BASES = new Set([
   "BTC",
@@ -225,7 +239,7 @@ async function fetchMetalPrice(
   symbol: string,
   interval: string,
   limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+): Promise<ProviderResult> {
   const apiKey = process.env["METALPRICE_API_KEY"];
   if (!apiKey) return { candles: [], error: "METALPRICE_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -249,7 +263,13 @@ async function fetchMetalPrice(
     };
     if (!res.ok || json.success === false || !json.rates) {
       const msg = typeof json.error === "string" ? json.error : json.error?.message;
-      return { candles: [], error: msg ?? `metalpriceapi ${res.status}` };
+      return {
+        candles: [],
+        error: msg ?? `metalpriceapi ${res.status}`,
+        httpStatus: res.status,
+        retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
+        quota: res.status === 429 || res.status === 402 || res.status === 403,
+      };
     }
     const closes = Object.entries(json.rates)
       .map(([date, row]) => ({ time: parseUtc(date), close: row[quote] ?? row[`${base}${quote}`] }))
@@ -289,11 +309,7 @@ const FMP_INTRADAY: Partial<Record<CanonInterval, string>> = {
   "4h": "4hour",
 };
 
-async function fetchFmp(
-  symbol: string,
-  interval: string,
-  limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+async function fetchFmp(symbol: string, interval: string, limit: number): Promise<ProviderResult> {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) return { candles: [], error: "FMP_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -383,7 +399,7 @@ async function fetchAlphaVantage(
   symbol: string,
   interval: string,
   limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+): Promise<ProviderResult> {
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
   if (!apiKey) return { candles: [], error: "ALPHA_VANTAGE_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -422,8 +438,16 @@ async function fetchAlphaVantage(
       | string
       | undefined;
     const seriesKey = Object.keys(json).find((k) => /Time Series|Digital Currency/i.test(k));
-    if (!res.ok || !seriesKey)
-      return { candles: [], error: errMsg ?? `alphavantage ${res.status}` };
+    if (!res.ok || !seriesKey) {
+      const msg = errMsg ?? `alphavantage ${res.status}`;
+      return {
+        candles: [],
+        error: msg,
+        httpStatus: res.status,
+        retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
+        quota: res.status === 429 || /premium|higher API call|rate limit/i.test(msg),
+      };
+    }
     const series = json[seriesKey] as Record<string, Record<string, string>>;
     const pick = (
       row: Record<string, string>,
@@ -461,7 +485,7 @@ async function fetchPolygon(
   symbol: string,
   interval: string,
   limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+): Promise<ProviderResult> {
   const apiKey = process.env.MASSIVE_API_KEY;
   if (!apiKey) return { candles: [], error: "MASSIVE_API_KEY missing" };
   const ivl = toPolygonInterval(interval);
@@ -480,7 +504,13 @@ async function fetchPolygon(
       results?: Array<{ t: number; o: number; h: number; l: number; c: number; v?: number }>;
     };
     if (!res.ok || json.status === "ERROR" || !json.results) {
-      return { candles: [], error: json.error ?? `polygon ${res.status}` };
+      return {
+        candles: [],
+        error: json.error ?? `polygon ${res.status}`,
+        httpStatus: res.status,
+        retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
+        quota: res.status === 429 || res.status === 403,
+      };
     }
     const candles: Candle[] = json.results.slice(-limit).map((r) => ({
       time: Math.floor(r.t / 1000),
@@ -566,7 +596,169 @@ function sanitizeAscending(candles: Candle[]): Candle[] {
   return [...candles].sort((a, b) => a.time - b.time);
 }
 
-/** Runs the full provider cascade and returns a canonical closed-candle snapshot. */
+// ── Shared server-side state: cache + coalescing + per-provider guards ──────
+const ohlcvCache = new AsyncCache();
+const guards = new GuardRegistry();
+
+/** Test/ops hook: drop cached snapshots and reopen every breaker. */
+export function resetMarketDataCaches(): void {
+  ohlcvCache.invalidate();
+  guards.reset();
+}
+
+const METALS = new Set(["XAU", "XAG", "XPT", "XPD"]);
+
+function isIntraday(interval: string): boolean {
+  const ivl = canonInterval(interval) ?? interval;
+  return ivl !== "1d" && ivl !== "1w" && ivl !== "1M";
+}
+
+/**
+ * Provider order for a (symbol, interval) pair. Providers that structurally
+ * cannot serve the request are never attempted — that alone removes most of
+ * the wasted upstream calls.
+ */
+export function resolveCascade(
+  symbol: string,
+  interval: string,
+  env: Record<string, string | undefined> = process.env,
+): MarketProvider[] {
+  const intraday = isIntraday(interval);
+  const { base } = classify(symbol);
+  const list: MarketProvider[] = [];
+
+  // MetalPrice API only publishes one rate per day → daily/weekly metals only.
+  if (!intraday && METALS.has(base) && env["METALPRICE_API_KEY"]) list.push("metalpriceapi");
+  // Polygon / Massive is the intraday workhorse.
+  if (env["POLYGON_API_KEY"] || env["MASSIVE_API_KEY"]) list.push("polygon");
+  // Alpha Vantage intraday FX requires a premium plan; free keys only do daily.
+  if (env["ALPHA_VANTAGE_API_KEY"] && (!intraday || env["ALPHA_VANTAGE_PREMIUM"] === "true"))
+    list.push("alphavantage");
+  // FMP legacy endpoint is opt-in until migrated to the current API.
+  if (env["FMP_API_KEY"] && env["FMP_LEGACY_ENABLED"] === "true") list.push("fmp");
+  if (env["TWELVEDATA_API_KEY"]) list.push("twelvedata");
+  return list;
+}
+
+function runProvider(
+  provider: MarketProvider,
+  data: { symbol: string; interval: string; outputsize: number },
+): Promise<ProviderResult> {
+  switch (provider) {
+    case "metalpriceapi":
+      return fetchMetalPrice(data.symbol, data.interval, data.outputsize);
+    case "fmp":
+      return fetchFmp(data.symbol, data.interval, data.outputsize);
+    case "alphavantage":
+      return fetchAlphaVantage(data.symbol, data.interval, data.outputsize);
+    case "polygon":
+      return fetchPolygon(data.symbol, data.interval, data.outputsize);
+    case "twelvedata":
+      return fetchTwelveDataCandles({
+        symbol: data.symbol,
+        interval: toTwelveDataInterval(canonInterval(data.interval) ?? data.interval),
+        outputsize: Math.min(2000, data.outputsize),
+      });
+    default:
+      return Promise.resolve({ candles: [], error: "unknown provider" });
+  }
+}
+
+/**
+ * Cached + coalesced provider call. Identical concurrent requests for
+ * `provider:symbol:timeframe:limit` share ONE upstream fetch, and a provider
+ * that is rate-limited or tripped open is skipped without any network call.
+ */
+async function fetchGuarded(
+  provider: MarketProvider,
+  data: { symbol: string; interval: string; outputsize: number },
+  requestId: string,
+): Promise<ProviderResult & { skipped?: boolean }> {
+  const guard = guards.get(provider);
+  const key = ohlcvKey({
+    provider,
+    symbol: data.symbol,
+    timeframe: data.interval,
+    limit: data.outputsize,
+  });
+
+  // A fresh cached payload is served even while the breaker is open; only the
+  // upstream call inside the cache miss path is gated.
+  let ran = false;
+  const started = Date.now();
+  try {
+    const { value, outcome } = await ohlcvCache.resolve(
+      key,
+      ttlForTimeframe(canonInterval(data.interval) ?? data.interval),
+      async () => {
+        const acq = guard.tryAcquire();
+        if (!acq.ok) {
+          const err = new Error(`${provider}: ${acq.reason} (retry in ${acq.retryAfterMs}ms)`);
+          (err as Error & { skipped?: boolean }).skipped = true;
+          throw err;
+        }
+        ran = true;
+        return runProvider(provider, data);
+      },
+    );
+    if (ran) {
+      if (value.error && (value.httpStatus === 429 || value.quota)) {
+        guard.onFailure(value.quota ? "quota" : "rate_limited", value.retryAfterMs);
+      } else if (value.error && value.candles.length === 0) {
+        guard.onFailure("error");
+      } else {
+        guard.onSuccess();
+      }
+    }
+    logDataEvent({
+      requestId,
+      provider,
+      symbol: data.symbol,
+      timeframe: data.interval,
+      limit: data.outputsize,
+      cache: outcome,
+      outcome: value.error ? "error" : value.candles.length ? "served" : "empty",
+      reason: value.error,
+      candles: value.candles.length,
+      ms: Date.now() - started,
+    });
+    return value;
+  } catch (err) {
+    const skipped = (err as Error & { skipped?: boolean }).skipped === true;
+    if (!skipped) guard.onFailure("error");
+    logDataEvent({
+      requestId,
+      provider,
+      symbol: data.symbol,
+      timeframe: data.interval,
+      limit: data.outputsize,
+      outcome: "skipped",
+      reason: (err as Error).message,
+      ms: Date.now() - started,
+    });
+    return { candles: [], error: (err as Error).message, skipped };
+  }
+}
+
+const livePriceCache = new AsyncCache();
+
+async function livePriceFor(symbol: string): Promise<{ price: number | null; error?: string }> {
+  const { base } = classify(symbol);
+  if (!METALS.has(base) || !process.env["METALPRICE_API_KEY"]) return { price: null };
+  const guard = guards.get("metalpriceapi");
+  if (guard.isOpen()) return { price: null, error: "metalpriceapi cooling down" };
+  const { value } = await livePriceCache.resolve(`live:${symbol}`, 60_000, () =>
+    fetchMetalPriceLatest(symbol),
+  );
+  return value;
+}
+
+/**
+ * Runs the (filtered) provider cascade and returns a canonical closed-candle
+ * snapshot. Result is cached per provider:symbol:timeframe:limit, so Elliott,
+ * ICT, setups, Fibonacci and liquidity all reuse the SAME dataset instead of
+ * re-querying upstream.
+ */
 export async function loadOhlcv(data: {
   symbol: string;
   interval: string;
@@ -574,29 +766,26 @@ export async function loadOhlcv(data: {
 }): Promise<OhlcvResponse> {
   const errors: string[] = [];
   const nowSeconds = Math.floor(Date.now() / 1000);
+  const requestId = newRequestId();
 
-  const live = await fetchMetalPriceLatest(data.symbol);
+  const cascade = resolveCascade(data.symbol, data.interval);
+  if (cascade.length === 0) {
+    return {
+      candles: [],
+      provider: "none",
+      status: "DATA_STALE",
+      asOf: nowSeconds,
+      livePrice: null,
+      error: `no provider configured for ${data.symbol} ${data.interval}`,
+    };
+  }
+
+  const live = await livePriceFor(data.symbol);
   if (live.error) errors.push(`metalpriceapi(latest): ${live.error}`);
 
-  const cascade: Array<[MarketProvider, () => Promise<{ candles: Candle[]; error?: string }>]> = [
-    ["metalpriceapi", () => fetchMetalPrice(data.symbol, data.interval, data.outputsize)],
-    ["fmp", () => fetchFmp(data.symbol, data.interval, data.outputsize)],
-    ["alphavantage", () => fetchAlphaVantage(data.symbol, data.interval, data.outputsize)],
-    ["polygon", () => fetchPolygon(data.symbol, data.interval, data.outputsize)],
-    [
-      "twelvedata",
-      () =>
-        fetchTwelveDataCandles({
-          symbol: data.symbol,
-          interval: toTwelveDataInterval(canonInterval(data.interval) ?? data.interval),
-          outputsize: Math.min(2000, data.outputsize),
-        }),
-    ],
-  ];
-
   const staleAttempts: Array<OhlcvResponse & { freshness: Freshness }> = [];
-  for (const [provider, run] of cascade) {
-    const res = await run();
+  for (const provider of cascade) {
+    const res = await fetchGuarded(provider, data, requestId);
     if (res.error) errors.push(`${provider}: ${res.error}`);
     if (res.candles.length === 0) continue;
     const snapshot = finalize(res.candles, provider, data.interval, nowSeconds, live.price);
@@ -624,5 +813,3 @@ export async function loadOhlcv(data: {
     error: errors.join(" | ") || "no data from any provider",
   };
 }
-
-export { toPolygonSymbol, toPolygonInterval, toTwelveDataInterval, canonInterval, aggregate };
