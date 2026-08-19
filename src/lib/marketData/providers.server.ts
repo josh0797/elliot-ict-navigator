@@ -686,13 +686,9 @@ async function fetchGuarded(
     limit: data.outputsize,
   });
 
-  // A fresh cached payload is served even while the breaker is open.
+  // A fresh cached payload is served even while the breaker is open; only the
+  // upstream call inside the cache miss path is gated.
   let ran = false;
-  const gate = guard.isOpen() ? null : undefined;
-  if (gate === null) {
-    // breaker open: cache-only attempt
-  }
-
   const started = Date.now();
   try {
     const { value, outcome } = await ohlcvCache.resolve(
