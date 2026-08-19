@@ -309,11 +309,7 @@ const FMP_INTRADAY: Partial<Record<CanonInterval, string>> = {
   "4h": "4hour",
 };
 
-async function fetchFmp(
-  symbol: string,
-  interval: string,
-  limit: number,
-): Promise<ProviderResult> {
+async function fetchFmp(symbol: string, interval: string, limit: number): Promise<ProviderResult> {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) return { candles: [], error: "FMP_API_KEY missing" };
   const ivl = canonInterval(interval);

@@ -48,7 +48,11 @@ export class ProviderGuard {
     this.prune(now);
     if (this.calls.length >= this.cfg.maxPerMinute) {
       const oldest = this.calls[0];
-      return { ok: false, reason: "RATE_LIMIT", retryAfterMs: Math.max(0, 60_000 - (now - oldest)) };
+      return {
+        ok: false,
+        reason: "RATE_LIMIT",
+        retryAfterMs: Math.max(0, 60_000 - (now - oldest)),
+      };
     }
     const min = this.cfg.minIntervalMs ?? 0;
     const last = this.calls[this.calls.length - 1];

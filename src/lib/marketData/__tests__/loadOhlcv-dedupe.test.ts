@@ -84,10 +84,6 @@ describe("loadOhlcv upstream discipline", () => {
       "alphavantage",
       "twelvedata",
     ]);
-    expect(resolveCascade("EUR/USD", "1d", env)).toEqual([
-      "polygon",
-      "alphavantage",
-      "twelvedata",
-    ]);
+    expect(resolveCascade("EUR/USD", "1d", env)).toEqual(["polygon", "alphavantage", "twelvedata"]);
   });
 });

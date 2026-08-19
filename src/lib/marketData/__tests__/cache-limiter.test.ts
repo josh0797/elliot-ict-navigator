@@ -36,7 +36,11 @@ describe("AsyncCache coalescing", () => {
 describe("ProviderGuard", () => {
   it("stops retrying a rate-limited provider and honours Retry-After", () => {
     let now = 0;
-    const g = new ProviderGuard("twelvedata", { maxPerMinute: 100, baseCooldownMs: 30_000 }, () => now);
+    const g = new ProviderGuard(
+      "twelvedata",
+      { maxPerMinute: 100, baseCooldownMs: 30_000 },
+      () => now,
+    );
     expect(g.tryAcquire().ok).toBe(true);
     g.onFailure("rate_limited", 120_000);
     for (let i = 0; i < 30; i++) {
@@ -50,7 +54,7 @@ describe("ProviderGuard", () => {
   });
 
   it("backs off exponentially on consecutive failures", () => {
-    let now = 0;
+    const now = 0;
     const g = new ProviderGuard("polygon", { maxPerMinute: 100, baseCooldownMs: 1_000 }, () => now);
     g.onFailure("error");
     expect(g.cooldownRemainingMs()).toBe(1_000);
@@ -77,7 +81,9 @@ describe("ProviderGuard", () => {
   it("parses Retry-After seconds and dates", () => {
     expect(parseRetryAfter("30")).toBe(30_000);
     expect(parseRetryAfter(null)).toBeUndefined();
-    expect(parseRetryAfter(new Date(1_000_000 + 5_000).toUTCString(), 1_000_000)).toBeGreaterThan(0);
+    expect(parseRetryAfter(new Date(1_000_000 + 5_000).toUTCString(), 1_000_000)).toBeGreaterThan(
+      0,
+    );
   });
 
   it("registry reuses one guard per provider", () => {
