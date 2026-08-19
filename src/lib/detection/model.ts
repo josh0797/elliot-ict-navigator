@@ -1,7 +1,7 @@
 import type { LogRegModel } from "@/lib/ml/logreg";
 import { predictProba } from "@/lib/ml/logreg";
-import type { FeatureSpec, RawSetupRow } from "@/lib/training.functions";
-import { rawToFeatureRaw } from "@/lib/training.functions";
+import type { FeatureSpec, RawSetupRow } from "@/lib/ml/dataset";
+import { rawToFeatureRaw } from "@/lib/ml/dataset";
 
 let cache: { model: LogRegModel; spec: FeatureSpec; version: number } | null = null;
 
