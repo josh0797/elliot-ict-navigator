@@ -12,7 +12,21 @@
  */
 import { evaluateFreshness, pickLeastStale, type Freshness } from "./freshness";
 import { fetchTwelveDataCandles } from "./twelvedata.server";
+import { AsyncCache, ohlcvKey, ttlForTimeframe } from "./async-cache";
+import { GuardRegistry, parseRetryAfter } from "./limiter";
+import { logDataEvent, newRequestId } from "./instrumentation";
 import type { Candle, DataMeta, MarketProvider, OhlcvResponse } from "./types";
+
+/** Result contract every provider fetcher returns. */
+export interface ProviderResult {
+  candles: Candle[];
+  error?: string;
+  /** HTTP status, when the provider answered at all (429 trips the breaker). */
+  httpStatus?: number;
+  retryAfterMs?: number;
+  /** Provider rejected the request for quota/plan reasons (premium-only, credits). */
+  quota?: boolean;
+}
 
 const CRYPTO_BASES = new Set([
   "BTC",
@@ -225,7 +239,7 @@ async function fetchMetalPrice(
   symbol: string,
   interval: string,
   limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+): Promise<ProviderResult> {
   const apiKey = process.env["METALPRICE_API_KEY"];
   if (!apiKey) return { candles: [], error: "METALPRICE_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -249,7 +263,13 @@ async function fetchMetalPrice(
     };
     if (!res.ok || json.success === false || !json.rates) {
       const msg = typeof json.error === "string" ? json.error : json.error?.message;
-      return { candles: [], error: msg ?? `metalpriceapi ${res.status}` };
+      return {
+        candles: [],
+        error: msg ?? `metalpriceapi ${res.status}`,
+        httpStatus: res.status,
+        retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
+        quota: res.status === 429 || res.status === 402 || res.status === 403,
+      };
     }
     const closes = Object.entries(json.rates)
       .map(([date, row]) => ({ time: parseUtc(date), close: row[quote] ?? row[`${base}${quote}`] }))
@@ -293,7 +313,7 @@ async function fetchFmp(
   symbol: string,
   interval: string,
   limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+): Promise<ProviderResult> {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) return { candles: [], error: "FMP_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -383,7 +403,7 @@ async function fetchAlphaVantage(
   symbol: string,
   interval: string,
   limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+): Promise<ProviderResult> {
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
   if (!apiKey) return { candles: [], error: "ALPHA_VANTAGE_API_KEY missing" };
   const ivl = canonInterval(interval);
@@ -422,8 +442,16 @@ async function fetchAlphaVantage(
       | string
       | undefined;
     const seriesKey = Object.keys(json).find((k) => /Time Series|Digital Currency/i.test(k));
-    if (!res.ok || !seriesKey)
-      return { candles: [], error: errMsg ?? `alphavantage ${res.status}` };
+    if (!res.ok || !seriesKey) {
+      const msg = errMsg ?? `alphavantage ${res.status}`;
+      return {
+        candles: [],
+        error: msg,
+        httpStatus: res.status,
+        retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
+        quota: res.status === 429 || /premium|higher API call|rate limit/i.test(msg),
+      };
+    }
     const series = json[seriesKey] as Record<string, Record<string, string>>;
     const pick = (
       row: Record<string, string>,
@@ -461,7 +489,7 @@ async function fetchPolygon(
   symbol: string,
   interval: string,
   limit: number,
-): Promise<{ candles: Candle[]; error?: string }> {
+): Promise<ProviderResult> {
   const apiKey = process.env.MASSIVE_API_KEY;
   if (!apiKey) return { candles: [], error: "MASSIVE_API_KEY missing" };
   const ivl = toPolygonInterval(interval);
@@ -480,7 +508,13 @@ async function fetchPolygon(
       results?: Array<{ t: number; o: number; h: number; l: number; c: number; v?: number }>;
     };
     if (!res.ok || json.status === "ERROR" || !json.results) {
-      return { candles: [], error: json.error ?? `polygon ${res.status}` };
+      return {
+        candles: [],
+        error: json.error ?? `polygon ${res.status}`,
+        httpStatus: res.status,
+        retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
+        quota: res.status === 429 || res.status === 403,
+      };
     }
     const candles: Candle[] = json.results.slice(-limit).map((r) => ({
       time: Math.floor(r.t / 1000),
