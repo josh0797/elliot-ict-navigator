@@ -504,7 +504,15 @@ function ChartPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <ProviderSelector
+            value={providerPref}
+            onChange={setProviderPref}
+            symbol={decoded}
+            interval={interval}
+            activeProvider={provider}
+          />
           <ChartViewToggle mode={viewMode} onChange={setViewMode} />
+
           <div className="flex rounded-md border border-border bg-card overflow-hidden text-xs">
             {["15min", "1h", "4h", "1day"].map((t) => (
               <button
