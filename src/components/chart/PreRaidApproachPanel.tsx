@@ -6,7 +6,11 @@
  */
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { getLatestPreRaid, type PreRaidLatestResult, type PreRaidLatestRow } from "@/lib/preRaid.functions";
+import {
+  getLatestPreRaid,
+  type PreRaidLatestResult,
+  type PreRaidLatestRow,
+} from "@/lib/preRaid.functions";
 import { Badge } from "@/components/ui/badge";
 
 type Outcome = {
@@ -19,7 +23,13 @@ type Outcome = {
 
 const HORIZON_KEYS = ["outcome_1m", "outcome_3m", "outcome_5m", "outcome_15m"] as const;
 
-export function PreRaidApproachPanel({ symbol, compact = false }: { symbol: string; compact?: boolean }) {
+export function PreRaidApproachPanel({
+  symbol,
+  compact = false,
+}: {
+  symbol: string;
+  compact?: boolean;
+}) {
   const fetchLatest = useServerFn(getLatestPreRaid);
   const [data, setData] = useState<PreRaidLatestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +86,9 @@ export function PreRaidApproachPanel({ symbol, compact = false }: { symbol: stri
       {!error && !long && !short && (
         <div className="text-[11px] text-muted-foreground">
           Sin observaciones. Ventana validada: {data?.window.window ?? "06:00–07:59 Europe/London"}
-          {data?.window ? ` · London ${data.window.londonLocal} · ${data.window.active ? "activa" : "inactiva"}` : ""}
+          {data?.window
+            ? ` · London ${data.window.londonLocal} · ${data.window.active ? "activa" : "inactiva"}`
+            : ""}
           . Fuera de la ventana no se calcula ningún score.
         </div>
       )}
@@ -93,11 +105,15 @@ export function PreRaidApproachPanel({ symbol, compact = false }: { symbol: stri
                   className={`rounded border p-2 ${isBest ? "border-primary/70" : "border-border/50"}`}
                 >
                   <div className="flex items-center justify-between text-[11px] uppercase tracking-wide">
-                    <span className={dir === "long" ? "text-success" : "text-destructive"}>{dir}</span>
+                    <span className={dir === "long" ? "text-success" : "text-destructive"}>
+                      {dir}
+                    </span>
                     {isBest && <span className="text-primary text-[10px]">mayor likeness</span>}
                   </div>
                   <div className="mt-1 font-mono text-sm">
-                    {row ? `${row.component_count}/5 · ${Math.round(row.setup_score * 100)}% likeness` : "—"}
+                    {row
+                      ? `${row.component_count}/5 · ${Math.round(row.setup_score * 100)}% likeness`
+                      : "—"}
                   </div>
                 </div>
               );
@@ -112,10 +128,7 @@ export function PreRaidApproachPanel({ symbol, compact = false }: { symbol: stri
               <Line label="micro_pullback" value={num(best.micro_pullback, 3)} />
               <Line label="asia_position" value={num(best.asia_position, 3)} />
               <Line label="raid_state" value={best.raid_state ?? "—"} />
-              <Line
-                label="raid_norm"
-                value={num(best.minutes_since_relevant_raid_norm, 3)}
-              />
+              <Line label="raid_norm" value={num(best.minutes_since_relevant_raid_norm, 3)} />
               <Line label="atr_m5" value={num(best.atr_m5, 3)} />
               <Line label="provider" value={best.provider ?? "—"} />
             </div>
@@ -157,7 +170,9 @@ function Outcomes({ row }: { row: PreRaidLatestRow }) {
             <td className="text-right">{num(o.directional_close_return_atr, 2)}</td>
             <td className="text-right">{num(o.mfe_atr, 2)}</td>
             <td className="text-right">{num(o.mae_atr, 2)}</td>
-            <td className={`text-right ${o.displacement_1atr ? "text-success" : "text-muted-foreground"}`}>
+            <td
+              className={`text-right ${o.displacement_1atr ? "text-success" : "text-muted-foreground"}`}
+            >
               {o.displacement_1atr ? "yes" : "no"}
             </td>
           </tr>

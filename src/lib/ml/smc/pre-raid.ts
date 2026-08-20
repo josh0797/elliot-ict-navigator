@@ -250,9 +250,7 @@ export function scorePreRaidApproach(input: {
   const raidWindow = closed.slice(-RAID_LOOKBACK_BARS);
   let raidIdx: number | null = null;
   for (let i = raidWindow.length - 1; i >= 0; i--) {
-    const beyond = isLong
-      ? raidWindow[i].low < relevantLevel
-      : raidWindow[i].high > relevantLevel;
+    const beyond = isLong ? raidWindow[i].low < relevantLevel : raidWindow[i].high > relevantLevel;
     if (beyond) {
       raidIdx = i;
       break;

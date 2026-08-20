@@ -53,9 +53,7 @@ export interface PreRaidEvaluationReport {
   error?: string;
 }
 
-type AdminClient = Awaited<
-  typeof import("@/integrations/supabase/client.server")
->["supabaseAdmin"];
+type AdminClient = Awaited<typeof import("@/integrations/supabase/client.server")>["supabaseAdmin"];
 
 async function admin(): Promise<AdminClient> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -138,13 +136,25 @@ export async function capturePreRaidObservations(
     skipped: 0,
   };
   // Cheap guard first: nothing to do outside the validated research window.
-  if (!inPreRaidWindow(floorMinute(nowSeconds)) && !inPreRaidWindow(floorMinute(nowSeconds) - 5 * MIN)) {
+  if (
+    !inPreRaidWindow(floorMinute(nowSeconds)) &&
+    !inPreRaidWindow(floorMinute(nowSeconds) - 5 * MIN)
+  ) {
     return base;
   }
 
-  const snapshot = await loadOhlcv({ symbol: PRE_RAID_SYMBOL, interval: "1min", outputsize: M1_BARS });
+  const snapshot = await loadOhlcv({
+    symbol: PRE_RAID_SYMBOL,
+    interval: "1min",
+    outputsize: M1_BARS,
+  });
   if (!snapshot.candles.length) {
-    return { ...base, status: "data_unavailable", provider: snapshot.provider, error: snapshot.error };
+    return {
+      ...base,
+      status: "data_unavailable",
+      provider: snapshot.provider,
+      error: snapshot.error,
+    };
   }
   if (snapshot.status !== "OK") {
     return {
@@ -286,7 +296,11 @@ export async function evaluatePreRaidOutcomes(
     const candidateAt = Math.floor(new Date(row.candidate_at).getTime() / 1000);
     const patch: Record<string, unknown> = {};
     for (const horizon of PRE_RAID_HORIZONS) {
-      const key = `outcome_${horizon}m` as "outcome_1m" | "outcome_3m" | "outcome_5m" | "outcome_15m";
+      const key = `outcome_${horizon}m` as
+        | "outcome_1m"
+        | "outcome_3m"
+        | "outcome_5m"
+        | "outcome_15m";
       if (row[key] != null) continue; // idempotent — never recompute
       const outcome = computePreRaidOutcome({
         candidateAt,

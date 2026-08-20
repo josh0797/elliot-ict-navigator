@@ -137,7 +137,14 @@ describe("PRE_RAID_APPROACH_V1 detector", () => {
 });
 
 describe("PRE_RAID_APPROACH_V1 isolation", () => {
-  const FORBIDDEN = ["elliott", "logreg", "detection/model", "detection/decision", "detection/setup", "detection/engine"];
+  const FORBIDDEN = [
+    "elliott",
+    "logreg",
+    "detection/model",
+    "detection/decision",
+    "detection/setup",
+    "detection/engine",
+  ];
   it("imports no Elliott / logreg / model / decision module", () => {
     const dir = join(process.cwd(), "src/lib/ml/smc");
     const files = readdirSync(dir).filter((f) => f.startsWith("pre-raid"));

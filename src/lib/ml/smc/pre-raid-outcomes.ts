@@ -60,7 +60,7 @@ export function computePreRaidOutcome(input: {
   const close = bars[bars.length - 1].close;
   const favorable = isLong ? high - referencePrice : referencePrice - low;
   const adverse = isLong ? referencePrice - low : high - referencePrice;
-  const closeReturn = (isLong ? close - referencePrice : referencePrice - close);
+  const closeReturn = isLong ? close - referencePrice : referencePrice - close;
 
   const mfe = Math.max(0, favorable) / atrM5;
   return {
