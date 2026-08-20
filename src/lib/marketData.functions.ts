@@ -11,7 +11,9 @@ import { loadOhlcv } from "./marketData/providers.server";
 import type { OhlcvResponse } from "./marketData/types";
 
 export type { Candle, DataMeta, MarketProvider, OhlcvResponse } from "./marketData/types";
+export type { ProviderPreference } from "./marketData/provider-choice";
 
 export const fetchOhlcv = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => OhlcvInput.parse(d))
   .handler(async ({ data }): Promise<OhlcvResponse> => loadOhlcv(data));
+
