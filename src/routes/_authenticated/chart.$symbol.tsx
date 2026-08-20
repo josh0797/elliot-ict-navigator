@@ -461,6 +461,16 @@ function ChartPage() {
               {provider}
             </Badge>
           )}
+          {providerPref !== "auto" && (
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-primary border-primary/50"
+              title="Fuente de datos fijada manualmente: sin fallback silencioso."
+            >
+              Fuente fijada: {PROVIDER_LABELS[providerPref]}
+            </Badge>
+          )}
+
           {snapshot && Number.isFinite(snapshot.livePrice ?? NaN) && (
             <Badge
               variant="outline"
