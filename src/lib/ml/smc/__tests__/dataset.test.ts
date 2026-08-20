@@ -64,6 +64,54 @@ describe("strict cutoff", () => {
   });
 });
 
+describe("previous trading day history", () => {
+  it("resolves the previous UTC day and records provenance", () => {
+    const row = rows(0.5);
+    expect(row.provenance.previous_day_history_ok).toBe(true);
+    expect(row.provenance.previous_trading_day_distance_days).toBe(1);
+    expect(row.provenance.previous_trading_day_bars).toBeGreaterThanOrEqual(60);
+  });
+
+  it("is invalid (not trainable) when previous-day history is missing", () => {
+    // 300 minutes of history only -> same UTC day, no previous day.
+    const short = m1Series({ count: 300 });
+    const row = buildSmcDatasetRow(entry, [...short, ...forwardSeries(ENTRY_TIME, 2600, 1)], {});
+    expect(row.valid).toBe(false);
+    expect(row.invalid_reason).toBe("missing_previous_day_history");
+    expect(row.features).toBeNull();
+    expect(row.outcomes).toBeNull();
+    expect(row.provenance.previous_day_history_ok).toBe(false);
+  });
+
+  it("skips the weekend for a Monday entry (previous trading day = Friday)", () => {
+    // Monday 2025-01-20 07:06 UTC; history covers Fri 17th onward.
+    const mondayEntry = Math.floor(Date.parse("2025-01-20T07:06:00Z") / 1000);
+    const bars = m1Series({ endOpen: mondayEntry - MIN, count: 3 * 1440 }).filter((b) => {
+      const dow = new Date(b.time * 1000).getUTCDay();
+      return dow !== 0 && dow !== 6; // market closed at the weekend
+    });
+    const row = buildSmcDatasetRow(
+      { ...entry, entryTime: mondayEntry },
+      [...bars, ...forwardSeries(mondayEntry, bars[bars.length - 1].close, 1)],
+      {},
+    );
+    expect(row.valid).toBe(true);
+    expect(row.provenance.previous_trading_day_distance_days).toBe(3);
+    const fri = new Date(row.provenance.previous_trading_day_start! * 1000).getUTCDay();
+    expect(fri).toBe(5);
+  });
+
+  it("stays invalid when the whole lookback window has no trading day bars", () => {
+    const mondayEntry = Math.floor(Date.parse("2025-01-20T07:06:00Z") / 1000);
+    const bars = m1Series({ endOpen: mondayEntry - MIN, count: 400 });
+    const row = buildSmcDatasetRow({ ...entry, entryTime: mondayEntry }, bars, {
+      previousDayMaxLookbackDays: 1,
+    });
+    expect(row.valid).toBe(false);
+    expect(row.invalid_reason).toBe("missing_previous_day_history");
+  });
+});
+
 describe("future mutation invariance", () => {
   it("keeps features/audit identical while outcomes differ", () => {
     const up = rows(1.2);
