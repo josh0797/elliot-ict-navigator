@@ -66,6 +66,7 @@ export function sweep(
     side: "SSL",
     type: "sell_side",
     price: 1994,
+    targetLiquidityId: "l1",
     wickBeyond: true,
     closeBack: true,
     displacementAfter: false,
