@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "sdk_version": "0.26.2",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://flevmaghmmjaoqdpxhob.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "wave-ict-trader",
+      "version": "0.1.0",
+      "title": "Wave ICT Trader"
+    },
+    "tools": [
+      {
+        "name": "list_symbols",
+        "title": "List tradable symbols",
+        "description": "List the FX, metals and crypto symbols this terminal can analyze, with their asset group.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "analyze_symbol",
+        "title": "Analyze Elliott + ICT",
+        "description": "Run the Elliott Wave count (with higher-timeframe macro context) and the ICT read (structure, POIs, liquidity) for one symbol and timeframe.",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "symbol": {
+              "type": "string",
+              "minLength": 2,
+              "description": "Symbol, e.g. XAU/USD or EUR/USD."
+            },
+            "interval": {
+              "default": "1h",
+              "description": "Timeframe: 15min, 1h, 4h, 1day, 1week.",
+              "type": "string"
+            },
+            "outputsize": {
+              "default": 500,
+              "description": "Candles to load.",
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 5000
+            },
+            "includeMacro": {
+              "default": true,
+              "description": "Include the higher-timeframe macro count.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "symbol"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "detect_setups",
+        "title": "Detect trade setups",
+        "description": "Run the multi-timeframe setup engine and return the operational decision (BUY/SELL/WAIT/NO_TRADE) plus entry, stop and targets for the top candidate setups.",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "symbol": {
+              "type": "string",
+              "minLength": 2,
+              "description": "Symbol, e.g. XAU/USD."
+            },
+            "interval": {
+              "default": "1h",
+              "description": "Execution timeframe: 15min, 1h, 4h, 1day.",
+              "type": "string"
+            },
+            "outputsize": {
+              "default": 500,
+              "description": "Candles to load.",
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 5000
+            },
+            "topN": {
+              "default": 3,
+              "description": "Max setups to return.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            }
+          },
+          "required": [
+            "symbol"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_stored_setups",
+        "title": "List stored setups",
+        "description": "List setups already detected and stored by the terminal, newest first, optionally filtered by symbol or status.",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "symbol": {
+              "description": "Filter by symbol.",
+              "type": "string",
+              "minLength": 2
+            },
+            "status": {
+              "description": "Filter by status, e.g. ACTIVE.",
+              "type": "string",
+              "minLength": 2
+            },
+            "limit": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_my_alerts",
+        "title": "List my alerts",
+        "description": "List the alerts sent to the signed-in user, newest first.",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
