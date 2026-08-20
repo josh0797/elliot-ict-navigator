@@ -22,11 +22,24 @@ export const Route = createFileRoute("/api/public/hooks/evaluate-results")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+        // Diagnostic-only research outcome updater (PRE_RAID_APPROACH_V1).
+        // Isolated + fail-open: never affects trade-result evaluation below.
+        const runPreRaid = async (): Promise<unknown> => {
+          try {
+            const { evaluatePreRaidOutcomes } = await import("@/lib/ml/smc/pre-raid.server");
+            return await evaluatePreRaidOutcomes();
+          } catch (e) {
+            return { status: "error", error: (e as Error).message };
+          }
+        };
+
         const { data: openSetups } = await supabaseAdmin
           .from("setups")
           .select("id,symbol,direction,entry,sl,tp1,tp2,detected_at")
           .eq("status", "pending");
-        if (!openSetups?.length) return Response.json({ ok: true, evaluated: 0 });
+        if (!openSetups?.length) {
+          return Response.json({ ok: true, evaluated: 0, preRaid: await runPreRaid() });
+        }
 
         // Cache prices per symbol
         const prices = new Map<string, number>();
@@ -80,7 +93,7 @@ export const Route = createFileRoute("/api/public/hooks/evaluate-results")({
             .insert({ setup_id: s.id, outcome, r_multiple: rMult });
           updated++;
         }
-        return Response.json({ ok: true, evaluated: updated });
+        return Response.json({ ok: true, evaluated: updated, preRaid: await runPreRaid() });
       },
     },
   },

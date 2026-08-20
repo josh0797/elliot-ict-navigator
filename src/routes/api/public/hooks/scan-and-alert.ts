@@ -201,7 +201,17 @@ export const Route = createFileRoute("/api/public/hooks/scan-and-alert")({
           }
         }
 
-        return Response.json({ ok: true, inserted: inserted.length });
+        // 3) Diagnostic-only prospective research capture (PRE_RAID_APPROACH_V1).
+        // Fully isolated + fail-open: nothing here can change scanning or alerts.
+        let preRaid: unknown = { status: "skipped" };
+        try {
+          const { capturePreRaidObservations } = await import("@/lib/ml/smc/pre-raid.server");
+          preRaid = await capturePreRaidObservations();
+        } catch (e) {
+          preRaid = { status: "error", error: (e as Error).message };
+        }
+
+        return Response.json({ ok: true, inserted: inserted.length, preRaid });
       },
     },
   },
