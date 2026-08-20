@@ -74,9 +74,11 @@ export function candidateMinutes(input: {
 }): number[] {
   // A candidate minute `t` needs the bar that closed at `t` (open t-60).
   const newest = input.lastClosedM1At + MIN;
+  // Exclusive lower bound: strictly newer than the stored cursor, and never
+  // older than the safe catch-up horizon (current validated London session).
   const floor = Math.max(
     floorMinute(input.nowSeconds) - MAX_CATCHUP_MINUTES * MIN,
-    input.lastStoredAt ? input.lastStoredAt + MIN : 0,
+    input.lastStoredAt ?? 0,
   );
   const out: number[] = [];
   for (let t = newest; t > floor && out.length < MAX_CATCHUP_MINUTES; t -= MIN) {
