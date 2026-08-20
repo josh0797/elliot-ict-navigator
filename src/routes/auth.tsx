@@ -10,6 +10,11 @@ import { toast } from "sonner";
 import { Activity } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    next: typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//")
+      ? s.next
+      : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Sign in — Elliott + ICT Pro" },
@@ -21,15 +26,26 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  function goNext() {
+    if (next) {
+      window.location.href = next;
+      return;
+    }
+    navigate({ to: "/dashboard" });
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/dashboard" });
+      if (!data.session) return;
+      if (next) window.location.href = next;
+      else navigate({ to: "/dashboard" });
     });
-  }, [navigate]);
+  }, [navigate, next]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -38,7 +54,7 @@ function AuthPage() {
     setLoading(false);
     if (error) return toast.error(error.message);
     toast.success("Signed in");
-    navigate({ to: "/dashboard" });
+    goNext();
   }
 
   async function handleSignUp(e: React.FormEvent) {
@@ -47,12 +63,12 @@ function AuthPage() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: window.location.origin + "/dashboard" },
+      options: { emailRedirectTo: window.location.origin + (next ?? "/dashboard") },
     });
     setLoading(false);
     if (error) return toast.error(error.message);
     toast.success("Account created — you are signed in.");
-    navigate({ to: "/dashboard" });
+    goNext();
   }
 
   return (
