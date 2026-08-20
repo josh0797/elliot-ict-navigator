@@ -654,7 +654,6 @@ export function resolveCascade(
   // Metals daily/weekly fallback of last resort (synthetic OHLC).
   if (metalHistory && env["METALPRICE_API_KEY"]) list.push("metalpriceapi");
   return list;
-
 }
 
 function runProvider(
