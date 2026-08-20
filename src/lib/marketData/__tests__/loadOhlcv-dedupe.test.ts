@@ -77,13 +77,18 @@ describe("loadOhlcv upstream discipline", () => {
       FMP_API_KEY: "k",
       TWELVEDATA_API_KEY: "k",
     };
-    expect(resolveCascade("XAU/USD", "4h", env)).toEqual(["polygon", "twelvedata"]);
+    // Intraday metals: MetalPrice publishes one rate per day → excluded.
+    expect(resolveCascade("XAU/USD", "4h", env)).toEqual(["twelvedata", "polygon"]);
+    expect(resolveCascade("XAU/USD", "15min", env)).not.toContain("metalpriceapi");
+    // Metals daily/weekly: true-OHLC providers first, MetalPrice last resort.
     expect(resolveCascade("XAU/USD", "1d", env)).toEqual([
-      "metalpriceapi",
+      "twelvedata",
       "polygon",
       "alphavantage",
-      "twelvedata",
+      "metalpriceapi",
     ]);
-    expect(resolveCascade("EUR/USD", "1d", env)).toEqual(["polygon", "alphavantage", "twelvedata"]);
+    expect(resolveCascade("XAU/USD", "1w", env)[0]).toBe("twelvedata");
+    expect(resolveCascade("XAU/USD", "1w", env).at(-1)).toBe("metalpriceapi");
+    expect(resolveCascade("EUR/USD", "1d", env)).toEqual(["twelvedata", "polygon", "alphavantage"]);
   });
 });

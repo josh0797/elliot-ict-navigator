@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AsyncCache, ohlcvKey, ttlForTimeframe } from "../async-cache";
-import { ProviderGuard, GuardRegistry, parseRetryAfter } from "../limiter";
+import {
+  ProviderGuard,
+  GuardRegistry,
+  parseRetryAfter,
+  DEFAULT_POLICIES,
+} from "../limiter";
 
 describe("AsyncCache coalescing", () => {
   it("shares one upstream call across concurrent identical requests", async () => {
@@ -89,5 +94,30 @@ describe("ProviderGuard", () => {
   it("registry reuses one guard per provider", () => {
     const reg = new GuardRegistry();
     expect(reg.get("polygon")).toBe(reg.get("polygon"));
+  });
+});
+
+describe("DEFAULT_POLICIES", () => {
+  it("caps Twelve Data at 60 upstream calls/min with 1s spacing (Grow limit is 144 credits/min)", () => {
+    expect(DEFAULT_POLICIES["twelvedata"].maxPerMinute).toBe(60);
+    expect(DEFAULT_POLICIES["twelvedata"].minIntervalMs).toBe(1_000);
+  });
+
+  it("keeps MetalPrice conservative (quote refreshes ~60s; requests are billed)", () => {
+    expect(DEFAULT_POLICIES["metalpriceapi"].maxPerMinute).toBe(10);
+  });
+
+  it("enforces the Twelve Data 1s spacing and 60/min ceiling at runtime", () => {
+    let now = 0;
+    const g = new ProviderGuard("twelvedata", DEFAULT_POLICIES["twelvedata"], () => now);
+    expect(g.tryAcquire().ok).toBe(true);
+    now += 500;
+    expect(g.tryAcquire().ok).toBe(false); // spacing
+    let granted = 1;
+    for (let i = 0; i < 200; i++) {
+      now += 1_000;
+      if (g.tryAcquire().ok) granted += 1;
+    }
+    expect(granted).toBe(60);
   });
 });
