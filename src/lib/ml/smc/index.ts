@@ -22,3 +22,44 @@ export {
   type SmcRegimeResult,
   type SmcSession,
 } from "./types";
+export {
+  SMC_OPERATIVE_MASK_NAME,
+  SMC_OPERATIVE_MASK_VERSION,
+  SMC_OPERATIVE_V1,
+  SMC_OPERATIVE_V1_COUNT,
+  SMC_OPERATIVE_V1_INDICES,
+  operativeV1NamedView,
+  projectOperativeV1,
+  projectOperativeV1Named,
+  type SmcOperativeFeatureName,
+} from "./masks";
+export {
+  buildFeatureWindow,
+  buildOutcomeWindow,
+  buildSmcDataset,
+  buildSmcDatasetRow,
+  floorToMinute,
+  resampleClosed,
+  type OhlcvLoader,
+  type SmcAuditContext,
+  type SmcDatasetOptions,
+  type SmcDatasetResult,
+  type SmcDatasetRow,
+  type SmcEntry,
+  type SmcFeatureSnapshot,
+  type SmcNegativeCandidate,
+  type SmcOutcomes,
+  type SmcProvenance,
+} from "./dataset";
+export {
+  generateNegativeCandidates,
+  negativesToEntries,
+  type NegativeSamplingOptions,
+} from "./negatives";
+export {
+  comparePositiveVsNegative,
+  summarizeByDisplacementOutcome,
+  summarizeOperativeFeatures,
+  type FeatureStats,
+  type GroupComparison,
+} from "./summary";
