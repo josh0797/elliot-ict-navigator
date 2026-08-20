@@ -23,6 +23,7 @@ import { InvalidationLegend } from "@/components/chart/InvalidationLegend";
 import { SymbolPicker } from "@/components/chart/SymbolPicker";
 import { SignalsPanel } from "@/components/chart/SignalsPanel";
 import { ScenariosPanel } from "@/components/chart/ScenariosPanel";
+import { PreRaidApproachPanel } from "@/components/chart/PreRaidApproachPanel";
 import { DecisionBanner } from "@/components/chart/DecisionBanner";
 import type { OperationalReport } from "@/lib/detection/decision/types";
 import { HISTORY_PRESETS } from "@/lib/symbols";
@@ -587,6 +588,7 @@ function ChartPage() {
               </div>
             )}
             <ScenariosPanel elliott={elliott} macro={macro} pxFmt={px} />
+            <PreRaidApproachPanel symbol={symbol} compact={viewMode !== "diagnostic"} />
             <div>
               <div className="text-xs uppercase tracking-widest text-muted-foreground">Setup</div>
               {setup ? (

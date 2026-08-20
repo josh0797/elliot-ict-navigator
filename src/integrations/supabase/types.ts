@@ -127,6 +127,96 @@ export type Database = {
         }
         Relationships: []
       }
+      pre_raid_observations: {
+        Row: {
+          approach_velocity: number | null
+          asia_position: number | null
+          atr_m5: number
+          candidate_at: string
+          component_count: number
+          components: Json
+          created_at: string
+          detector_version: string
+          direction: string
+          dist_liquidity: number | null
+          features: Json
+          id: string
+          london_context: Json
+          micro_pullback: number | null
+          minutes_since_relevant_raid_norm: number | null
+          outcome_15m: Json | null
+          outcome_1m: Json | null
+          outcome_3m: Json | null
+          outcome_5m: Json | null
+          outcomes_updated_at: string | null
+          provider: string | null
+          raid_state: string | null
+          reference_price: number
+          setup_score: number
+          source_last_closed_at: string | null
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          approach_velocity?: number | null
+          asia_position?: number | null
+          atr_m5: number
+          candidate_at: string
+          component_count: number
+          components?: Json
+          created_at?: string
+          detector_version: string
+          direction: string
+          dist_liquidity?: number | null
+          features?: Json
+          id?: string
+          london_context?: Json
+          micro_pullback?: number | null
+          minutes_since_relevant_raid_norm?: number | null
+          outcome_15m?: Json | null
+          outcome_1m?: Json | null
+          outcome_3m?: Json | null
+          outcome_5m?: Json | null
+          outcomes_updated_at?: string | null
+          provider?: string | null
+          raid_state?: string | null
+          reference_price: number
+          setup_score: number
+          source_last_closed_at?: string | null
+          symbol?: string
+          updated_at?: string
+        }
+        Update: {
+          approach_velocity?: number | null
+          asia_position?: number | null
+          atr_m5?: number
+          candidate_at?: string
+          component_count?: number
+          components?: Json
+          created_at?: string
+          detector_version?: string
+          direction?: string
+          dist_liquidity?: number | null
+          features?: Json
+          id?: string
+          london_context?: Json
+          micro_pullback?: number | null
+          minutes_since_relevant_raid_norm?: number | null
+          outcome_15m?: Json | null
+          outcome_1m?: Json | null
+          outcome_3m?: Json | null
+          outcome_5m?: Json | null
+          outcomes_updated_at?: string | null
+          provider?: string | null
+          raid_state?: string | null
+          reference_price?: number
+          setup_score?: number
+          source_last_closed_at?: string | null
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           active_pairs: string[]
