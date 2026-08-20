@@ -6,7 +6,9 @@
  * declarations from a module that declares `createServerFn`, which produced
  * runtime `ReferenceError`s in production.
  *
- * Provider cascade: MetalPrice API -> FMP -> Alpha Vantage -> Polygon -> Twelve Data.
+ * Provider cascade (see `resolveCascade`): true-OHLC providers first
+ * (Twelve Data -> Polygon/Massive -> Alpha Vantage), with MetalPrice API only as
+ * a last-resort metals daily/weekly fallback because its history is synthetic.
  * A provider only wins when its series is BOTH non-empty AND fresh; series from
  * different providers are never blended.
  */

@@ -78,6 +78,7 @@ export function TradingChart({
   signal,
   onPivotHover,
   viewMode = "diagnostic",
+  livePrice,
 }: {
   candles: Candle[];
   elliott: ElliottResultDTO | null;
@@ -88,6 +89,11 @@ export function TradingChart({
   signal?: TradeSignal | null;
   onPivotHover?: (tip: PivotTooltip | null) => void;
   viewMode?: ChartViewMode;
+  /**
+   * UI-ONLY live spot quote. Drawn as a horizontal price line; it is NEVER
+   * pushed into `candles` and never reaches Elliott/ICT/setups/ATR/decisions.
+   */
+  livePrice?: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -197,6 +203,24 @@ export function TradingChart({
     }));
     series.setData(candleData);
     if (candleData.length === 0) return;
+
+    // UI-only live spot marker (not part of the analysed series).
+    if (isFiniteNumber(livePrice) && livePrice > 0) {
+      try {
+        priceLinesRef.current.push(
+          series.createPriceLine({
+            price: livePrice,
+            color: "#38bdf8",
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: "LIVE",
+          }),
+        );
+      } catch {
+        /* price line unsupported — the header badge still shows the quote */
+      }
+    }
 
     const validTimes = new Set(chartCandles.map((c) => c.time));
     const sortedTimes = chartCandles.map((c) => c.time);
@@ -653,7 +677,7 @@ export function TradingChart({
     return () => chart.unsubscribeCrosshairMove(handler);
     // ICT overlays are intentionally minimal: the legend panel surfaces them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, elliott, internal, ict, layers, signal, viewMode]);
+  }, [candles, elliott, internal, ict, layers, signal, viewMode, livePrice]);
 
   return <div ref={containerRef} className="h-[520px] w-full" />;
 }
