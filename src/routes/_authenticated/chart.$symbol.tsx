@@ -24,7 +24,15 @@ import { SymbolPicker } from "@/components/chart/SymbolPicker";
 import { SignalsPanel } from "@/components/chart/SignalsPanel";
 import { ScenariosPanel } from "@/components/chart/ScenariosPanel";
 import { PreRaidApproachPanel } from "@/components/chart/PreRaidApproachPanel";
+import { SonicBetaPanel } from "@/components/chart/SonicBetaPanel";
+import { ProviderSelector } from "@/components/chart/ProviderSelector";
+import {
+  isProviderPreference,
+  PROVIDER_LABELS,
+  type ProviderPreference,
+} from "@/lib/marketData/provider-choice";
 import { DecisionBanner } from "@/components/chart/DecisionBanner";
+
 import type { OperationalReport } from "@/lib/detection/decision/types";
 import { HISTORY_PRESETS } from "@/lib/symbols";
 import { cached, chartKey, Timings, invalidate } from "@/lib/chart/cache";
@@ -145,6 +153,17 @@ function loadLayers(): LayerToggles {
   }
 }
 
+const PROVIDER_PREF_KEY = "chart-provider-preference";
+
+/** Persisted OHLC source choice (Auto by default). */
+function loadProviderPref(): ProviderPreference {
+  if (typeof window === "undefined") return "auto";
+  const raw = window.localStorage.getItem(PROVIDER_PREF_KEY);
+  return isProviderPreference(raw) ? raw : "auto";
+}
+
+
+
 function ChartPage() {
   const { symbol } = Route.useParams();
   const { tf, bars } = Route.useSearch();
@@ -171,7 +190,9 @@ function ChartPage() {
   const [interval, setInterval] = useState(tf);
   const [outputsize, setOutputsize] = useState(bars);
   const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
+  const [providerPref, setProviderPref] = useState<ProviderPreference>(() => loadProviderPref());
   const [viewMode, setViewMode] = useState<ChartViewMode>("operational");
+
   const ctlRef = useRef<SnapshotController>(new SnapshotController());
   const prevSymbolRef = useRef(decoded);
 
@@ -195,6 +216,13 @@ function ChartPage() {
     window.localStorage.setItem("chart-layers", JSON.stringify(layers));
   }, [layers]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(PROVIDER_PREF_KEY, providerPref);
+  }, [providerPref]);
+
+
+
   /**
    * Atomic pipeline. Every stage writes into local variables; the snapshot is
    * only published while its `requestId` is still the active epoch, so a late
@@ -208,6 +236,7 @@ function ChartPage() {
     const sym = decoded;
     const ivl = interval;
     const barsReq = outputsize;
+    const pref = providerPref;
     const t = new Timings();
     if (opts.force) invalidate(chartKey(["ohlc", sym, ivl]));
     setPending({ tf: ivl, bars: barsReq });
@@ -216,10 +245,22 @@ function ChartPage() {
 
     try {
       // ── Stage A: OHLC (closed candles, freshness-validated cascade) ───────
+      // The provider preference is part of the cache key: a pinned source must
+      // never reuse a series produced by another provider.
       const full = await t.measureAsync("apiFetchMs", () =>
-        cached(chartKey(["ohlc", sym, ivl, barsReq]), () =>
-          withRetry(() => fetch({ data: { symbol: sym, interval: ivl, outputsize: barsReq } })),
+        cached(chartKey(["ohlc", sym, ivl, barsReq, pref]), () =>
+          withRetry(() =>
+            fetch({
+              data: {
+                symbol: sym,
+                interval: ivl,
+                outputsize: barsReq,
+                providerPreference: pref,
+              },
+            }),
+          ),
         ),
+
       );
       if (!alive()) return;
       if (!full.candles.length) {
@@ -261,7 +302,7 @@ function ChartPage() {
       setPhase(`Calculando Elliott ${ivl}…`);
       const lastTime = full.candles[full.candles.length - 1]?.time ?? 0;
       const ana = await t.measureAsync("elliottMs", () =>
-        cached(chartKey(["ana", sym, ivl, barsReq, degreePref, lastTime, asOf]), () =>
+        cached(chartKey(["ana", sym, ivl, barsReq, degreePref, pref, lastTime, asOf]), () =>
           withRetry(() =>
             analyze({
               data: {
@@ -283,7 +324,7 @@ function ChartPage() {
       // ── Stage C: setups + operational decision ────────────────────────────
       setPhase("Scanning setups...");
       const sigs = await t.measureAsync("setupsMs", () =>
-        cached(chartKey(["setups", sym, ivl, barsReq, lastTime, asOf]), () =>
+        cached(chartKey(["setups", sym, ivl, barsReq, pref, lastTime, asOf]), () =>
           withRetry(() =>
             // Exact same OHLC snapshot the chart is rendering.
             findSetups({
@@ -360,7 +401,7 @@ function ChartPage() {
     const id = window.setInterval(load, 60_000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [decoded, interval, outputsize, degreePref]);
+  }, [decoded, interval, outputsize, degreePref, providerPref]);
 
   const setup = useMemo<TradeSetup | null>(
     () =>
@@ -566,8 +607,10 @@ function ChartPage() {
             )}
           </CardContent>
         </Card>
-        <Card className="border-border/60">
+        {/* Sidebar scrolls on its own; the chart column stays put on desktop. */}
+        <Card className="border-border/60 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <CardContent className="p-4 space-y-4">
+
             {viewMode === "diagnostic" ? (
               <LayerControls layers={layers} onChange={setLayers} />
             ) : (
@@ -602,8 +645,15 @@ function ChartPage() {
                   ))}
               </div>
             )}
-            <ScenariosPanel elliott={elliott} macro={macro} pxFmt={px} />
-            <PreRaidApproachPanel symbol={symbol} compact={viewMode !== "diagnostic"} />
+            <ScenariosPanel
+              elliott={elliott}
+              macro={macro}
+              pxFmt={px}
+              mode={viewMode === "diagnostic" ? "diagnostic" : "operational"}
+            />
+            <SonicBetaPanel symbol={decoded} />
+            {viewMode === "diagnostic" && <PreRaidApproachPanel symbol={symbol} compact={false} />}
+
             <div>
               <div className="text-xs uppercase tracking-widest text-muted-foreground">Setup</div>
               {setup ? (

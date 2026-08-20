@@ -18,6 +18,12 @@ import { AsyncCache, ohlcvKey, ttlForTimeframe } from "./async-cache";
 import { GuardRegistry, parseRetryAfter } from "./limiter";
 import { logDataEvent, newRequestId } from "./instrumentation";
 import type { Candle, DataMeta, MarketProvider, OhlcvResponse } from "./types";
+import {
+  PROVIDER_LABELS,
+  providerSupports,
+  type ProviderPreference,
+} from "./provider-choice";
+
 
 /** Result contract every provider fetcher returns. */
 export interface ProviderResult {
@@ -656,6 +662,53 @@ export function resolveCascade(
   return list;
 }
 
+/** Env var(s) that enable each pinnable provider. */
+const PROVIDER_KEYS: Record<Exclude<ProviderPreference, "auto">, string[]> = {
+  polygon: ["POLYGON_API_KEY", "MASSIVE_API_KEY"],
+  twelvedata: ["TWELVEDATA_API_KEY"],
+  alphavantage: ["ALPHA_VANTAGE_API_KEY"],
+  metalpriceapi: ["METALPRICE_API_KEY"],
+};
+
+/**
+ * Resolve the provider list actually used for one request.
+ *
+ * `auto` → the corrected cascade. Any explicit preference → EXACTLY that one
+ * provider (no fallback, no blending) or a user-facing error explaining why it
+ * cannot serve the request.
+ */
+export function resolveProviderPlan(
+  symbol: string,
+  interval: string,
+  preference: ProviderPreference = "auto",
+  env: Record<string, string | undefined> = process.env,
+): { cascade: MarketProvider[]; forced: boolean; error?: string } {
+  if (preference === "auto") {
+    return { cascade: resolveCascade(symbol, interval, env), forced: false };
+  }
+  const support = providerSupports(preference, symbol, interval);
+  if (!support.ok) {
+    return { cascade: [], forced: true, error: support.reason };
+  }
+  const configured = PROVIDER_KEYS[preference].some((k) => Boolean(env[k]));
+  if (!configured) {
+    return {
+      cascade: [],
+      forced: true,
+      error: `${PROVIDER_LABELS[preference]} no está configurado en este proyecto.`,
+    };
+  }
+  if (preference === "alphavantage" && isIntraday(interval) && env["ALPHA_VANTAGE_PREMIUM"] !== "true") {
+    return {
+      cascade: [],
+      forced: true,
+      error: "Alpha Vantage requiere plan premium para intradía FX.",
+    };
+  }
+  return { cascade: [preference], forced: true };
+}
+
+
 function runProvider(
   provider: MarketProvider,
   data: { symbol: string; interval: string; outputsize: number },
@@ -779,12 +832,15 @@ export async function loadOhlcv(data: {
   symbol: string;
   interval: string;
   outputsize: number;
+  providerPreference?: ProviderPreference;
 }): Promise<OhlcvResponse> {
   const errors: string[] = [];
   const nowSeconds = Math.floor(Date.now() / 1000);
   const requestId = newRequestId();
+  const preference = data.providerPreference ?? "auto";
 
-  const cascade = resolveCascade(data.symbol, data.interval);
+  const plan = resolveProviderPlan(data.symbol, data.interval, preference);
+  const cascade = plan.cascade;
   if (cascade.length === 0) {
     return {
       candles: [],
@@ -792,9 +848,11 @@ export async function loadOhlcv(data: {
       status: "DATA_STALE",
       asOf: nowSeconds,
       livePrice: null,
-      error: `no provider configured for ${data.symbol} ${data.interval}`,
+      error:
+        plan.error ?? `no provider configured for ${data.symbol} ${data.interval}`,
     };
   }
+
 
   const live = await livePriceFor(data.symbol);
   if (live.error) errors.push(`metalpriceapi(latest): ${live.error}`);
@@ -826,6 +884,9 @@ export async function loadOhlcv(data: {
     status: "DATA_STALE",
     asOf: nowSeconds,
     livePrice: live.price,
-    error: errors.join(" | ") || "no data from any provider",
+    error: plan.forced
+      ? `${PROVIDER_LABELS[preference]} no devolvió datos para ${data.symbol} ${data.interval} (fuente fijada, sin fallback): ${errors.join(" | ") || "sin respuesta"}`
+      : errors.join(" | ") || "no data from any provider",
   };
+
 }

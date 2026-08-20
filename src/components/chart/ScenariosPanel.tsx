@@ -1,6 +1,8 @@
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
 import { Badge } from "@/components/ui/badge";
 import { degreeColor, displayWaveLabel } from "@/lib/detection/elliott/display";
+import { plainScenario } from "@/lib/detection/elliott/plain-es";
+
 
 function statusTone(status: string): string {
   if (status === "INVALIDATED" || status === "STALE") return "text-destructive";
@@ -191,25 +193,93 @@ function Scenario({
   );
 }
 
+const TONE_CLS: Record<string, string> = {
+  ok: "text-success",
+  warn: "text-amber-400",
+  bad: "text-destructive",
+  neutral: "text-muted-foreground",
+};
+
+/** Plain-Spanish scenario card used in the Operational view. */
+function PlainScenarioCard({
+  title,
+  dto,
+  pxFmt,
+  primary,
+}: {
+  title: string;
+  dto: ElliottResultDTO;
+  pxFmt: (n: number) => string;
+  primary?: boolean;
+}) {
+  const p = plainScenario(dto, pxFmt);
+  return (
+    <div
+      className={`rounded border p-3 space-y-1.5 ${primary ? "border-primary/50 bg-primary/5" : "border-border/60"}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs uppercase tracking-widest text-muted-foreground">{title}</span>
+        <Badge variant="outline" className={`text-[10px] ${TONE_CLS[p.stateTone]}`}>
+          {p.state}
+        </Badge>
+      </div>
+      <div className="text-sm">
+        <span className="text-muted-foreground text-xs">Dirección: </span>
+        <span
+          className={
+            p.directionTone === "up"
+              ? "text-success"
+              : p.directionTone === "down"
+                ? "text-destructive"
+                : ""
+          }
+        >
+          {p.direction}
+        </span>
+        <span className="text-muted-foreground text-xs"> · confianza {p.confidence}%</span>
+      </div>
+      <p className="text-xs text-foreground/90 leading-relaxed">{p.expectation}</p>
+      <div className="grid grid-cols-2 gap-x-3 text-xs">
+        <span className="text-muted-foreground">Nivel que lo invalida</span>
+        <span className="text-right font-mono text-destructive">{p.invalidation ?? "—"}</span>
+        <span className="text-muted-foreground">Próximo objetivo</span>
+        <span className="text-right font-mono text-primary">{p.target ?? "—"}</span>
+      </div>
+      <details className="text-xs">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          Ver detalles técnicos
+        </summary>
+        <div className="mt-2">
+          <Scenario title={title} dto={dto} pxFmt={pxFmt} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
 export function ScenariosPanel({
   elliott,
   macro,
   pxFmt,
+  mode = "diagnostic",
 }: {
   elliott: ElliottResultDTO | null;
   macro: ElliottResultDTO | null;
   pxFmt: (n: number) => string;
+  mode?: "operational" | "diagnostic";
 }) {
   if (!elliott) return null;
   const alt = elliott.alternatives[0] ?? null;
+  const Card = mode === "operational" ? PlainScenarioCard : Scenario;
   return (
     <div className="space-y-2">
       <div className="text-xs uppercase tracking-widest text-muted-foreground">
         Escenarios Elliott
       </div>
-      <Scenario title="Principal (gráfico)" dto={elliott} pxFmt={pxFmt} primary />
-      {alt && <Scenario title="Alternativo" dto={alt} pxFmt={pxFmt} />}
-      {macro && <Scenario title="Macro (HTF)" dto={macro} pxFmt={pxFmt} />}
+      <Card title="Principal" dto={elliott} pxFmt={pxFmt} primary />
+      {alt && <Card title="Alternativo" dto={alt} pxFmt={pxFmt} />}
+      {macro && <Card title="Macro (HTF)" dto={macro} pxFmt={pxFmt} />}
     </div>
   );
 }
+
