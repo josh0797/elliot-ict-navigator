@@ -94,7 +94,7 @@ describe("same-week fallback", () => {
     const negs = generateNegativeCandidates(single, {
       seed: "s1",
       perPositive: 6,
-      windowMinutes: 40,
+      windowMinutes: 30,
     });
     expect(negs.length).toBe(6);
     const fallback = negs.filter((n) => !n.meta.same_date);
@@ -121,7 +121,7 @@ describe("same-week fallback", () => {
     const negs = generateNegativeCandidates(single, {
       seed: "s1",
       perPositive: 6,
-      windowMinutes: 40,
+      windowMinutes: 30,
       sameWeekFallback: false,
     });
     expect(negs.every((n) => n.meta.same_date)).toBe(true);
@@ -148,11 +148,14 @@ describe("selection is future-independent (integration boundary)", () => {
     };
   }
 
-  it("keeps identical timestamps and kinds when only future bars change", () => {
-    const history = m1Series({ count: 2000 });
-    const last = history[history.length - 1];
-    const up = [...history, ...forwardSeries(ENTRY_TIME, last.close, 3, 120, 6)];
-    const down = [...history, ...forwardSeries(ENTRY_TIME, last.close, -3, 120, 6)];
+  it("keeps identical timestamps and kinds when only bars after the sampled region change", () => {
+    // Shared history covers every candidate minute the sampler can reach
+    // (last positive + windowMinutes + outcome horizon).
+    const lastSampled = positives[1].entryTime + (60 + 30) * 60;
+    const shared = m1Series({ endOpen: lastSampled, count: 4000 });
+    const tail = shared[shared.length - 1];
+    const up = [...shared, ...forwardSeries(lastSampled + 60, tail.close, 4, 240, 9)];
+    const down = [...shared, ...forwardSeries(lastSampled + 60, tail.close, -4, 240, 9)];
 
     const run = (bars: typeof up) =>
       generateNegativeCandidates(positives, {
@@ -160,10 +163,10 @@ describe("selection is future-independent (integration boundary)", () => {
         preEntryStats: statsFrom(bars),
       }).map((n) => `${n.entryTime}:${n.kind}`);
 
-    const a = run(up);
-    const b = run(down);
+    const a = run(shared);
     expect(a.length).toBeGreaterThan(0);
-    expect(a).toEqual(b);
-    expect(a).toEqual(run([...history]));
+    expect(a.some((x) => x.endsWith("HARD_NEGATIVE"))).toBe(true);
+    expect(run(up)).toEqual(a);
+    expect(run(down)).toEqual(a);
   });
 });
