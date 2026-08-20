@@ -5,6 +5,7 @@
 //     error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/tanstack/vite";
 
 // One build id per build, shared by the client bundle, the SSR bundle and the
 // server-function manifest. Exposed to the app via `src/lib/build-id.ts` and to
@@ -26,5 +27,6 @@ export default defineConfig({
     define: {
       __APP_BUILD_ID__: JSON.stringify(buildId),
     },
+    plugins: [mcpPlugin()],
   },
 });
