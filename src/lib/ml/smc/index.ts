@@ -63,3 +63,24 @@ export {
   type FeatureStats,
   type GroupComparison,
 } from "./summary";
+export {
+  inPreRaidWindow,
+  PRE_RAID_DETECTOR_LABEL,
+  PRE_RAID_DETECTOR_VERSION,
+  PRE_RAID_FEATURE_NAMES,
+  PRE_RAID_TRAIN_MEDIANS,
+  PRE_RAID_TRAIN_SIGNS,
+  scorePreRaidApproach,
+  type PreRaidComponent,
+  type PreRaidFeatureName,
+  type PreRaidObservation,
+  type PreRaidRaidState,
+  type PreRaidResult,
+  type PreRaidSkipped,
+} from "./pre-raid";
+export {
+  computePreRaidOutcome,
+  PRE_RAID_HORIZONS,
+  type PreRaidHorizon,
+  type PreRaidOutcome,
+} from "./pre-raid-outcomes";
