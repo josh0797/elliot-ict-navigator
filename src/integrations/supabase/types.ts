@@ -55,36 +55,48 @@ export type Database = {
       model_versions: {
         Row: {
           accuracy: number | null
+          calibration: Json
           created_at: string
+          family: string
           feature_names: string[]
+          feature_schema_version: number
           id: string
           is_active: boolean
           metrics: Json
           model_topology: Json
+          train_window: Json
           trained_on: number
           version: number
           weights_b64: string
         }
         Insert: {
           accuracy?: number | null
+          calibration?: Json
           created_at?: string
+          family?: string
           feature_names?: string[]
+          feature_schema_version?: number
           id?: string
           is_active?: boolean
           metrics?: Json
           model_topology: Json
+          train_window?: Json
           trained_on?: number
           version: number
           weights_b64: string
         }
         Update: {
           accuracy?: number | null
+          calibration?: Json
           created_at?: string
+          family?: string
           feature_names?: string[]
+          feature_schema_version?: number
           id?: string
           is_active?: boolean
           metrics?: Json
           model_topology?: Json
+          train_window?: Json
           trained_on?: number
           version?: number
           weights_b64?: string
