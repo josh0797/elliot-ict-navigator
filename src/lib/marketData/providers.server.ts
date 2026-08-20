@@ -627,8 +627,10 @@ export function resolveCascade(
   const { base } = classify(symbol);
   const list: MarketProvider[] = [];
 
-  // MetalPrice API only publishes one rate per day → daily/weekly metals only.
-  if (!intraday && METALS.has(base) && env["METALPRICE_API_KEY"]) list.push("metalpriceapi");
+  // True-OHLC providers always come first. MetalPrice only publishes ONE rate
+  // per day, so its daily/weekly "OHLC" is synthetic (see fetchMetalPrice) and
+  // may differ materially from the real daily close → last-resort only.
+  if (env["TWELVEDATA_API_KEY"]) list.push("twelvedata");
   // Polygon / Massive is the intraday workhorse.
   if (env["POLYGON_API_KEY"] || env["MASSIVE_API_KEY"]) list.push("polygon");
   // Alpha Vantage intraday FX requires a premium plan; free keys only do daily.
@@ -636,8 +638,10 @@ export function resolveCascade(
     list.push("alphavantage");
   // FMP legacy endpoint is opt-in until migrated to the current API.
   if (env["FMP_API_KEY"] && env["FMP_LEGACY_ENABLED"] === "true") list.push("fmp");
-  if (env["TWELVEDATA_API_KEY"]) list.push("twelvedata");
+  // Metals daily/weekly fallback of last resort (synthetic OHLC).
+  if (!intraday && METALS.has(base) && env["METALPRICE_API_KEY"]) list.push("metalpriceapi");
   return list;
+
 }
 
 function runProvider(
