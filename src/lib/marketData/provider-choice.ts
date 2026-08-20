@@ -83,7 +83,5 @@ export function providerSupports(
 }
 
 export function isProviderPreference(value: unknown): value is ProviderPreference {
-  return (
-    typeof value === "string" && (PROVIDER_PREFERENCES as readonly string[]).includes(value)
-  );
+  return typeof value === "string" && (PROVIDER_PREFERENCES as readonly string[]).includes(value);
 }

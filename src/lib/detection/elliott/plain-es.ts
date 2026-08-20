@@ -40,9 +40,11 @@ function stateOf(status: string): { text: string; tone: PlainScenario["stateTone
 function expectationOf(dto: ElliottResultDTO): string {
   const up = dto.bias === "BULLISH";
   const dirWord = up ? "subida" : dto.bias === "BEARISH" ? "bajada" : "movimiento";
-  if (dto.status === "INVALIDATED") return "Este conteo ya no es válido: el precio rompió su nivel límite.";
+  if (dto.status === "INVALIDATED")
+    return "Este conteo ya no es válido: el precio rompió su nivel límite.";
   if (dto.status === "NO_COUNT") return "Aún no hay suficiente estructura para contar ondas.";
-  if (dto.status === "COMPLETED") return `El ciclo se completó; se espera una corrección del último tramo de ${dirWord}.`;
+  if (dto.status === "COMPLETED")
+    return `El ciclo se completó; se espera una corrección del último tramo de ${dirWord}.`;
   const wave = dto.currentWave ?? null;
   const next = dto.nextWave ?? null;
   if (wave == null) return `Se espera continuidad de la ${dirWord}.`;
@@ -51,10 +53,7 @@ function expectationOf(dto: ElliottResultDTO): string {
   return `${head}; se espera que complete el tramo de ${dirWord}.`;
 }
 
-export function plainScenario(
-  dto: ElliottResultDTO,
-  pxFmt: (n: number) => string,
-): PlainScenario {
+export function plainScenario(dto: ElliottResultDTO, pxFmt: (n: number) => string): PlainScenario {
   const st = stateOf(dto.status);
   return {
     state: st.text,

@@ -3,7 +3,6 @@ import { Badge } from "@/components/ui/badge";
 import { degreeColor, displayWaveLabel } from "@/lib/detection/elliott/display";
 import { plainScenario } from "@/lib/detection/elliott/plain-es";
 
-
 function statusTone(status: string): string {
   if (status === "INVALIDATED" || status === "STALE") return "text-destructive";
   if (status === "COMPLETED") return "text-success";
@@ -282,4 +281,3 @@ export function ScenariosPanel({
     </div>
   );
 }
-

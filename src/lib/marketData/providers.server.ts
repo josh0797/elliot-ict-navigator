@@ -18,12 +18,7 @@ import { AsyncCache, ohlcvKey, ttlForTimeframe } from "./async-cache";
 import { GuardRegistry, parseRetryAfter } from "./limiter";
 import { logDataEvent, newRequestId } from "./instrumentation";
 import type { Candle, DataMeta, MarketProvider, OhlcvResponse } from "./types";
-import {
-  PROVIDER_LABELS,
-  providerSupports,
-  type ProviderPreference,
-} from "./provider-choice";
-
+import { PROVIDER_LABELS, providerSupports, type ProviderPreference } from "./provider-choice";
 
 /** Result contract every provider fetcher returns. */
 export interface ProviderResult {
@@ -698,7 +693,11 @@ export function resolveProviderPlan(
       error: `${PROVIDER_LABELS[preference]} no está configurado en este proyecto.`,
     };
   }
-  if (preference === "alphavantage" && isIntraday(interval) && env["ALPHA_VANTAGE_PREMIUM"] !== "true") {
+  if (
+    preference === "alphavantage" &&
+    isIntraday(interval) &&
+    env["ALPHA_VANTAGE_PREMIUM"] !== "true"
+  ) {
     return {
       cascade: [],
       forced: true,
@@ -707,7 +706,6 @@ export function resolveProviderPlan(
   }
   return { cascade: [preference], forced: true };
 }
-
 
 function runProvider(
   provider: MarketProvider,
@@ -848,11 +846,9 @@ export async function loadOhlcv(data: {
       status: "DATA_STALE",
       asOf: nowSeconds,
       livePrice: null,
-      error:
-        plan.error ?? `no provider configured for ${data.symbol} ${data.interval}`,
+      error: plan.error ?? `no provider configured for ${data.symbol} ${data.interval}`,
     };
   }
-
 
   const live = await livePriceFor(data.symbol);
   if (live.error) errors.push(`metalpriceapi(latest): ${live.error}`);
@@ -888,5 +884,4 @@ export async function loadOhlcv(data: {
       ? `${PROVIDER_LABELS[preference]} no devolvió datos para ${data.symbol} ${data.interval} (fuente fijada, sin fallback): ${errors.join(" | ") || "sin respuesta"}`
       : errors.join(" | ") || "no data from any provider",
   };
-
 }

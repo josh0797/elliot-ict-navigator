@@ -134,10 +134,10 @@ export function explainPlain(
         `Entrada ${atMarket ? "a mercado" : "en la zona"} ${pxFmt(sig.entryZone.bottom)}–${pxFmt(sig.entryZone.top)} con stop en ${pxFmt(sig.sl)}`,
       );
     }
-
   }
 
-  const missing = report.decision === "BUY" || report.decision === "SELL" ? [] : plainMissing(report);
+  const missing =
+    report.decision === "BUY" || report.decision === "SELL" ? [] : plainMissing(report);
 
   const invPrice = sig?.invalidation?.price ?? null;
   const invalidation =

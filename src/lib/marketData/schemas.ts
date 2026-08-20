@@ -19,7 +19,6 @@ export const OhlcvInput = z.object({
   providerPreference: z.enum(PROVIDER_PREFERENCES).default("auto"),
 });
 
-
 export const TwelveDataInput = z.object({
   symbol: z.string().min(3),
   interval: z.string().default("1h"),

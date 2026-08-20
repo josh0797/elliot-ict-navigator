@@ -162,8 +162,6 @@ function loadProviderPref(): ProviderPreference {
   return isProviderPreference(raw) ? raw : "auto";
 }
 
-
-
 function ChartPage() {
   const { symbol } = Route.useParams();
   const { tf, bars } = Route.useSearch();
@@ -221,8 +219,6 @@ function ChartPage() {
     window.localStorage.setItem(PROVIDER_PREF_KEY, providerPref);
   }, [providerPref]);
 
-
-
   /**
    * Atomic pipeline. Every stage writes into local variables; the snapshot is
    * only published while its `requestId` is still the active epoch, so a late
@@ -260,7 +256,6 @@ function ChartPage() {
             }),
           ),
         ),
-
       );
       if (!alive()) return;
       if (!full.candles.length) {
@@ -579,7 +574,6 @@ function ChartPage() {
       <div className="grid items-start lg:grid-cols-[1fr_320px] gap-4">
         <Card className="border-border/60 lg:sticky lg:top-4 lg:self-start">
           <CardContent className="p-2 relative">
-
             {(phase || errorMsg) && (
               <div className="absolute right-4 top-4 z-20 max-w-[60%] rounded border border-border bg-popover/95 px-2 py-1 text-xs font-mono shadow">
                 {errorMsg ? (
@@ -634,7 +628,6 @@ function ChartPage() {
         {/* Sidebar scrolls on its own; the chart column stays put on desktop. */}
         <Card className="border-border/60 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <CardContent className="p-4 space-y-4">
-
             {viewMode === "diagnostic" ? (
               <LayerControls layers={layers} onChange={setLayers} />
             ) : (
