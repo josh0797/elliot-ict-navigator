@@ -10,11 +10,13 @@ import { toast } from "sonner";
 import { Activity } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
-  validateSearch: (s: Record<string, unknown>) => ({
-    next: typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//")
-      ? s.next
-      : undefined,
-  }),
+  validateSearch: (s: Record<string, unknown>): { next?: string } => {
+    const next =
+      typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//")
+        ? s.next
+        : undefined;
+    return next ? { next } : {};
+  },
   head: () => ({
     meta: [
       { title: "Sign in — Elliott + ICT Pro" },
