@@ -95,6 +95,7 @@ export const trainModel = createServerFn({ method: "POST" })
     const { data: maxVerRow } = await supabaseAdmin
       .from("model_versions")
       .select("version")
+      .eq("family", "ELLIOTT_BASELINE")
       .order("version", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -104,11 +105,17 @@ export const trainModel = createServerFn({ method: "POST" })
     const weightsArr = new Float64Array([model.bias, ...model.weights]);
     const weights_b64 = Buffer.from(weightsArr.buffer).toString("base64");
 
-    // Deactivate existing
-    await supabaseAdmin.from("model_versions").update({ is_active: false }).eq("is_active", true);
+    // Deactivate existing — scoped to this family only (never touches SMC_M30/ENSEMBLE)
+    await supabaseAdmin
+      .from("model_versions")
+      .update({ is_active: false })
+      .eq("family", "ELLIOTT_BASELINE")
+      .eq("is_active", true);
 
     const { error: insErr } = await supabaseAdmin.from("model_versions").insert({
       version: nextVersion,
+      family: "ELLIOTT_BASELINE",
+      feature_schema_version: 1,
       trained_on: Xtrain.length + Xval.length,
       accuracy: metrics.accuracy,
       weights_b64,
@@ -134,7 +141,9 @@ export const listModelVersions = createServerFn({ method: "GET" })
     await assertAdmin(context);
     const { data, error } = await context.supabase
       .from("model_versions")
-      .select("id,version,trained_on,accuracy,metrics,feature_names,is_active,created_at")
+      .select(
+        "id,version,family,feature_schema_version,trained_on,accuracy,metrics,feature_names,is_active,created_at",
+      )
       .order("version", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -146,7 +155,19 @@ export const setActiveModel = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("model_versions").update({ is_active: false }).eq("is_active", true);
+    // Resolve the target's family so activation only deactivates siblings.
+    const { data: target, error: findErr } = await supabaseAdmin
+      .from("model_versions")
+      .select("id,family")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (findErr) throw new Error(findErr.message);
+    if (!target) throw new Error("Model version not found");
+    await supabaseAdmin
+      .from("model_versions")
+      .update({ is_active: false })
+      .eq("family", target.family)
+      .eq("is_active", true);
     const { error } = await supabaseAdmin
       .from("model_versions")
       .update({ is_active: true })
