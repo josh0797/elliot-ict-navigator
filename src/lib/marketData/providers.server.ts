@@ -6,9 +6,9 @@
  * declarations from a module that declares `createServerFn`, which produced
  * runtime `ReferenceError`s in production.
  *
- * Provider cascade (see `resolveCascade`): true-OHLC providers first
- * (Twelve Data -> Polygon/Massive -> Alpha Vantage), with MetalPrice API only as
- * a last-resort metals daily/weekly fallback because its history is synthetic.
+ * Provider cascade (see `resolveCascade`): intraday is Polygon/Massive ->
+ * Twelve Data; metals daily/weekly lead with Twelve Data (true OHLC) and keep
+ * MetalPrice API only as a last-resort fallback because its history is synthetic.
  * A provider only wins when its series is BOTH non-empty AND fresh; series from
  * different providers are never blended.
  */
@@ -635,10 +635,14 @@ export function resolveCascade(
   const { base } = classify(symbol);
   const list: MarketProvider[] = [];
 
-  // True-OHLC providers always come first. MetalPrice only publishes ONE rate
-  // per day, so its daily/weekly "OHLC" is synthetic (see fetchMetalPrice) and
-  // may differ materially from the real daily close → last-resort only.
-  if (env["TWELVEDATA_API_KEY"]) list.push("twelvedata");
+  const hasTwelve = Boolean(env["TWELVEDATA_API_KEY"]);
+  const metalHistory = !intraday && METALS.has(base);
+
+  // Metals daily/weekly ONLY: Twelve Data leads because MetalPrice publishes a
+  // single rate per day (synthetic OHLC, see fetchMetalPrice) and Polygon FX
+  // dailies are less reliable for metals. Intraday keeps the original order so
+  // Polygon/Massive absorbs the volume instead of Twelve Data credits.
+  if (metalHistory && hasTwelve) list.push("twelvedata");
   // Polygon / Massive is the intraday workhorse.
   if (env["POLYGON_API_KEY"] || env["MASSIVE_API_KEY"]) list.push("polygon");
   // Alpha Vantage intraday FX requires a premium plan; free keys only do daily.
@@ -646,8 +650,9 @@ export function resolveCascade(
     list.push("alphavantage");
   // FMP legacy endpoint is opt-in until migrated to the current API.
   if (env["FMP_API_KEY"] && env["FMP_LEGACY_ENABLED"] === "true") list.push("fmp");
+  if (hasTwelve && !list.includes("twelvedata")) list.push("twelvedata");
   // Metals daily/weekly fallback of last resort (synthetic OHLC).
-  if (!intraday && METALS.has(base) && env["METALPRICE_API_KEY"]) list.push("metalpriceapi");
+  if (metalHistory && env["METALPRICE_API_KEY"]) list.push("metalpriceapi");
   return list;
 }
 
