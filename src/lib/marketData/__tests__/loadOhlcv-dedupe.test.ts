@@ -77,9 +77,10 @@ describe("loadOhlcv upstream discipline", () => {
       FMP_API_KEY: "k",
       TWELVEDATA_API_KEY: "k",
     };
-    // Intraday metals: MetalPrice publishes one rate per day → excluded.
-    expect(resolveCascade("XAU/USD", "4h", env)).toEqual(["twelvedata", "polygon"]);
-    expect(resolveCascade("XAU/USD", "15min", env)).not.toContain("metalpriceapi");
+    // Intraday metals: Polygon/Massive first (cheap volume), MetalPrice excluded.
+    expect(resolveCascade("XAU/USD", "4h", env)).toEqual(["polygon", "twelvedata"]);
+    expect(resolveCascade("XAU/USD", "15min", env)).toEqual(["polygon", "twelvedata"]);
+    expect(resolveCascade("XAU/USD", "1h", env)).not.toContain("metalpriceapi");
     // Metals daily/weekly: true-OHLC providers first, MetalPrice last resort.
     expect(resolveCascade("XAU/USD", "1d", env)).toEqual([
       "twelvedata",
@@ -89,6 +90,15 @@ describe("loadOhlcv upstream discipline", () => {
     ]);
     expect(resolveCascade("XAU/USD", "1w", env)[0]).toBe("twelvedata");
     expect(resolveCascade("XAU/USD", "1w", env).at(-1)).toBe("metalpriceapi");
-    expect(resolveCascade("EUR/USD", "1d", env)).toEqual(["twelvedata", "polygon", "alphavantage"]);
+    // Non-metals keep the prior ordering (Twelve Data is not globally promoted).
+    expect(resolveCascade("EUR/USD", "1d", env)).toEqual(["polygon", "alphavantage", "twelvedata"]);
+    // FMP stays opt-in behind FMP_LEGACY_ENABLED.
+    expect(resolveCascade("XAU/USD", "1d", { ...env, FMP_LEGACY_ENABLED: "true" })).toEqual([
+      "twelvedata",
+      "polygon",
+      "alphavantage",
+      "fmp",
+      "metalpriceapi",
+    ]);
   });
 });
