@@ -412,16 +412,30 @@ function ChartPage() {
             Ejecución: {interval} — Subconteo local
           </Badge>
           {provider && (
-            <Badge variant="secondary" className="font-mono text-[10px]">
+            <Badge
+              variant="secondary"
+              className="font-mono text-[10px]"
+              title={`Proveedor OHLC (velas cerradas): ${provider}`}
+            >
               {provider}
+            </Badge>
+          )}
+          {snapshot && Number.isFinite(snapshot.livePrice ?? NaN) && (
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-sky-400 border-sky-400/50"
+              title="Cotización spot en vivo (solo informativa · refresco ~60s). No entra en el análisis: Elliott/ICT/setups usan únicamente velas cerradas."
+            >
+              LIVE {px(snapshot.livePrice as number)} · spot · ~60s
             </Badge>
           )}
           {snapshot && (
             <Badge
               variant="outline"
               className={`font-mono text-[10px] ${stale ? "text-destructive border-destructive/50" : "text-muted-foreground"}`}
-              title={`Proveedor ${snapshot.provider} · última vela cerrada ${new Date(snapshot.lastClosedCandleTime * 1000).toISOString()} · ${snapshot.candles.length} velas · asOf ${new Date(snapshot.asOf * 1000).toISOString()} · build ${snapshot.buildId.slice(0, 8)}`}
+              title={`CLOSED — última vela ${interval} completamente cerrada (no es el precio spot actual) · Proveedor OHLC ${snapshot.provider} · última vela cerrada ${new Date(snapshot.lastClosedCandleTime * 1000).toISOString()} · ${snapshot.candles.length} velas · asOf ${new Date(snapshot.asOf * 1000).toISOString()} · build ${snapshot.buildId.slice(0, 8)}`}
             >
+              CLOSED{" "}
               {new Date(snapshot.lastClosedCandleTime * 1000)
                 .toISOString()
                 .slice(5, 16)
@@ -531,6 +545,7 @@ function ChartPage() {
                 signal={activeSignal}
                 onPivotHover={setTooltip}
                 viewMode={viewMode}
+                livePrice={snapshot?.livePrice ?? null}
               />
             </div>
             {tooltip && (
