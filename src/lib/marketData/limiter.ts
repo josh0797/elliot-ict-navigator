@@ -84,12 +84,19 @@ export class ProviderGuard {
 }
 
 export const DEFAULT_POLICIES: Record<string, GuardConfig> = {
+  // MetalPrice Professional refreshes the quote about every 60s and bills every
+  // request, so a high ceiling would only duplicate the same rate. Left as-is.
   metalpriceapi: { maxPerMinute: 10, minIntervalMs: 1_000, baseCooldownMs: 60_000 },
   polygon: { maxPerMinute: 30, minIntervalMs: 250, baseCooldownMs: 30_000 },
-  twelvedata: { maxPerMinute: 8, minIntervalMs: 1_000, baseCooldownMs: 60_000 },
+  // Internal ceiling BELOW the observed Twelve Data Grow account limit of 144
+  // credits/minute. `/price` and `/time_series` cost 1 credit per symbol, so 60
+  // upstream acquisitions/min leaves ~84 credits/min of headroom for other
+  // background work (scanner, evaluator, MTF). Previously 8 (Basic-plan value).
+  twelvedata: { maxPerMinute: 60, minIntervalMs: 1_000, baseCooldownMs: 60_000 },
   alphavantage: { maxPerMinute: 5, minIntervalMs: 12_000, baseCooldownMs: 120_000 },
   fmp: { maxPerMinute: 10, minIntervalMs: 500, baseCooldownMs: 60_000 },
 };
+
 
 export class GuardRegistry {
   private guards = new Map<string, ProviderGuard>();
