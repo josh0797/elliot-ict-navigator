@@ -10,6 +10,17 @@ const TIMEFRAME_MAP: Record<string, string> = {
   "1day": "1day",
 };
 
+/**
+ * Safe rate-limit diagnostics: Twelve Data returns per-request credit headers.
+ * Only the two numeric headers are logged — never the API key or the URL.
+ */
+function logTwelveDataCredits(res: Response, label: string): void {
+  const used = res.headers.get("api-credits-used");
+  const left = res.headers.get("api-credits-left");
+  if (used === null && left === null) return;
+  console.info(`[mkt twelvedata] ${label} credits_used=${used ?? "?"} credits_left=${left ?? "?"}`);
+}
+
 export async function fetchTwelveDataCandles(input: {
   symbol: string;
   interval: string;
@@ -28,6 +39,7 @@ export async function fetchTwelveDataCandles(input: {
 
   try {
     const res = await fetch(url.toString(), { method: "GET" });
+    logTwelveDataCredits(res, `time_series ${input.symbol} ${interval}`);
     const json = (await res.json()) as {
       status?: string;
       message?: string;
@@ -69,6 +81,7 @@ export async function fetchTwelveDataPrice(
   const url = `https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
   try {
     const r = await fetch(url);
+    logTwelveDataCredits(r, `price ${symbol}`);
     const j = (await r.json()) as { price?: string; message?: string };
     if (!j.price) return { price: null, error: j.message ?? "no price" };
     return { price: Number(j.price) };
