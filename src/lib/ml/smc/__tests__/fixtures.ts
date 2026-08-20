@@ -5,10 +5,10 @@ import type { SmcFeatureContext } from "../types";
 export const BASE_TIME = Math.floor(Date.parse("2025-01-15T06:00:00Z") / 1000);
 const M5 = 300;
 
-/** Flat, low-volatility series — no expansion, no sweeps. */
+/** Flat, low-volatility series — no expansion, no sweeps. Anchor bar = BASE_TIME. */
 export function flatCandles(count = 40, price = 2000): Candle[] {
   return Array.from({ length: count }, (_, i) => ({
-    time: BASE_TIME + i * M5,
+    time: BASE_TIME - (count - 1 - i) * M5,
     open: price,
     high: price + 0.5,
     low: price - 0.5,
