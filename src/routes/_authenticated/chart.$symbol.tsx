@@ -551,11 +551,18 @@ function ChartPage() {
         </div>
       </div>
 
-      {decision && <DecisionBanner report={decision} pxFmt={px} />}
+      {decision && (
+        <DecisionBanner
+          report={decision}
+          pxFmt={px}
+          mode={viewMode === "diagnostic" ? "diagnostic" : "operational"}
+        />
+      )}
 
-      <div className="grid lg:grid-cols-[1fr_320px] gap-4">
-        <Card className="border-border/60">
+      <div className="grid items-start lg:grid-cols-[1fr_320px] gap-4">
+        <Card className="border-border/60 lg:sticky lg:top-4 lg:self-start">
           <CardContent className="p-2 relative">
+
             {(phase || errorMsg) && (
               <div className="absolute right-4 top-4 z-20 max-w-[60%] rounded border border-border bg-popover/95 px-2 py-1 text-xs font-mono shadow">
                 {errorMsg ? (
