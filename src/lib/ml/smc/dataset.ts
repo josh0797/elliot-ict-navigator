@@ -65,6 +65,8 @@ export interface SmcNegativeCandidate {
     paired_positive_id: string;
     distance_minutes: number;
     same_date: boolean;
+    /** Signed London-local day offset from the paired positive (0 = same date). */
+    day_distance?: number;
     same_session: boolean;
     same_m30_phase: boolean;
     seed: string;
