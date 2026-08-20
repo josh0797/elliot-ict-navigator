@@ -231,10 +231,16 @@ async function fetchMetalPriceLatest(
 }
 
 /**
- * Daily / weekly series from MetalPrice API `/v1/timeframe` (close-per-day).
- * The endpoint publishes one rate per day, so OHLC is reconstructed from the
- * close sequence (open = previous close, high/low = envelope of the bar).
+ * Daily / weekly series from MetalPrice API `/v1/timeframe` (one rate per day).
+ *
+ * WARNING — SYNTHETIC OHLC, FALLBACK ONLY: the endpoint returns a single
+ * point-in-time rate per date, NOT the true daily close, and the OHLC below is
+ * reconstructed from that rate sequence (open = previous rate, high/low =
+ * envelope). Observed 2026-08-19 divergence vs the real daily close was ~180
+ * USD on XAU/USD. `resolveCascade` therefore places this provider LAST for
+ * metals daily/weekly, behind true-OHLC providers.
  */
+
 async function fetchMetalPrice(
   symbol: string,
   interval: string,
