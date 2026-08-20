@@ -97,7 +97,6 @@ export const DEFAULT_POLICIES: Record<string, GuardConfig> = {
   fmp: { maxPerMinute: 10, minIntervalMs: 500, baseCooldownMs: 60_000 },
 };
 
-
 export class GuardRegistry {
   private guards = new Map<string, ProviderGuard>();
 

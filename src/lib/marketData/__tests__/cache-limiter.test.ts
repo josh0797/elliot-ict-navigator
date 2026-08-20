@@ -1,11 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AsyncCache, ohlcvKey, ttlForTimeframe } from "../async-cache";
-import {
-  ProviderGuard,
-  GuardRegistry,
-  parseRetryAfter,
-  DEFAULT_POLICIES,
-} from "../limiter";
+import { ProviderGuard, GuardRegistry, parseRetryAfter, DEFAULT_POLICIES } from "../limiter";
 
 describe("AsyncCache coalescing", () => {
   it("shares one upstream call across concurrent identical requests", async () => {
