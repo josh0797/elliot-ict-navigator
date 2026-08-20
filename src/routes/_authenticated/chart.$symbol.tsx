@@ -509,7 +509,6 @@ function ChartPage() {
             onChange={setProviderPref}
             symbol={decoded}
             interval={interval}
-            activeProvider={provider}
           />
           <ChartViewToggle mode={viewMode} onChange={setViewMode} />
 
