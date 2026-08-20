@@ -90,6 +90,15 @@ export interface SmcDatasetOptions {
   ictTimeframe?: string;
   /** Provider label recorded in provenance. */
   provider?: string;
+  /**
+   * How many UTC days back the previous-trading-day resolver may look.
+   * "Previous day" = the most recent UTC date strictly before the entry date
+   * that is NOT a Saturday/Sunday AND has at least `minPreviousDayBars` strict
+   * pre-entry M1 bars. Weekends/holidays are skipped deterministically.
+   */
+  previousDayMaxLookbackDays?: number;
+  /** Minimum M1 bars a candidate previous trading day must contain. */
+  minPreviousDayBars?: number;
 }
 
 const DEFAULTS = {
@@ -101,6 +110,8 @@ const DEFAULTS = {
   barrierAtrMult: 1.0,
   ictTimeframe: "5min",
   provider: "unknown",
+  previousDayMaxLookbackDays: 5,
+  minPreviousDayBars: 60,
 } satisfies Required<SmcDatasetOptions>;
 
 export interface SmcAuditContext {
@@ -197,6 +208,12 @@ export interface SmcProvenance {
   operative_mask: string;
   operative_mask_version: number;
   prefer_m5_bars_met: boolean;
+  /** UTC midnight of the resolved previous trading day (null when missing). */
+  previous_trading_day_start: number | null;
+  /** Calendar-day distance from the entry date to that trading day. */
+  previous_trading_day_distance_days: number | null;
+  previous_trading_day_bars: number;
+  previous_day_history_ok: boolean;
 }
 
 export interface SmcDatasetRow {
@@ -346,19 +363,49 @@ function buildAuditContext(
   };
 }
 
-function previousDayRange(m1: readonly Candle[], cutoff: number): { high: number; low: number } | null {
+type PreviousDayContext = {
+  high: number;
+  low: number;
+  dayStart: number;
+  distanceDays: number;
+  bars: number;
+};
+
+/**
+ * Resolve the previous *available trading day* strictly before the entry date.
+ *
+ * Deterministic rule: walk back UTC calendar days 1..maxLookbackDays from the
+ * entry's UTC date; skip Saturdays and Sundays; accept the first day that has
+ * at least `minBars` strict pre-entry M1 bars. Returns null when none qualifies
+ * (the row is then invalid, never "trainable with a warning").
+ */
+function resolvePreviousTradingDay(
+  m1: readonly Candle[],
+  cutoff: number,
+  maxLookbackDays: number,
+  minBars: number,
+): PreviousDayContext | null {
   const DAY = 86400;
   const today = Math.floor(cutoff / DAY) * DAY;
-  const prevStart = today - DAY;
-  let hi = -Infinity;
-  let lo = Infinity;
-  for (const c of m1) {
-    if (c.time >= prevStart && c.time < today) {
-      hi = Math.max(hi, c.high);
-      lo = Math.min(lo, c.low);
+  for (let d = 1; d <= Math.max(1, maxLookbackDays); d++) {
+    const dayStart = today - d * DAY;
+    const dow = new Date(dayStart * 1000).getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    let hi = -Infinity;
+    let lo = Infinity;
+    let bars = 0;
+    for (const c of m1) {
+      if (c.time >= dayStart && c.time < dayStart + DAY && c.time < cutoff) {
+        hi = Math.max(hi, c.high);
+        lo = Math.min(lo, c.low);
+        bars++;
+      }
+    }
+    if (bars >= minBars && Number.isFinite(hi) && Number.isFinite(lo)) {
+      return { high: hi, low: lo, dayStart, distanceDays: d, bars };
     }
   }
-  return Number.isFinite(hi) && Number.isFinite(lo) ? { high: hi, low: lo } : null;
+  return null;
 }
 
 function asiaRangeOf(
@@ -420,6 +467,10 @@ export function buildSmcDatasetRow(
     operative_mask: SMC_OPERATIVE_MASK_NAME,
     operative_mask_version: SMC_OPERATIVE_MASK_VERSION,
     prefer_m5_bars_met: m5.length >= opt.preferM5Bars,
+    previous_trading_day_start: null,
+    previous_trading_day_distance_days: null,
+    previous_trading_day_bars: 0,
+    previous_day_history_ok: false,
   };
 
   const base: SmcDatasetRow = {
@@ -446,7 +497,21 @@ export function buildSmcDatasetRow(
   if (m5.length < opt.minM5Bars) {
     return { ...base, invalid_reason: `insufficient_m5_history:${m5.length}` };
   }
-  const hasPrevDay = previousDayRange(featureM1, cutoff) !== null;
+  const prevDay = resolvePreviousTradingDay(
+    featureM1,
+    cutoff,
+    opt.previousDayMaxLookbackDays,
+    opt.minPreviousDayBars,
+  );
+  if (prevDay) {
+    provenance.previous_trading_day_start = prevDay.dayStart;
+    provenance.previous_trading_day_distance_days = prevDay.distanceDays;
+    provenance.previous_trading_day_bars = prevDay.bars;
+    provenance.previous_day_history_ok = true;
+  } else {
+    // Critical required history: PDH/PDL context is unavailable -> not trainable.
+    return { ...base, valid: false, invalid_reason: "missing_previous_day_history" };
+  }
 
   /* ---- canonical pipeline on the TRUNCATED series only ---- */
   const lifted: CandleV2[] = liftCandles(m5);
@@ -465,7 +530,7 @@ export function buildSmcDatasetRow(
     fvgs: ict.fvgs,
     orderBlocks: ict.orderBlocks,
     pdArray: ict.pdArray,
-    previousDay: previousDayRange(featureM1, cutoff),
+    previousDay: { high: prevDay.high, low: prevDay.low },
     asiaRange: asiaRangeOf(featureM1, cutoff),
   };
 
@@ -495,7 +560,7 @@ export function buildSmcDatasetRow(
   return {
     ...base,
     valid: true,
-    invalid_reason: hasPrevDay ? null : "warn_missing_previous_day",
+    invalid_reason: null,
     features,
     outcomes,
   };
