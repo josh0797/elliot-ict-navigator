@@ -602,6 +602,8 @@ if barstate.islast
         row(5,  "Pivots raw",   str.tostring(rawTotal) + " fractales", color.new(color.white, 0))
         row(6,  "Pivots estr.", str.tostring(n) + " (usados " + (hasCount ? str.tostring(bestL) : "0") + ")", color.new(color.white, 0))
         row(7,  "Current wave", stWave, color.new(color.white, 0))
+        row(11, "End lag",      stLag, color.new(color.white, 0))
+
         row(8,  "Invalidation", stInval, colInvC)
         row(9,  "Confirmación", "rightBars = " + str.tostring(rightB) + " barras", color.new(color.gray, 0))
         row(10, "Motivo",       stWhy, color.new(color.white, 0))
