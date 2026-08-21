@@ -254,9 +254,29 @@ function SonicAuditPage() {
               </button>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={download} disabled={!rows.length}>
-            <Download className="h-3.5 w-3.5 mr-1" /> CSV
+          <Button
+            size="sm"
+            onClick={() => void downloadFull()}
+            disabled={exporting}
+            title="Exporta todas las observaciones que cumplen los filtros activos, con todas las columnas de auditoría y los JSON completos."
+          >
+            <Download className={`h-3.5 w-3.5 mr-1 ${exporting ? "animate-pulse" : ""}`} />
+            {exporting ? "Preparando…" : "Descargar CSV completo"}
           </Button>
+          <span className="text-[10px] font-mono text-muted-foreground">
+            {rows.length}
+            {rows.length >= 500 ? "+" : ""} filas
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={download}
+            disabled={!rows.length}
+            title="Descarga rápida de las filas visibles"
+          >
+            <Download className="h-3.5 w-3.5 mr-1" /> CSV rápido
+          </Button>
+
           <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
