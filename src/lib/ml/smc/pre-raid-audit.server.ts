@@ -48,6 +48,35 @@ export interface HorizonStats {
   avgMaeAtr: number | null;
 }
 
+/** Server-side aggregates over EVERY row matching the active filters. */
+export interface PreRaidDatasetContext {
+  /** Rows scanned server-side (capped by DATASET_SCAN_CAP). */
+  totalObservations: number;
+  /** True when the scan hit the safety cap. */
+  truncated: boolean;
+  uniqueCandidateMinutes: number;
+  /** Minutes holding BOTH a long and a short observation. */
+  pairedMinutes: number;
+  captureDays: number;
+  componentHistogram: number[];
+  long: {
+    count: number;
+    avgComponentCount: number | null;
+    fullHouse: number;
+    fullHouseRate: number | null;
+    /** Pass rate per frozen feature (0..1). */
+    featurePassRate: Record<string, number | null>;
+    /** Frequency of each component_count bucket 0..5. */
+    componentHistogram: number[];
+  };
+  short: PreRaidDatasetContext["long"];
+  providers: Record<string, number>;
+  /** Rows with a stored (non-null) outcome per horizon. */
+  outcomeMaturity: { horizon: number; resolved: number; total: number }[];
+  /** True when no horizon has enough resolved rows for retrospective stats. */
+  noCalibration: boolean;
+}
+
 export interface PreRaidAuditResult {
   detectorVersion: string;
   symbol: string;
