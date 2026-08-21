@@ -564,20 +564,23 @@ if barstate.islast
 
     // ── panel ────────────────────────────────────────────────────────
     if showTable
-        string stState = bestI < 0 ? "NO_COUNT" : not hasCount ? "NO_COUNT" : bestP == 2 ? (bestL >= 4 ? "VALID" : "DEVELOPING") : bestL >= 6 ? "VALID" : "DEVELOPING"
+        string stState = isInvalid ? "INVALID" : bestI < 0 ? "NO_COUNT" : not hasCount ? "NO_COUNT" : bestP == 2 ? (bestL >= 4 ? "VALID" : "DEVELOPING") : bestL >= 6 ? "VALID" : "DEVELOPING"
         string stPat   = bestI < 0 or not hasCount ? "—" : bestP == 2 ? "ABC" : bestP == 1 ? "DIAGONAL" : "IMPULSE"
         string stDir   = bestI < 0 or not hasCount ? "—" : bestD == 1 ? "BULLISH" : "BEARISH"
         string stWave  = hasCount ? waveName(bestL - 1, isAbcBest) : "—"
         string stConf  = bestI < 0 ? "—" : str.tostring(math.round(bestS)) + " / 100 (min " + str.tostring(minConf) + ")"
+        string stLag   = bestI < 0 ? "—" : str.tostring(bestLag) + " pivots (max " + str.tostring(maxEndLag) + ")"
         string stInval = "—"
         if hasCount
             int invK = math.min(bestL >= 6 ? 4 : bestL >= 3 ? 2 : 0, bestL - 1)
             stInval := str.tostring(array.get(sPrice, bestI + invK), format.mintick)
         string stWhy = ""
-        if bestI < 0
-            stWhy := worstReason == "" ? "Pivots insuficientes para un candidato" : worstReason
+        if isInvalid
+            stWhy := "Regla dura rota → " + worstReason
+        else if bestI < 0
+            stWhy := worstReason == "" ? "Pivots insuficientes para un candidato reciente" : worstReason
         else if not hasCount
-            stWhy := "Mejor candidato por debajo de Minimum confidence"
+            stWhy := "Geometría válida, pero por debajo de Minimum confidence"
         else
             stWhy := "Reglas duras OK"
             if bestP == 1
@@ -590,6 +593,7 @@ if barstate.islast
                     stWhy := "Posible W5 truncada (unconfirmed)"
 
         color stCol = stState == "VALID" ? color.new(#26a69a, 0) : stState == "DEVELOPING" ? color.new(#ffb74d, 0) : color.new(#ef5350, 0)
+
         row(0,  "Estado",       stState, stCol)
         row(1,  "Pattern",      stPat, color.new(color.white, 0))
         row(2,  "Direction",    stDir, color.new(color.white, 0))
