@@ -326,7 +326,11 @@ export function TradingChart({
       }
       if (showLabels) {
         const wavePoints = waves
-          .map((w) => ({ t: snapTime(waveTime(w, candles)), w }))
+          .map((w) => ({
+            t: anchorTime(`elliott:${role}`, w.label, { time: w.time, index: w.index }),
+            w,
+          }))
+
           .filter(
             (p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && isFiniteNumber(p.w.price),
           );
