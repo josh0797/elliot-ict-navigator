@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeSymbol } from "@/lib/elliott.functions";
 import { detectSetupsMTF } from "@/lib/setups.functions";
-import { fetchOhlcv } from "@/lib/marketData.functions";
+import { fetchOhlcv, fetchVisualHistory } from "@/lib/marketData.functions";
 import type { Candle } from "@/lib/twelvedata.functions";
 import { detectSetup } from "@/lib/detection/engine";
 import type { TradeSetup } from "@/lib/detection/types";
@@ -162,7 +162,24 @@ function loadProviderPref(): ProviderPreference {
   return isProviderPreference(raw) ? raw : "auto";
 }
 
-function ChartPage() {
+const VISUAL_DEPTH_KEY = "chart-visual-depth";
+
+/** Visual-only context depth (chart series), independent of the analysis bars. */
+const VISUAL_DEPTHS = [
+  { value: 0, label: "Auto", hint: "Usa exactamente las velas del análisis." },
+  { value: 2000, label: "2k", hint: "2.000 velas de contexto visual (Twelve Data)." },
+  { value: 5000, label: "5k", hint: "5.000 velas de contexto visual (Twelve Data)." },
+  { value: 10000, label: "10k", hint: "10.000 velas paginadas (Twelve Data)." },
+  { value: 20000, label: "20k", hint: "20.000 velas paginadas (Twelve Data)." },
+] as const;
+
+function loadVisualDepth(): number {
+  if (typeof window === "undefined") return 0;
+  const raw = Number(window.localStorage.getItem(VISUAL_DEPTH_KEY));
+  return VISUAL_DEPTHS.some((d) => d.value === raw) ? raw : 0;
+}
+
+function ChartPage(){
   const { symbol } = Route.useParams();
   const { tf, bars } = Route.useSearch();
   const decoded = decodeSymbolParam(symbol);
@@ -190,6 +207,15 @@ function ChartPage() {
   const [layers, setLayers] = useState<LayerToggles>(() => loadLayers());
   const [providerPref, setProviderPref] = useState<ProviderPreference>(() => loadProviderPref());
   const [viewMode, setViewMode] = useState<ChartViewMode>("operational");
+  const [visualDepth, setVisualDepth] = useState<number>(() => loadVisualDepth());
+  const [visualSeries, setVisualSeries] = useState<{
+    key: string;
+    candles: Candle[];
+    pages: number;
+  } | null>(null);
+  const [visualNotice, setVisualNotice] = useState<string | null>(null);
+  const [visualLoading, setVisualLoading] = useState(false);
+  const loadVisual = useServerFn(fetchVisualHistory);
 
   const ctlRef = useRef<SnapshotController>(new SnapshotController());
   const prevSymbolRef = useRef(decoded);
@@ -218,6 +244,11 @@ function ChartPage() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(PROVIDER_PREF_KEY, providerPref);
   }, [providerPref]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(VISUAL_DEPTH_KEY, String(visualDepth));
+  }, [visualDepth]);
 
   /**
    * Atomic pipeline. Every stage writes into local variables; the snapshot is
