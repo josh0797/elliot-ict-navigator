@@ -403,7 +403,7 @@ addHLine(int b1, int b2, float p, color c, string st) =>
 // ─────────────────────────────────────────────────────────────────────
 // PANEL DIAGNÓSTICO
 // ─────────────────────────────────────────────────────────────────────
-var table TBL = table.new(position.top_right, 2, 11, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
+var table TBL = table.new(position.top_right, 2, 12, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
 
 row(int r, string k, string v, color vc) =>
     table.cell(TBL, 0, r, k, text_color=color.new(color.gray, 0), text_size=size.small, text_halign=text.align_left, bgcolor=color.new(color.black, 80))
