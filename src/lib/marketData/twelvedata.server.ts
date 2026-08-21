@@ -40,7 +40,6 @@ export async function fetchTwelveDataCandles(input: {
   if (input.endDate) url.searchParams.set("end_date", input.endDate);
   url.searchParams.set("apikey", apiKey);
 
-
   try {
     const res = await fetch(url.toString(), { method: "GET" });
     logTwelveDataCredits(res, `time_series ${input.symbol} ${interval}`);
