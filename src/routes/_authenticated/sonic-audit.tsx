@@ -285,6 +285,11 @@ function SonicAuditPage() {
 
       <p className="text-xs text-muted-foreground max-w-3xl">{SONIC_BETA_DISCLAIMER}</p>
 
+      {exportNote && (
+        <p className="text-[11px] font-mono text-muted-foreground">{exportNote}</p>
+      )}
+
+
       {error && (
         <div className="rounded border border-destructive/60 bg-destructive/10 p-3 text-xs font-mono text-destructive">
           {error}
