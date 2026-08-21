@@ -61,3 +61,21 @@ export function parseCsv(text: string): Record<string, string>[] {
       return o;
     });
 }
+
+/**
+ * RFC 4180 field escaping: wraps in quotes when the value contains a comma,
+ * quote, CR or LF, doubling embedded quotes. `null`/`undefined` → empty cell.
+ */
+export function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const raw =
+    typeof value === "object" ? JSON.stringify(value) : typeof value === "number" ? (Number.isFinite(value) ? String(value) : "") : String(value);
+  return /[",\r\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+}
+
+/** Build a full RFC 4180 document (CRLF line breaks, Excel-friendly). */
+export function buildCsv(header: readonly string[], rows: readonly unknown[][]): string {
+  const lines = [header.map(csvCell).join(",")];
+  for (const row of rows) lines.push(row.map(csvCell).join(","));
+  return lines.join("\r\n") + "\r\n";
+}
