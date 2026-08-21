@@ -1,6 +1,6 @@
 //@version=6
 // =====================================================================
-// Elliott Debugger v1 — Elliott-only (FASE 1)
+// Elliott Debugger v1 (v1.0.1) — Elliott-only (FASE 1)
 // ---------------------------------------------------------------------
 // Objetivo: DEPURAR / VALIDAR el motor Elliott directamente sobre las
 // velas nativas de TradingView, antes de automatizar nada.
@@ -159,7 +159,9 @@ pushAlt(float[] pa, int[] ba, int[] ta_, float p, int b, int t) =>
         inserted := true
     inserted
 
-// Igual que pushAlt pero con gate de distancia ATR (solo entre tipos distintos)
+// Igual que pushAlt pero con gate de distancia ATR (solo entre tipos distintos).
+// `atrNow` DEBE ser el ATR de la barra real del swing (atrV[rightB]), no el de
+// la barra de confirmación.
 pushStruct(float p, int b, int t, float atrNow) =>
     int n = array.size(sType)
     if n > 0 and array.get(sType, n - 1) == t
@@ -168,10 +170,19 @@ pushStruct(float p, int b, int t, float atrNow) =>
         if keepNew
             array.set(sPrice, n - 1, p)
             array.set(sBar, n - 1, b)
+            // La claridad (sDist) debe describir el pivot REALMENTE almacenado.
+            float d2 = 0.0
+            if n > 1 and not na(atrNow) and atrNow > 0
+                d2 := math.abs(p - array.get(sPrice, n - 2)) / atrNow
+            if array.size(sDist) == n
+                array.set(sDist, n - 1, d2)
     else
-        bool accept = true
+        // Nunca dos pivots estructurales distintos en la misma vela: un
+        // candidato Elliott no puede tener dos endpoints en el mismo bar_index.
+        bool sameBar = n > 0 and array.get(sBar, n - 1) == b
+        bool accept = not sameBar
         float dist = 0.0
-        if n > 0
+        if accept and n > 0
             float prev = array.get(sPrice, n - 1)
             // ATR sin calentar (na / <= 0) → se acepta el pivot pero jamás
             // se infla la distancia con un epsilon.
@@ -184,20 +195,40 @@ pushStruct(float p, int b, int t, float atrNow) =>
             array.push(sType, t)
             array.push(sDist, dist)
 
+
 ph = ta.pivothigh(high, leftB, rightB)
 pl = ta.pivotlow(low, leftB, rightB)
 
 // El fractal se confirma AHORA, pero el swing ocurrió `rightB` barras atrás.
+// El ATR relevante es por tanto el de esa barra histórica.
+atrSwing = atrV[rightB]
 if not na(ph)
-    int b = bar_index - rightB
     rawTotal += 1
-    pushAlt(rPrice, rBar, rType, ph, b, 1)
-    pushStruct(ph, b, 1, atrV)
+    pushAlt(rPrice, rBar, rType, ph, bar_index - rightB, 1)
 if not na(pl)
-    int b = bar_index - rightB
     rawTotal += 1
-    pushAlt(rPrice, rBar, rType, pl, b, -1)
-    pushStruct(pl, b, -1, atrV)
+    pushAlt(rPrice, rBar, rType, pl, bar_index - rightB, -1)
+
+// Outside bar: high y low confirmados en la MISMA barra. Se elige un único
+// pivot estructural de forma determinista: el compatible con la alternancia
+// respecto del último pivot estructural. Sin pivot previo, se conserva el HIGH
+// (criterio explícito y estable, documentado en el README).
+if not na(ph) or not na(pl)
+    int bSwing = bar_index - rightB
+    bool takeH = not na(ph)
+    bool takeL = not na(pl)
+    if takeH and takeL
+        int lastT = array.size(sType) > 0 ? array.get(sType, array.size(sType) - 1) : 0
+        if lastT == 1
+            takeH := false
+        else if lastT == -1
+            takeL := false
+        else
+            takeL := false
+    if takeH
+        pushStruct(ph, bSwing, 1, atrSwing)
+    if takeL
+        pushStruct(pl, bSwing, -1, atrSwing)
 
 // Arrays acotados (límites de Pine + coste de memoria)
 if barstate.isconfirmed
@@ -206,6 +237,7 @@ if barstate.isconfirmed
         array.shift(rPrice)
         array.shift(rBar)
         array.shift(rType)
+
 
 // ─────────────────────────────────────────────────────────────────────
 // EVALUACIÓN DE CANDIDATOS
@@ -371,7 +403,7 @@ addHLine(int b1, int b2, float p, color c, string st) =>
 // ─────────────────────────────────────────────────────────────────────
 // PANEL DIAGNÓSTICO
 // ─────────────────────────────────────────────────────────────────────
-var table TBL = table.new(position.top_right, 2, 11, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
+var table TBL = table.new(position.top_right, 2, 12, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
 
 row(int r, string k, string v, color vc) =>
     table.cell(TBL, 0, r, k, text_color=color.new(color.gray, 0), text_size=size.small, text_halign=text.align_left, bgcolor=color.new(color.black, 80))
@@ -387,11 +419,16 @@ if barstate.islast
     int n = array.size(sType)
 
     // ── selección de mejor / segundo mejor candidato ──────────────────
+    // RECENCIA: solo se consideran candidatos que TERMINAN en uno de los
+    // últimos 3 pivots estructurales (endLag <= 2). No queremos el mejor
+    // patrón histórico, queremos el conteo activo.
+    int maxEndLag = 2
     float bestS = -1.0
     int   bestI = -1
     int   bestL = 0
     int   bestP = -1
     int   bestD = 0
+    int   bestLag = -1
     float altS  = -1.0
     int   altI  = -1
     int   altL  = 0
@@ -404,30 +441,35 @@ if barstate.islast
         for st = from to n - 3
             int maxLen = math.min(6, n - st)
             // impulso: se prueban las lecturas más completas primero
-            for ln = maxLen to 3
-                [sc, pt, rs, dr] = evalImpulse(st, ln)
-                if pt >= 0
-                    if sc > bestS
-                        altS := bestS
-                        altI := bestI
-                        altL := bestL
-                        altP := bestP
-                        bestS := sc
-                        bestI := st
-                        bestL := ln
-                        bestP := pt
-                        bestD := dr
-                    else if sc > altS and st != bestI
-                        altS := sc
-                        altI := st
-                        altL := ln
-                        altP := pt
-                else if ln > worstLen
-                    worstLen := ln
-                    worstReason := rs
+            for q = 0 to maxLen - 3
+                int ln = maxLen - q
+                int endLag = n - st - ln
+                if endLag <= maxEndLag
+                    [sc, pt, rs, dr] = evalImpulse(st, ln)
+                    if pt >= 0
+                        if sc > bestS
+                            altS := bestS
+                            altI := bestI
+                            altL := bestL
+                            altP := bestP
+                            bestS := sc
+                            bestI := st
+                            bestL := ln
+                            bestP := pt
+                            bestD := dr
+                            bestLag := endLag
+                        else if sc > altS and st != bestI
+                            altS := sc
+                            altI := st
+                            altL := ln
+                            altP := pt
+                    else if ln > worstLen
+                        worstLen := ln
+                        worstReason := rs
             // ABC
             int abcLen = math.min(4, n - st)
-            if abcLen >= 3
+            int abcLag = n - st - abcLen
+            if abcLen >= 3 and abcLag <= maxEndLag
                 [sc2, pt2, rs2, dr2] = evalAbc(st, abcLen)
                 if pt2 >= 0
                     if sc2 > bestS
@@ -440,6 +482,7 @@ if barstate.islast
                         bestL := abcLen
                         bestP := pt2
                         bestD := dr2
+                        bestLag := abcLag
                     else if sc2 > altS and st != bestI
                         altS := sc2
                         altI := st
@@ -451,6 +494,11 @@ if barstate.islast
 
     bool hasCount = bestI >= 0 and bestS >= minConf
     bool isAbcBest = bestP == 2
+    // INVALID: existe un candidato reciente completo que rompe una regla dura
+    // y NO existe geometría válida reciente. NO_COUNT: hay geometría válida
+    // pero por debajo de Minimum confidence, o no hay candidatos.
+    bool isInvalid = bestI < 0 and worstLen >= 3 and worstReason != ""
+
 
     // ── conteo alternativo (sobrio, gris, sin etiquetas ruidosas) ─────
     if showAlt and altI >= 0 and hasCount
@@ -516,20 +564,23 @@ if barstate.islast
 
     // ── panel ────────────────────────────────────────────────────────
     if showTable
-        string stState = bestI < 0 ? "NO_COUNT" : not hasCount ? "NO_COUNT" : bestP == 2 ? (bestL >= 4 ? "VALID" : "DEVELOPING") : bestL >= 6 ? "VALID" : "DEVELOPING"
+        string stState = isInvalid ? "INVALID" : bestI < 0 ? "NO_COUNT" : not hasCount ? "NO_COUNT" : bestP == 2 ? (bestL >= 4 ? "VALID" : "DEVELOPING") : bestL >= 6 ? "VALID" : "DEVELOPING"
         string stPat   = bestI < 0 or not hasCount ? "—" : bestP == 2 ? "ABC" : bestP == 1 ? "DIAGONAL" : "IMPULSE"
         string stDir   = bestI < 0 or not hasCount ? "—" : bestD == 1 ? "BULLISH" : "BEARISH"
         string stWave  = hasCount ? waveName(bestL - 1, isAbcBest) : "—"
         string stConf  = bestI < 0 ? "—" : str.tostring(math.round(bestS)) + " / 100 (min " + str.tostring(minConf) + ")"
+        string stLag   = bestI < 0 ? "—" : str.tostring(bestLag) + " pivots (max " + str.tostring(maxEndLag) + ")"
         string stInval = "—"
         if hasCount
             int invK = math.min(bestL >= 6 ? 4 : bestL >= 3 ? 2 : 0, bestL - 1)
             stInval := str.tostring(array.get(sPrice, bestI + invK), format.mintick)
         string stWhy = ""
-        if bestI < 0
-            stWhy := worstReason == "" ? "Pivots insuficientes para un candidato" : worstReason
+        if isInvalid
+            stWhy := "Regla dura rota → " + worstReason
+        else if bestI < 0
+            stWhy := worstReason == "" ? "Pivots insuficientes para un candidato reciente" : worstReason
         else if not hasCount
-            stWhy := "Mejor candidato por debajo de Minimum confidence"
+            stWhy := "Geometría válida, pero por debajo de Minimum confidence"
         else
             stWhy := "Reglas duras OK"
             if bestP == 1
@@ -542,6 +593,7 @@ if barstate.islast
                     stWhy := "Posible W5 truncada (unconfirmed)"
 
         color stCol = stState == "VALID" ? color.new(#26a69a, 0) : stState == "DEVELOPING" ? color.new(#ffb74d, 0) : color.new(#ef5350, 0)
+
         row(0,  "Estado",       stState, stCol)
         row(1,  "Pattern",      stPat, color.new(color.white, 0))
         row(2,  "Direction",    stDir, color.new(color.white, 0))
@@ -550,6 +602,8 @@ if barstate.islast
         row(5,  "Pivots raw",   str.tostring(rawTotal) + " fractales", color.new(color.white, 0))
         row(6,  "Pivots estr.", str.tostring(n) + " (usados " + (hasCount ? str.tostring(bestL) : "0") + ")", color.new(color.white, 0))
         row(7,  "Current wave", stWave, color.new(color.white, 0))
+        row(11, "End lag",      stLag, color.new(color.white, 0))
+
         row(8,  "Invalidation", stInval, colInvC)
         row(9,  "Confirmación", "rightBars = " + str.tostring(rightB) + " barras", color.new(color.gray, 0))
         row(10, "Motivo",       stWhy, color.new(color.white, 0))
