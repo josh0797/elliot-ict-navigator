@@ -638,24 +638,21 @@ export function TradingChart({
       }
       void drawn;
 
-      // Originating sweep marker.
+      // Originating sweep marker (timestamp-anchored).
       if (ict && ict.sweeps.length > 0) {
         const sw = ict.sweeps[ict.sweeps.length - 1];
-        if (
-          sw &&
-          sw.index >= 0 &&
-          sw.index < candles.length &&
-          isFiniteNumber(sw.price) &&
-          isValidChartTime(candles[sw.index].time)
-        ) {
-          pushMarker({
-            id: `active-sweep-${sw.id}-${candles[sw.index].time}`,
-            time: candles[sw.index].time as unknown as UTCTimestamp,
-            position: sw.type === "buy_side" ? "aboveBar" : "belowBar",
-            color: sw.type === "buy_side" ? "#ef4444" : "#22c55e",
-            shape: sw.type === "buy_side" ? "arrowDown" : "arrowUp",
-            text: `SWEEP ${sw.type === "buy_side" ? "BSL" : "SSL"}`,
-          });
+        if (sw && isFiniteNumber(sw.price)) {
+          const t = anchorTime("ict:active-sweep", sw.id, { time: sw.time, index: sw.index });
+          if (t !== null) {
+            pushMarker({
+              id: `active-sweep-${sw.id}-${t}`,
+              time: t as unknown as UTCTimestamp,
+              position: sw.type === "buy_side" ? "aboveBar" : "belowBar",
+              color: sw.type === "buy_side" ? "#ef4444" : "#22c55e",
+              shape: sw.type === "buy_side" ? "arrowDown" : "arrowUp",
+              text: `SWEEP ${sw.type === "buy_side" ? "BSL" : "SSL"}`,
+            });
+          }
         }
       }
     }
@@ -665,32 +662,36 @@ export function TradingChart({
       markersRef.current = createSeriesMarkers(series, chartMarkers);
     }
 
-    // Crosshair tooltip — track nearest pivot.
+    // Report anchors that could not be tied to a real candle instead of
+    // silently drawing them on a neighbouring bar.
+    onAnchorIssues?.(anchorIssues);
+
+    // Crosshair tooltip — track nearest pivot (also timestamp-anchored).
     if (!onPivotHover) return;
     const waves = elliott?.waves ?? [];
+    const waveAnchors = waves
+      .map((w) => ({
+        w,
+        t: resolveAnchor(anchors, { time: w.time, index: w.index }, { analysisTimes }).time,
+      }))
+      .filter((p): p is { w: ElliottWaveDTO; t: number } => p.t !== null);
     const handler = (param: MouseEventParams<Time>) => {
-      if (!param.point || param.time === undefined || waves.length === 0) {
+      if (!param.point || param.time === undefined || waveAnchors.length === 0) {
         onPivotHover(null);
         return;
       }
       const t = Number(param.time);
-      const w = waves.reduce<ElliottWaveDTO | null>((best, w) => {
-        const wt =
-          w.index < candles.length
-            ? candles[w.index].time
-            : Math.floor(new Date(w.time).getTime() / 1000);
-        if (Math.abs(wt - t) > 60 * 60 * 6) return best;
-        if (!best) return w;
-        const bt =
-          best.index < candles.length
-            ? candles[best.index].time
-            : Math.floor(new Date(best.time).getTime() / 1000);
-        return Math.abs(wt - t) < Math.abs(bt - t) ? w : best;
-      }, null);
-      if (!w) {
+      const tolerance = Math.max(anchors.spacing * 3, 60 * 60 * 6);
+      let best: { w: ElliottWaveDTO; t: number } | null = null;
+      for (const p of waveAnchors) {
+        if (Math.abs(p.t - t) > tolerance) continue;
+        if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+      }
+      if (!best) {
         onPivotHover(null);
         return;
       }
+      const w = best.w;
       onPivotHover({
         x: param.point.x,
         y: param.point.y,
@@ -705,7 +706,8 @@ export function TradingChart({
     return () => chart.unsubscribeCrosshairMove(handler);
     // ICT overlays are intentionally minimal: the legend panel surfaces them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, elliott, internal, ict, layers, signal, viewMode, livePrice]);
+  }, [candles, analysisCandles, elliott, internal, ict, layers, signal, viewMode, livePrice]);
+
 
   return <div ref={containerRef} className="h-[520px] w-full" />;
 }
