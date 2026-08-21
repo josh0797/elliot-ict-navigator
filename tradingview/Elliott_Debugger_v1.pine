@@ -1,0 +1,555 @@
+//@version=6
+// =====================================================================
+// Elliott Debugger v1 — Elliott-only (FASE 1)
+// ---------------------------------------------------------------------
+// Objetivo: DEPURAR / VALIDAR el motor Elliott directamente sobre las
+// velas nativas de TradingView, antes de automatizar nada.
+//
+// PRINCIPIOS (no negociables):
+//  1. La identidad de cada pivot es el `bar_index` REAL de TradingView.
+//     No hay series "visual" vs "análisis", ni mapping externo.
+//  2. Nunca se fuerza un conteo: existe un estado explícito NO_COUNT.
+//  3. Sin lookahead. Los pivots se confirman `rightBars` barras DESPUÉS
+//     del swing (ta.pivothigh/ta.pivotlow); la etiqueta se dibuja en la
+//     barra histórica del pivot, pero solo cuando ya está confirmado.
+//  4. Las ondas confirmadas no repintan: el conteo se construye solo con
+//     pivots confirmados. La vista provisional/tail es opt-in y se marca
+//     con línea punteada + sufijo "?".
+//  5. No hay una etiqueta por vela: Elliott cuenta swings, no candles.
+//  6. Cada onda se ancla al swing exacto usado por el algoritmo.
+//
+// Portado conceptualmente (no copia literal) desde el motor TS del repo:
+//   structure/pivots.ts        → fractal + dedupe alternante + filtro ATR
+//   elliott/degrees.ts         → sensibilidad por grado (Major/Inter/Minor)
+//   elliott/candidates.ts      → candidatos sobre pivots alternados recientes
+//   elliott/rules.ts           → reglas duras R1/R2/R3/R4 + truncación
+//   elliott/scoring.ts         → proximidad Fibonacci y proporcionalidad
+//   elliott/hypotheses.ts      → impulso vs diagonal vs ABC compiten por score
+//   elliott/engine.ts          → orquestación + estado + invalidación
+// =====================================================================
+
+indicator("Elliott Debugger v1", shorttitle="ELL DBG v1", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// ─────────────────────────────────────────────────────────────────────
+// INPUTS
+// ─────────────────────────────────────────────────────────────────────
+var string GP = "1 · Pivots"
+inLeft   = input.int(3,    "leftBars",                    minval=1, maxval=50, group=GP)
+inRight  = input.int(3,    "rightBars (confirmación)",    minval=1, maxval=50, group=GP)
+atrLen   = input.int(14,   "ATR length",                  minval=2, maxval=200, group=GP)
+minAtrIn = input.float(0.75,"minAtrDistance (x ATR)",     minval=0.0, step=0.05, group=GP)
+
+var string GD = "2 · Degree"
+degIn = input.string("Auto", "Degree", options=["Auto", "Major", "Intermediate", "Minor"], group=GD)
+
+var string GB = "3 · Debug"
+showDebugPivots = input.bool(true,  "Show debug pivots (los que usa Elliott)", group=GB)
+showRawPivots   = input.bool(false, "Show raw pivots (antes del filtro ATR)",  group=GB)
+showProvisional = input.bool(false, "Vista provisional / tail (puede repintar)", group=GB)
+showTable       = input.bool(true,  "Panel diagnóstico",                       group=GB)
+
+var string GV = "4 · Conteo y visuales"
+minConf    = input.int(60, "Minimum confidence (0-100)", minval=0, maxval=100, group=GV)
+showAlt    = input.bool(true,  "Mostrar conteo alternativo", group=GV)
+showFib    = input.bool(false, "Fibonacci (W2 / W3 / W5)",   group=GV)
+showInval  = input.bool(true,  "Invalidation level",         group=GV)
+maxDbgPiv  = input.int(40, "Máx. debug pivots dibujados", minval=5, maxval=200, group=GV)
+colPrim    = input.color(color.new(#26a69a, 0),  "Primary",     group=GV)
+colAltC    = input.color(color.new(#787b86, 25), "Alternative", group=GV)
+colDbgC    = input.color(color.new(#ff9800, 35), "Debug pivots",group=GV)
+colInvC    = input.color(color.new(#ef5350, 30), "Invalidation",group=GV)
+
+// ─────────────────────────────────────────────────────────────────────
+// DEGREE → sensibilidad
+// ---------------------------------------------------------------------
+// La jerarquía se implementa como sensibilidad del detector de pivots:
+//  · Major        → menos pivots  (fractal más ancho + ATR x2.5)
+//  · Intermediate → base          (los inputs tal cual)
+//  · Minor        → más pivots    (fractal más estrecho + ATR x0.5)
+// "Auto" elige por temporalidad del chart: 1D+ → Major, 4H..1D → Inter,
+// intradía < 4H → Minor. Es una heurística explícita, no una verdad
+// universal; el selector manual siempre manda.
+// ─────────────────────────────────────────────────────────────────────
+tfSec  = timeframe.in_seconds()
+degree = degIn == "Auto" ? (tfSec >= 86400 ? "Major" : tfSec >= 14400 ? "Intermediate" : "Minor") : degIn
+
+degAtrMul  = degree == "Major" ? 2.5 : degree == "Minor" ? 0.5 : 1.0
+degBarsAdd = degree == "Major" ? 2   : degree == "Minor" ? -1  : 0
+
+leftB   = math.max(1, inLeft  + degBarsAdd)
+rightB  = math.max(1, inRight + degBarsAdd)
+minAtrD = minAtrIn * degAtrMul
+
+// ─────────────────────────────────────────────────────────────────────
+// CONSTANTES FIBONACCI / NOMBRES
+// ─────────────────────────────────────────────────────────────────────
+var float[] W2T = array.from(0.382, 0.5, 0.618, 0.786)
+var float[] W3T = array.from(1.0, 1.618, 2.618)
+var float[] W4T = array.from(0.236, 0.382, 0.5)
+var float[] W5T = array.from(0.618, 1.0, 1.618)
+var float[] ABT = array.from(0.618, 1.0, 1.618)
+
+var string[] IMP_N = array.from("0", "1", "2", "3", "4", "5")
+var string[] IMP_M = array.from("0", "i", "ii", "iii", "iv", "v")
+var string[] ABC_N = array.from("S", "A", "B", "C")
+var string[] ABC_M = array.from("s", "a", "b", "c")
+
+// Etiqueta por grado: MAJOR "[1]" · INTERMEDIATE "1" · MINOR "i"
+waveName(int k, bool isAbc) =>
+    string b = isAbc ? array.get(ABC_N, k) : array.get(IMP_N, k)
+    string m = isAbc ? array.get(ABC_M, k) : array.get(IMP_M, k)
+    degree == "Major" ? "[" + b + "]" : degree == "Minor" ? m : b
+
+// ─────────────────────────────────────────────────────────────────────
+// SCORING helpers (scoring.ts)
+// ─────────────────────────────────────────────────────────────────────
+fibProx(float r, float[] targets, float tol) =>
+    float best = 0.0
+    if not na(r) and r > 0
+        for i = 0 to array.size(targets) - 1
+            float t = array.get(targets, i)
+            float d = math.abs(r - t) / t
+            best := math.max(best, math.max(0.0, 1.0 - d / tol))
+    best
+
+// ─────────────────────────────────────────────────────────────────────
+// PIVOTS (pivots.ts)
+//  · fractal izquierda/derecha vía ta.pivothigh / ta.pivotlow
+//  · alternancia HIGH/LOW estricta; dos consecutivos del mismo tipo →
+//    se conserva el más extremo
+//  · filtro de distancia ATR para eliminar micro-ruido
+// ─────────────────────────────────────────────────────────────────────
+atrV = ta.atr(atrLen)
+
+// Estructurales (los que consume Elliott)
+var float[] sPrice = array.new<float>()
+var int[]   sBar   = array.new<int>()
+var int[]   sType  = array.new<int>()   //  1 = HIGH, -1 = LOW
+var float[] sDist  = array.new<float>() // distancia al pivot previo, en ATR
+
+// Raw (solo diagnóstico: alternancia aplicada, sin filtro ATR)
+var float[] rPrice = array.new<float>()
+var int[]   rBar   = array.new<int>()
+var int[]   rType  = array.new<int>()
+
+var int rawTotal = 0   // fractales confirmados brutos (antes de dedupe)
+
+cap(float[] pa, int[] ba, int[] ta_, float[] da, int maxN) =>
+    while array.size(ba) > maxN
+        array.shift(pa)
+        array.shift(ba)
+        array.shift(ta_)
+        if not na(da) and array.size(da) > 0
+            array.shift(da)
+
+// Añade respetando alternancia; devuelve true si se insertó una entrada nueva
+pushAlt(float[] pa, int[] ba, int[] ta_, float p, int b, int t) =>
+    int n = array.size(ta_)
+    bool inserted = false
+    if n > 0 and array.get(ta_, n - 1) == t
+        float prev = array.get(pa, n - 1)
+        bool keepNew = t == 1 ? p > prev : p < prev
+        if keepNew
+            array.set(pa, n - 1, p)
+            array.set(ba, n - 1, b)
+    else
+        array.push(pa, p)
+        array.push(ba, b)
+        array.push(ta_, t)
+        inserted := true
+    inserted
+
+// Igual que pushAlt pero con gate de distancia ATR (solo entre tipos distintos)
+pushStruct(float p, int b, int t, float atrNow) =>
+    int n = array.size(sType)
+    if n > 0 and array.get(sType, n - 1) == t
+        float prev = array.get(sPrice, n - 1)
+        bool keepNew = t == 1 ? p > prev : p < prev
+        if keepNew
+            array.set(sPrice, n - 1, p)
+            array.set(sBar, n - 1, b)
+    else
+        bool accept = true
+        float dist = 0.0
+        if n > 0
+            float prev = array.get(sPrice, n - 1)
+            // ATR sin calentar (na / <= 0) → se acepta el pivot pero jamás
+            // se infla la distancia con un epsilon.
+            if not na(atrNow) and atrNow > 0
+                dist := math.abs(p - prev) / atrNow
+                accept := dist >= minAtrD
+        if accept
+            array.push(sPrice, p)
+            array.push(sBar, b)
+            array.push(sType, t)
+            array.push(sDist, dist)
+
+ph = ta.pivothigh(high, leftB, rightB)
+pl = ta.pivotlow(low, leftB, rightB)
+
+// El fractal se confirma AHORA, pero el swing ocurrió `rightB` barras atrás.
+if not na(ph)
+    int b = bar_index - rightB
+    rawTotal += 1
+    pushAlt(rPrice, rBar, rType, ph, b, 1)
+    pushStruct(ph, b, 1, atrV)
+if not na(pl)
+    int b = bar_index - rightB
+    rawTotal += 1
+    pushAlt(rPrice, rBar, rType, pl, b, -1)
+    pushStruct(pl, b, -1, atrV)
+
+// Arrays acotados (límites de Pine + coste de memoria)
+if barstate.isconfirmed
+    cap(sPrice, sBar, sType, sDist, 300)
+    while array.size(rBar) > 300
+        array.shift(rPrice)
+        array.shift(rBar)
+        array.shift(rType)
+
+// ─────────────────────────────────────────────────────────────────────
+// EVALUACIÓN DE CANDIDATOS
+// ---------------------------------------------------------------------
+// evalImpulse → [score, pattern, reason, dir]
+//   pattern: 0 = IMPULSE · 1 = DIAGONAL · -1 = INVALID
+//   dir:     1 = BULLISH · -1 = BEARISH
+// Reglas duras:
+//   R1  W2 no cruza el origen de W1
+//   R2  W3 no es la más corta cuando W5 existe
+//   R3  W3 supera el extremo de W1
+//   R4  W4 no entra en territorio de W1 (si solapa → DIAGONAL, no INVALID)
+// ─────────────────────────────────────────────────────────────────────
+evalImpulse(int start, int len) =>
+    bool dirLong = array.get(sType, start) == -1   // arranca en LOW → alcista
+    float p0 = array.get(sPrice, start)
+    float p1 = array.get(sPrice, start + 1)
+    float p2 = len > 2 ? array.get(sPrice, start + 2) : na
+    float p3 = len > 3 ? array.get(sPrice, start + 3) : na
+    float p4 = len > 4 ? array.get(sPrice, start + 4) : na
+    float p5 = len > 5 ? array.get(sPrice, start + 5) : na
+
+    bool ok = true
+    int pat = 0
+    string reason = ""
+
+    if not na(p2)
+        if (dirLong ? p2 <= p0 : p2 >= p0)
+            ok := false
+            reason := "R1: W2 cruza el origen de W1"
+    if ok and not na(p3)
+        if (dirLong ? p3 <= p1 : p3 >= p1)
+            ok := false
+            reason := "R3: W3 no supera el extremo de W1"
+    if ok and not na(p4)
+        bool overlap = dirLong ? p4 <= p1 : p4 >= p1
+        if overlap
+            // Cuña / diagonal: el solapamiento es legítimo, se etiqueta.
+            pat := 1
+    if ok and not na(p5)
+        float w1 = math.abs(p1 - p0)
+        float w3 = math.abs(p3 - p2)
+        float w5 = math.abs(p5 - p4)
+        if w3 < w1 and w3 < w5
+            ok := false
+            reason := "R2: W3 es la onda más corta"
+        if ok and (dirLong ? p5 <= p4 : p5 >= p4)
+            ok := false
+            reason := "W5 no avanza desde W4"
+
+    float score = 0.0
+    if ok
+        float soft = 0.0
+        int cnt = 0
+        float w1 = math.abs(p1 - p0)
+        if not na(p2) and w1 > 0
+            soft += fibProx(math.abs(p1 - p2) / w1, W2T, 0.35)
+            cnt += 1
+        if not na(p3) and w1 > 0
+            soft += fibProx(math.abs(p3 - p2) / w1, W3T, 0.45)
+            cnt += 1
+        if not na(p4)
+            float w3 = math.abs(p3 - p2)
+            if w3 > 0
+                soft += fibProx(math.abs(p3 - p4) / w3, W4T, 0.40)
+                cnt += 1
+        if not na(p5) and w1 > 0
+            soft += fibProx(math.abs(p5 - p4) / w1, W5T, 0.40)
+            cnt += 1
+        float softAvg = cnt > 0 ? soft / cnt : 0.0
+
+        // Cobertura: 3 pivots = fragmento, 6 = estructura completa.
+        float coverage = math.min(1.0, (len - 3) / 3.0)
+        // Claridad: swings amplios en ATR = pivots inequívocos.
+        float dsum = 0.0
+        int dn = 0
+        for i = math.max(1, start) to start + len - 1
+            if i < array.size(sDist)
+                dsum += array.get(sDist, i)
+                dn += 1
+        float clarity = dn > 0 ? math.min(1.0, (dsum / dn) / 1.5) : 0.0
+
+        score := 45.0 + 25.0 * softAvg + 20.0 * coverage + 10.0 * clarity
+        if pat == 1
+            score := score * 0.92   // la diagonal es una lectura menos limpia
+    [score, ok ? pat : -1, reason, dirLong ? 1 : -1]
+
+// evalAbc → [score, pattern(2), reason, dir]
+// S → A → B → C. La corrección va CONTRA el tramo previo.
+evalAbc(int start, int len) =>
+    bool dirDown = array.get(sType, start) == 1   // arranca en HIGH → corrección bajista
+    float ps = array.get(sPrice, start)
+    float pa = array.get(sPrice, start + 1)
+    float pb = array.get(sPrice, start + 2)
+    float pc = len > 3 ? array.get(sPrice, start + 3) : na
+
+    bool ok = true
+    string reason = ""
+    float aLen = math.abs(pa - ps)
+
+    if aLen <= 0
+        ok := false
+        reason := "ABC: onda A degenerada"
+    if ok
+        // B no puede superar el origen S.
+        if (dirDown ? pb > ps : pb < ps)
+            ok := false
+            reason := "ABC: B supera el origen de A"
+    if ok
+        float bRetr = math.abs(pb - pa) / aLen
+        if bRetr < 0.15
+            ok := false
+            reason := "ABC: B demasiado superficial"
+
+    float score = 0.0
+    if ok
+        float soft = 0.0
+        int cnt = 0
+        if not na(pc)
+            soft += fibProx(math.abs(pc - pb) / aLen, ABT, 0.45)
+            cnt += 1
+        float softAvg = cnt > 0 ? soft / cnt : 0.0
+        float coverage = math.min(1.0, (len - 3) / 1.0)
+        float dsum = 0.0
+        int dn = 0
+        for i = math.max(1, start) to start + len - 1
+            if i < array.size(sDist)
+                dsum += array.get(sDist, i)
+                dn += 1
+        float clarity = dn > 0 ? math.min(1.0, (dsum / dn) / 1.5) : 0.0
+        // Base menor que el impulso: ABC no debe ganar por defecto.
+        score := 38.0 + 25.0 * softAvg + 20.0 * coverage + 10.0 * clarity
+    [score, ok ? 2 : -1, reason, dirDown ? -1 : 1]
+
+// ─────────────────────────────────────────────────────────────────────
+// OBJETOS DE DIBUJO (reutilizados / eliminados en cada redraw)
+// ─────────────────────────────────────────────────────────────────────
+var label[] LBLS = array.new<label>()
+var line[]  LNS  = array.new<line>()
+
+clearDraw() =>
+    if array.size(LBLS) > 0
+        for i = 0 to array.size(LBLS) - 1
+            label.delete(array.get(LBLS, i))
+        array.clear(LBLS)
+    if array.size(LNS) > 0
+        for i = 0 to array.size(LNS) - 1
+            line.delete(array.get(LNS, i))
+        array.clear(LNS)
+
+addLbl(int b, float p, string txt, color c, bool up) =>
+    label l = label.new(b, p, txt, xloc=xloc.bar_index, yloc=yloc.price, style=up ? label.style_label_down : label.style_label_up, color=color.new(color.black, 100), textcolor=c, size=size.small)
+    array.push(LBLS, l)
+
+addLine(int b1, float p1, int b2, float p2, color c, int w, string st) =>
+    line l = line.new(b1, p1, b2, p2, xloc=xloc.bar_index, color=c, width=w, style=st)
+    array.push(LNS, l)
+
+addHLine(int b1, int b2, float p, color c, string st) =>
+    line l = line.new(b1, p, b2, p, xloc=xloc.bar_index, color=c, width=1, style=st)
+    array.push(LNS, l)
+
+// ─────────────────────────────────────────────────────────────────────
+// PANEL DIAGNÓSTICO
+// ─────────────────────────────────────────────────────────────────────
+var table TBL = table.new(position.top_right, 2, 11, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
+
+row(int r, string k, string v, color vc) =>
+    table.cell(TBL, 0, r, k, text_color=color.new(color.gray, 0), text_size=size.small, text_halign=text.align_left, bgcolor=color.new(color.black, 80))
+    table.cell(TBL, 1, r, v, text_color=vc, text_size=size.small, text_halign=text.align_left, bgcolor=color.new(color.black, 80))
+
+// ─────────────────────────────────────────────────────────────────────
+// MOTOR: solo en la última barra (evita repintado acumulado y respeta
+// los límites de objetos de Pine).
+// ─────────────────────────────────────────────────────────────────────
+if barstate.islast
+    clearDraw()
+
+    int n = array.size(sType)
+
+    // ── selección de mejor / segundo mejor candidato ──────────────────
+    float bestS = -1.0
+    int   bestI = -1
+    int   bestL = 0
+    int   bestP = -1
+    int   bestD = 0
+    float altS  = -1.0
+    int   altI  = -1
+    int   altL  = 0
+    int   altP  = -1
+    string worstReason = ""
+    int worstLen = -1
+
+    if n >= 3
+        int from = math.max(0, n - 8)
+        for st = from to n - 3
+            int maxLen = math.min(6, n - st)
+            // impulso: se prueban las lecturas más completas primero
+            for ln = maxLen to 3
+                [sc, pt, rs, dr] = evalImpulse(st, ln)
+                if pt >= 0
+                    if sc > bestS
+                        altS := bestS
+                        altI := bestI
+                        altL := bestL
+                        altP := bestP
+                        bestS := sc
+                        bestI := st
+                        bestL := ln
+                        bestP := pt
+                        bestD := dr
+                    else if sc > altS and st != bestI
+                        altS := sc
+                        altI := st
+                        altL := ln
+                        altP := pt
+                else if ln > worstLen
+                    worstLen := ln
+                    worstReason := rs
+            // ABC
+            int abcLen = math.min(4, n - st)
+            if abcLen >= 3
+                [sc2, pt2, rs2, dr2] = evalAbc(st, abcLen)
+                if pt2 >= 0
+                    if sc2 > bestS
+                        altS := bestS
+                        altI := bestI
+                        altL := bestL
+                        altP := bestP
+                        bestS := sc2
+                        bestI := st
+                        bestL := abcLen
+                        bestP := pt2
+                        bestD := dr2
+                    else if sc2 > altS and st != bestI
+                        altS := sc2
+                        altI := st
+                        altL := abcLen
+                        altP := pt2
+                else if worstLen < 0
+                    worstLen := abcLen
+                    worstReason := rs2
+
+    bool hasCount = bestI >= 0 and bestS >= minConf
+    bool isAbcBest = bestP == 2
+
+    // ── conteo alternativo (sobrio, gris, sin etiquetas ruidosas) ─────
+    if showAlt and altI >= 0 and hasCount
+        bool altAbc = altP == 2
+        for k = 0 to altL - 2
+            addLine(array.get(sBar, altI + k), array.get(sPrice, altI + k), array.get(sBar, altI + k + 1), array.get(sPrice, altI + k + 1), colAltC, 1, line.style_dashed)
+        addLbl(array.get(sBar, altI + altL - 1), array.get(sPrice, altI + altL - 1), "alt " + waveName(altL - 1, altAbc), colAltC, array.get(sType, altI + altL - 1) == 1)
+
+    // ── conteo primario ──────────────────────────────────────────────
+    if hasCount
+        for k = 0 to bestL - 2
+            addLine(array.get(sBar, bestI + k), array.get(sPrice, bestI + k), array.get(sBar, bestI + k + 1), array.get(sPrice, bestI + k + 1), colPrim, 2, line.style_solid)
+        for k = 0 to bestL - 1
+            int b = array.get(sBar, bestI + k)
+            float p = array.get(sPrice, bestI + k)
+            bool up = array.get(sType, bestI + k) == 1
+            addLbl(b, p, waveName(k, isAbcBest), colPrim, up)
+
+        // Vista provisional / tail: último pivot NO confirmado estructuralmente
+        // (el swing en curso). Punteada + "?" y desactivable.
+        if showProvisional
+            int lastB = array.get(sBar, bestI + bestL - 1)
+            float lastP = array.get(sPrice, bestI + bestL - 1)
+            float livePx = close
+            addLine(lastB, lastP, bar_index, livePx, color.new(colPrim, 55), 1, line.style_dotted)
+            addLbl(bar_index, livePx, waveName(math.min(bestL, isAbcBest ? 3 : 5), isAbcBest) + "?", color.new(colPrim, 20), livePx >= lastP)
+
+        // Invalidation level: W4 si existe W5, si no W2, si no W0.
+        if showInval
+            int invK = bestL >= 6 ? 4 : bestL >= 3 ? 2 : 0
+            invK := math.min(invK, bestL - 1)
+            float invP = array.get(sPrice, bestI + invK)
+            addHLine(array.get(sBar, bestI + invK), bar_index + 10, invP, colInvC, line.style_dashed)
+            addLbl(bar_index + 10, invP, "INVAL " + str.tostring(invP, format.mintick), colInvC, false)
+
+        // Fibonacci opcional
+        if showFib and not isAbcBest and bestL >= 3
+            float f0 = array.get(sPrice, bestI)
+            float f1 = array.get(sPrice, bestI + 1)
+            float w1 = f1 - f0
+            addHLine(array.get(sBar, bestI + 1), bar_index + 6, f1 - w1 * 0.382, color.new(colPrim, 60), line.style_dotted)
+            addHLine(array.get(sBar, bestI + 1), bar_index + 6, f1 - w1 * 0.5,   color.new(colPrim, 60), line.style_dotted)
+            addHLine(array.get(sBar, bestI + 1), bar_index + 6, f1 - w1 * 0.618, color.new(colPrim, 60), line.style_dotted)
+            if bestL >= 3
+                float f2 = array.get(sPrice, bestI + 2)
+                addHLine(array.get(sBar, bestI + 2), bar_index + 6, f2 + w1 * 1.618, color.new(#42a5f5, 55), line.style_dotted)
+            if bestL >= 5
+                float f4 = array.get(sPrice, bestI + 4)
+                addHLine(array.get(sBar, bestI + 4), bar_index + 6, f4 + w1 * 1.0, color.new(#ab47bc, 55), line.style_dotted)
+
+    // ── debug pivots ─────────────────────────────────────────────────
+    if showDebugPivots and n > 0
+        int fromD = math.max(0, n - maxDbgPiv)
+        for i = fromD to n - 1
+            bool inCount = hasCount and i >= bestI and i <= bestI + bestL - 1
+            string tag = "P" + str.tostring(i - fromD) + (array.get(sType, i) == 1 ? " H" : " L")
+            addLbl(array.get(sBar, i), array.get(sPrice, i), tag, inCount ? color.new(colDbgC, 0) : color.new(colDbgC, 45), array.get(sType, i) == 1)
+
+    if showRawPivots and array.size(rBar) > 0
+        int fromR = math.max(0, array.size(rBar) - maxDbgPiv)
+        for i = fromR to array.size(rBar) - 1
+            addLbl(array.get(rBar, i), array.get(rPrice, i), array.get(rType, i) == 1 ? "·h" : "·l", color.new(color.gray, 20), array.get(rType, i) == 1)
+
+    // ── panel ────────────────────────────────────────────────────────
+    if showTable
+        string stState = bestI < 0 ? "NO_COUNT" : not hasCount ? "NO_COUNT" : bestP == 2 ? (bestL >= 4 ? "VALID" : "DEVELOPING") : bestL >= 6 ? "VALID" : "DEVELOPING"
+        string stPat   = bestI < 0 or not hasCount ? "—" : bestP == 2 ? "ABC" : bestP == 1 ? "DIAGONAL" : "IMPULSE"
+        string stDir   = bestI < 0 or not hasCount ? "—" : bestD == 1 ? "BULLISH" : "BEARISH"
+        string stWave  = hasCount ? waveName(bestL - 1, isAbcBest) : "—"
+        string stConf  = bestI < 0 ? "—" : str.tostring(math.round(bestS)) + " / 100 (min " + str.tostring(minConf) + ")"
+        string stInval = "—"
+        if hasCount
+            int invK = math.min(bestL >= 6 ? 4 : bestL >= 3 ? 2 : 0, bestL - 1)
+            stInval := str.tostring(array.get(sPrice, bestI + invK), format.mintick)
+        string stWhy = ""
+        if bestI < 0
+            stWhy := worstReason == "" ? "Pivots insuficientes para un candidato" : worstReason
+        else if not hasCount
+            stWhy := "Mejor candidato por debajo de Minimum confidence"
+        else
+            stWhy := "Reglas duras OK"
+            if bestP == 1
+                stWhy := "Solapamiento W1/W4 → DIAGONAL (no invalida)"
+            if bestP == 0 and bestL >= 6
+                float pp3 = array.get(sPrice, bestI + 3)
+                float pp5 = array.get(sPrice, bestI + 5)
+                bool trunc = bestD == 1 ? pp5 < pp3 : pp5 > pp3
+                if trunc
+                    stWhy := "Posible W5 truncada (unconfirmed)"
+
+        color stCol = stState == "VALID" ? color.new(#26a69a, 0) : stState == "DEVELOPING" ? color.new(#ffb74d, 0) : color.new(#ef5350, 0)
+        row(0,  "Estado",       stState, stCol)
+        row(1,  "Pattern",      stPat, color.new(color.white, 0))
+        row(2,  "Direction",    stDir, color.new(color.white, 0))
+        row(3,  "Degree",       degree + (degIn == "Auto" ? " (auto)" : ""), color.new(color.white, 0))
+        row(4,  "Confidence",   stConf, stCol)
+        row(5,  "Pivots raw",   str.tostring(rawTotal) + " fractales", color.new(color.white, 0))
+        row(6,  "Pivots estr.", str.tostring(n) + " (usados " + (hasCount ? str.tostring(bestL) : "0") + ")", color.new(color.white, 0))
+        row(7,  "Current wave", stWave, color.new(color.white, 0))
+        row(8,  "Invalidation", stInval, colInvC)
+        row(9,  "Confirmación", "rightBars = " + str.tostring(rightB) + " barras", color.new(color.gray, 0))
+        row(10, "Motivo",       stWhy, color.new(color.white, 0))
