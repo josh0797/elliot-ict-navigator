@@ -1,6 +1,6 @@
 //@version=6
 // =====================================================================
-// Elliott Debugger v1 — Elliott-only (FASE 1)
+// Elliott Debugger v1 (v1.0.1) — Elliott-only (FASE 1)
 // ---------------------------------------------------------------------
 // Objetivo: DEPURAR / VALIDAR el motor Elliott directamente sobre las
 // velas nativas de TradingView, antes de automatizar nada.
