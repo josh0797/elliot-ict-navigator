@@ -1,0 +1,970 @@
+//@version=6
+// =====================================================================
+// Elliott × ICT × SONIC v2 (v2.0.0)
+// ---------------------------------------------------------------------
+// v1 (`Elliott_Debugger_v1.pine`) SE CONSERVA INTACTO como referencia
+// estable Elliott-only. Esta v2 añade, sobre el mismo motor Elliott:
+//   · corrección de la colisión de etiquetas Elliott vs debug pivots
+//   · capa ICT nativa (structure / liquidity+sweeps / FVG / order blocks)
+//   · panel SONIC-likeness · PRE_RAID_APPROACH_V1 (diagnóstico, NO señal)
+//
+// NO implementado (siguiente iteración): MT5, órdenes, strategy(), bridge.
+//
+// PRINCIPIOS (no negociables, heredados de v1):
+//  1. La identidad de cada pivot es el `bar_index` REAL de TradingView.
+//  2. Nunca se fuerza un conteo: existe un estado explícito NO_COUNT.
+//  3. Sin lookahead. Pivots confirmados `rightBars` barras DESPUÉS del swing.
+//  4. Las ondas confirmadas no repintan. Tail provisional opt-in y punteado.
+//  5. No hay una etiqueta por vela: Elliott cuenta swings, no candles.
+//  6. Cada onda se ancla al swing exacto usado por el algoritmo. Los
+//     OFFSETS de etiqueta son SOLO visuales: no tocan bar_index ni precio.
+//
+// Portado conceptualmente desde el repo (no copia literal):
+//   structure/pivots.ts, elliott/*            → motor Elliott (v1)
+//   detection/ict.ts, detection/ict/*         → FVG, OB, sweeps, structure
+//   ml/smc/pre-raid.ts                        → PRE_RAID_APPROACH_V1
+// =====================================================================
+
+indicator("Elliott x ICT x SONIC v2", shorttitle="ELL·ICT·SONIC v2", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+// ─────────────────────────────────────────────────────────────────────
+// INPUTS
+// ─────────────────────────────────────────────────────────────────────
+const string GE = "1 · Elliott"
+showElliott = input.bool(true, "Elliott ON", group=GE)
+inLeft   = input.int(3,    "leftBars",                    minval=1, maxval=50, group=GE)
+inRight  = input.int(3,    "rightBars (confirmación)",    minval=1, maxval=50, group=GE)
+atrLen   = input.int(14,   "ATR length",                  minval=2, maxval=200, group=GE)
+minAtrIn = input.float(0.75,"minAtrDistance (x ATR)",     minval=0.0, step=0.05, group=GE)
+degIn    = input.string("Auto", "Degree", options=["Auto", "Major", "Intermediate", "Minor"], group=GE)
+minConf  = input.int(60, "Minimum confidence (0-100)", minval=0, maxval=100, group=GE)
+showAlt  = input.bool(true,  "Mostrar conteo alternativo", group=GE)
+showFib  = input.bool(false, "Fibonacci (W2 / W3 / W5)",   group=GE)
+showInval= input.bool(true,  "Invalidation level",         group=GE)
+showProvisional = input.bool(false, "Vista provisional / tail (puede repintar)", group=GE)
+
+const string GB = "2 · Debug"
+dbgMode         = input.string("Combined", "Debug labels on active count", options=["Hide", "Combined", "Separate"], group=GB)
+showDebugPivots = input.bool(true,  "Show debug pivots (los que usa Elliott)", group=GB)
+showRawPivots   = input.bool(false, "Show raw pivots (antes del filtro ATR)",  group=GB)
+maxDbgPiv       = input.int(40, "Máx. debug pivots dibujados", minval=5, maxval=200, group=GB)
+showTable       = input.bool(true,  "Panel Elliott", group=GB)
+
+const string GI = "3 · ICT"
+ictStructure = input.bool(true,  "Structure (BOS / CHoCH)", group=GI)
+ictLiquidity = input.bool(true,  "Liquidity levels + sweeps", group=GI)
+ictFvg       = input.bool(false, "Fair Value Gaps", group=GI)
+ictOb        = input.bool(false, "Order Blocks", group=GI)
+ictPanel     = input.bool(true,  "Panel ICT", group=GI)
+ictMaxEvents = input.int(6,  "Máx. eventos structure", minval=1, maxval=20, group=GI)
+ictMaxLiq    = input.int(6,  "Máx. niveles liquidity", minval=1, maxval=20, group=GI)
+ictMaxFvg    = input.int(8,  "Máx. FVG recientes", minval=1, maxval=30, group=GI)
+ictMaxOb     = input.int(6,  "Máx. OB recientes", minval=1, maxval=20, group=GI)
+obImpulse    = input.float(1.5, "OB impulso mínimo (x rango vela)", minval=0.2, step=0.1, group=GI)
+obLookahead  = input.int(3, "OB velas de confirmación", minval=1, maxval=10, group=GI)
+
+const string GS = "4 · SONIC"
+sonicPanel  = input.bool(true, "Panel SONIC-likeness (diagnóstico)", group=GS)
+sonicMark   = input.bool(false, "Marcar en chart minutos con 5/5 (solo ventana)", group=GS)
+
+const string GV = "5 · Visual"
+spacingIn = input.string("Normal", "Label spacing", options=["Compact", "Normal", "Wide"], group=GV)
+colPrim   = input.color(color.new(#26a69a, 0),  "Primary Elliott", group=GV)
+colAltC   = input.color(color.new(#787b86, 25), "Alternative",     group=GV)
+colDbgC   = input.color(color.new(#ff9800, 35), "Debug pivots",    group=GV)
+colInvC   = input.color(color.new(#ef5350, 30), "Invalidation",    group=GV)
+colBull   = input.color(color.new(#26a69a, 70), "ICT bullish",     group=GV)
+colBear   = input.color(color.new(#ef5350, 70), "ICT bearish",     group=GV)
+colLiqC   = input.color(color.new(#42a5f5, 40), "ICT liquidity",   group=GV)
+
+// ─────────────────────────────────────────────────────────────────────
+// DEGREE → sensibilidad del detector de pivots (idéntico a v1)
+// ─────────────────────────────────────────────────────────────────────
+tfSec  = timeframe.in_seconds()
+degree = degIn == "Auto" ? (tfSec >= 86400 ? "Major" : tfSec >= 14400 ? "Intermediate" : "Minor") : degIn
+
+degAtrMul  = degree == "Major" ? 2.5 : degree == "Minor" ? 0.5 : 1.0
+degBarsAdd = degree == "Major" ? 2   : degree == "Minor" ? -1  : 0
+
+leftB   = math.max(1, inLeft  + degBarsAdd)
+rightB  = math.max(1, inRight + degBarsAdd)
+minAtrD = minAtrIn * degAtrMul
+
+// Separación visual de etiquetas (SOLO Y, en múltiplos de ATR)
+spacingMul = spacingIn == "Compact" ? 0.35 : spacingIn == "Wide" ? 1.20 : 0.70
+
+// ─────────────────────────────────────────────────────────────────────
+// CONSTANTES FIBONACCI / NOMBRES
+// ─────────────────────────────────────────────────────────────────────
+var float[] W2T = array.from(0.382, 0.5, 0.618, 0.786)
+var float[] W3T = array.from(1.0, 1.618, 2.618)
+var float[] W4T = array.from(0.236, 0.382, 0.5)
+var float[] W5T = array.from(0.618, 1.0, 1.618)
+var float[] ABT = array.from(0.618, 1.0, 1.618)
+
+var string[] IMP_N = array.from("0", "1", "2", "3", "4", "5")
+var string[] IMP_M = array.from("0", "i", "ii", "iii", "iv", "v")
+var string[] ABC_N = array.from("S", "A", "B", "C")
+var string[] ABC_M = array.from("s", "a", "b", "c")
+
+waveName(int k, bool isAbc) =>
+    string b = isAbc ? array.get(ABC_N, k) : array.get(IMP_N, k)
+    string m = isAbc ? array.get(ABC_M, k) : array.get(IMP_M, k)
+    degree == "Major" ? "[" + b + "]" : degree == "Minor" ? m : b
+
+fibProx(float r, float[] targets, float tol) =>
+    float best = 0.0
+    if not na(r) and r > 0
+        for i = 0 to array.size(targets) - 1
+            float t = array.get(targets, i)
+            float d = math.abs(r - t) / t
+            best := math.max(best, math.max(0.0, 1.0 - d / tol))
+    best
+
+// ─────────────────────────────────────────────────────────────────────
+// PIVOTS (pivots.ts) — idéntico a v1.0.1
+// ─────────────────────────────────────────────────────────────────────
+atrV = ta.atr(atrLen)
+
+var float[] sPrice = array.new<float>()
+var int[]   sBar   = array.new<int>()
+var int[]   sType  = array.new<int>()   //  1 = HIGH, -1 = LOW
+var float[] sDist  = array.new<float>()
+
+var float[] rPrice = array.new<float>()
+var int[]   rBar   = array.new<int>()
+var int[]   rType  = array.new<int>()
+
+var int rawTotal = 0
+
+cap(float[] pa, int[] ba, int[] ta_, float[] da, int maxN) =>
+    while array.size(ba) > maxN
+        array.shift(pa)
+        array.shift(ba)
+        array.shift(ta_)
+        if array.size(da) > 0
+            array.shift(da)
+
+pushAlt(float[] pa, int[] ba, int[] ta_, float p, int b, int t) =>
+    int n = array.size(ta_)
+    bool inserted = false
+    if n > 0 and array.get(ta_, n - 1) == t
+        float prev = array.get(pa, n - 1)
+        bool keepNew = t == 1 ? p > prev : p < prev
+        if keepNew
+            array.set(pa, n - 1, p)
+            array.set(ba, n - 1, b)
+    else
+        array.push(pa, p)
+        array.push(ba, b)
+        array.push(ta_, t)
+        inserted := true
+    inserted
+
+pushStruct(float p, int b, int t, float atrNow) =>
+    int n = array.size(sType)
+    if n > 0 and array.get(sType, n - 1) == t
+        float prev = array.get(sPrice, n - 1)
+        bool keepNew = t == 1 ? p > prev : p < prev
+        if keepNew
+            array.set(sPrice, n - 1, p)
+            array.set(sBar, n - 1, b)
+            float d2 = 0.0
+            if n > 1 and not na(atrNow) and atrNow > 0
+                d2 := math.abs(p - array.get(sPrice, n - 2)) / atrNow
+            if array.size(sDist) == n
+                array.set(sDist, n - 1, d2)
+    else
+        bool sameBar = n > 0 and array.get(sBar, n - 1) == b
+        bool accept = not sameBar
+        float dist = 0.0
+        if accept and n > 0
+            float prev = array.get(sPrice, n - 1)
+            if not na(atrNow) and atrNow > 0
+                dist := math.abs(p - prev) / atrNow
+                accept := dist >= minAtrD
+        if accept
+            array.push(sPrice, p)
+            array.push(sBar, b)
+            array.push(sType, t)
+            array.push(sDist, dist)
+
+ph = ta.pivothigh(high, leftB, rightB)
+pl = ta.pivotlow(low, leftB, rightB)
+atrSwing = atrV[rightB]
+
+if not na(ph)
+    rawTotal += 1
+    pushAlt(rPrice, rBar, rType, ph, bar_index - rightB, 1)
+if not na(pl)
+    rawTotal += 1
+    pushAlt(rPrice, rBar, rType, pl, bar_index - rightB, -1)
+
+if not na(ph) or not na(pl)
+    int bSwing = bar_index - rightB
+    bool takeH = not na(ph)
+    bool takeL = not na(pl)
+    if takeH and takeL
+        int lastT = array.size(sType) > 0 ? array.get(sType, array.size(sType) - 1) : 0
+        if lastT == 1
+            takeH := false
+        else if lastT == -1
+            takeL := false
+        else
+            takeL := false
+    if takeH
+        pushStruct(ph, bSwing, 1, atrSwing)
+    if takeL
+        pushStruct(pl, bSwing, -1, atrSwing)
+
+if barstate.isconfirmed
+    cap(sPrice, sBar, sType, sDist, 300)
+    while array.size(rBar) > 300
+        array.shift(rPrice)
+        array.shift(rBar)
+        array.shift(rType)
+
+// ─────────────────────────────────────────────────────────────────────
+// EVALUACIÓN DE CANDIDATOS ELLIOTT (idéntico a v1.0.1)
+// ─────────────────────────────────────────────────────────────────────
+evalImpulse(int start, int len) =>
+    bool dirLong = array.get(sType, start) == -1
+    float p0 = array.get(sPrice, start)
+    float p1 = array.get(sPrice, start + 1)
+    float p2 = len > 2 ? array.get(sPrice, start + 2) : na
+    float p3 = len > 3 ? array.get(sPrice, start + 3) : na
+    float p4 = len > 4 ? array.get(sPrice, start + 4) : na
+    float p5 = len > 5 ? array.get(sPrice, start + 5) : na
+
+    bool ok = true
+    int pat = 0
+    string reason = ""
+
+    if not na(p2)
+        if (dirLong ? p2 <= p0 : p2 >= p0)
+            ok := false
+            reason := "R1: W2 cruza el origen de W1"
+    if ok and not na(p3)
+        if (dirLong ? p3 <= p1 : p3 >= p1)
+            ok := false
+            reason := "R3: W3 no supera el extremo de W1"
+    if ok and not na(p4)
+        bool overlap = dirLong ? p4 <= p1 : p4 >= p1
+        if overlap
+            pat := 1
+    if ok and not na(p5)
+        float w1 = math.abs(p1 - p0)
+        float w3 = math.abs(p3 - p2)
+        float w5 = math.abs(p5 - p4)
+        if w3 < w1 and w3 < w5
+            ok := false
+            reason := "R2: W3 es la onda más corta"
+        if ok and (dirLong ? p5 <= p4 : p5 >= p4)
+            ok := false
+            reason := "W5 no avanza desde W4"
+
+    float score = 0.0
+    if ok
+        float soft = 0.0
+        int cnt = 0
+        float w1 = math.abs(p1 - p0)
+        if not na(p2) and w1 > 0
+            soft += fibProx(math.abs(p1 - p2) / w1, W2T, 0.35)
+            cnt += 1
+        if not na(p3) and w1 > 0
+            soft += fibProx(math.abs(p3 - p2) / w1, W3T, 0.45)
+            cnt += 1
+        if not na(p4)
+            float w3 = math.abs(p3 - p2)
+            if w3 > 0
+                soft += fibProx(math.abs(p3 - p4) / w3, W4T, 0.40)
+                cnt += 1
+        if not na(p5) and w1 > 0
+            soft += fibProx(math.abs(p5 - p4) / w1, W5T, 0.40)
+            cnt += 1
+        float softAvg = cnt > 0 ? soft / cnt : 0.0
+        float coverage = math.min(1.0, (len - 3) / 3.0)
+        float dsum = 0.0
+        int dn = 0
+        for i = math.max(1, start) to start + len - 1
+            if i < array.size(sDist)
+                dsum += array.get(sDist, i)
+                dn += 1
+        float clarity = dn > 0 ? math.min(1.0, (dsum / dn) / 1.5) : 0.0
+        score := 45.0 + 25.0 * softAvg + 20.0 * coverage + 10.0 * clarity
+        if pat == 1
+            score := score * 0.92
+    [score, ok ? pat : -1, reason, dirLong ? 1 : -1]
+
+evalAbc(int start, int len) =>
+    bool dirDown = array.get(sType, start) == 1
+    float ps = array.get(sPrice, start)
+    float pa = array.get(sPrice, start + 1)
+    float pb = array.get(sPrice, start + 2)
+    float pc = len > 3 ? array.get(sPrice, start + 3) : na
+
+    bool ok = true
+    string reason = ""
+    float aLen = math.abs(pa - ps)
+
+    if aLen <= 0
+        ok := false
+        reason := "ABC: onda A degenerada"
+    if ok
+        if (dirDown ? pb > ps : pb < ps)
+            ok := false
+            reason := "ABC: B supera el origen de A"
+    if ok
+        float bRetr = math.abs(pb - pa) / aLen
+        if bRetr < 0.15
+            ok := false
+            reason := "ABC: B demasiado superficial"
+
+    float score = 0.0
+    if ok
+        float soft = 0.0
+        int cnt = 0
+        if not na(pc)
+            soft += fibProx(math.abs(pc - pb) / aLen, ABT, 0.45)
+            cnt += 1
+        float softAvg = cnt > 0 ? soft / cnt : 0.0
+        float coverage = math.min(1.0, (len - 3) / 1.0)
+        float dsum = 0.0
+        int dn = 0
+        for i = math.max(1, start) to start + len - 1
+            if i < array.size(sDist)
+                dsum += array.get(sDist, i)
+                dn += 1
+        float clarity = dn > 0 ? math.min(1.0, (dsum / dn) / 1.5) : 0.0
+        score := 38.0 + 25.0 * softAvg + 20.0 * coverage + 10.0 * clarity
+    [score, ok ? 2 : -1, reason, dirDown ? -1 : 1]
+
+// ─────────────────────────────────────────────────────────────────────
+// OBJETOS DE DIBUJO ELLIOTT (se reconstruyen en la última barra)
+// ─────────────────────────────────────────────────────────────────────
+var label[] LBLS = array.new<label>()
+var line[]  LNS  = array.new<line>()
+
+clearDraw() =>
+    if array.size(LBLS) > 0
+        for i = 0 to array.size(LBLS) - 1
+            label.delete(array.get(LBLS, i))
+        array.clear(LBLS)
+    if array.size(LNS) > 0
+        for i = 0 to array.size(LNS) - 1
+            line.delete(array.get(LNS, i))
+        array.clear(LNS)
+
+// `yOff` desplaza SOLO la etiqueta. El endpoint real de la onda (bar_index +
+// precio del pivot) nunca cambia: las líneas se dibujan con el precio crudo.
+addLbl(int b, float p, string txt, color c, bool up, float yOff) =>
+    float y = up ? p + yOff : p - yOff
+    label l = label.new(b, y, txt, xloc=xloc.bar_index, yloc=yloc.price, style=up ? label.style_label_down : label.style_label_up, color=color.new(color.black, 100), textcolor=c, size=size.small)
+    array.push(LBLS, l)
+
+addLine(int b1, float p1, int b2, float p2, color c, int w, string st) =>
+    line l = line.new(b1, p1, b2, p2, xloc=xloc.bar_index, color=c, width=w, style=st)
+    array.push(LNS, l)
+
+addHLine(int b1, int b2, float p, color c, string st) =>
+    line l = line.new(b1, p, b2, p, xloc=xloc.bar_index, color=c, width=1, style=st)
+    array.push(LNS, l)
+
+// =====================================================================
+// ICT NATIVO
+// ---------------------------------------------------------------------
+// Portado de src/lib/detection/ict.ts y src/lib/detection/ict/*:
+//   · structure.ts   → BOS / CHoCH con cierre confirmado sobre pivot
+//   · liquidity.ts   → BSL/SSL sobre highs/lows estructurales recientes
+//   · sweeps.ts      → wick beyond + close back (stop hunt)
+//   · fvg.ts         → gap de 3 velas + mitigación por midpoint
+//   · orderBlocks.ts → última vela opuesta antes de impulso (confirmación
+//                      diferida: se detecta cuando las N velas ya cerraron)
+// Todo se evalúa SOLO en barras cerradas (barstate.isconfirmed).
+// =====================================================================
+var int    ictBias    = 0        // 1 bull · -1 bear · 0 neutral
+var string lastBos    = "—"
+var string lastChoch  = "—"
+var float  firedH     = na       // último nivel HIGH ya roto (evita repetir)
+var float  firedL     = na
+
+var line[]  ICT_LN  = array.new<line>()
+var label[] ICT_LB  = array.new<label>()
+var box[]   ICT_BX  = array.new<box>()
+
+pushLine(line l, int maxN) =>
+    array.push(ICT_LN, l)
+    while array.size(ICT_LN) > maxN
+        line.delete(array.shift(ICT_LN))
+
+pushLbl(label l, int maxN) =>
+    array.push(ICT_LB, l)
+    while array.size(ICT_LB) > maxN
+        label.delete(array.shift(ICT_LB))
+
+pushBox(box b, int maxN) =>
+    array.push(ICT_BX, b)
+    while array.size(ICT_BX) > maxN
+        box.delete(array.shift(ICT_BX))
+
+lastStructPrice(int t) =>
+    float out = na
+    int n = array.size(sType)
+    if n > 0
+        for i = n - 1 to 0
+            if na(out) and array.get(sType, i) == t
+                out := array.get(sPrice, i)
+    out
+
+// ── 1) Market structure: BOS / CHoCH ────────────────────────────────
+lastSH = lastStructPrice(1)
+lastSL = lastStructPrice(-1)
+
+if barstate.isconfirmed and ictStructure
+    if not na(lastSH) and close > lastSH and (na(firedH) or firedH != lastSH)
+        firedH := lastSH
+        bool isChoch = ictBias == -1
+        ictBias := 1
+        string tag = isChoch ? "CHoCH↑" : "BOS↑"
+        if isChoch
+            lastChoch := "CHoCH↑ @ " + str.tostring(lastSH, format.mintick)
+        else
+            lastBos := "BOS↑ @ " + str.tostring(lastSH, format.mintick)
+        pushLbl(label.new(bar_index, low, tag, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up, color=color.new(color.black, 100), textcolor=color.new(#26a69a, 0), size=size.tiny), ictMaxEvents * 2)
+        pushLine(line.new(bar_index - 1, lastSH, bar_index, lastSH, xloc=xloc.bar_index, color=color.new(#26a69a, 30), width=1, style=line.style_dotted), ictMaxEvents * 3)
+    if not na(lastSL) and close < lastSL and (na(firedL) or firedL != lastSL)
+        firedL := lastSL
+        bool isChoch2 = ictBias == 1
+        ictBias := -1
+        string tag2 = isChoch2 ? "CHoCH↓" : "BOS↓"
+        if isChoch2
+            lastChoch := "CHoCH↓ @ " + str.tostring(lastSL, format.mintick)
+        else
+            lastBos := "BOS↓ @ " + str.tostring(lastSL, format.mintick)
+        pushLbl(label.new(bar_index, high, tag2, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_down, color=color.new(color.black, 100), textcolor=color.new(#ef5350, 0), size=size.tiny), ictMaxEvents * 2)
+        pushLine(line.new(bar_index - 1, lastSL, bar_index, lastSL, xloc=xloc.bar_index, color=color.new(#ef5350, 30), width=1, style=line.style_dotted), ictMaxEvents * 3)
+
+// ── 2) Liquidity levels (BSL / SSL) + sweeps ────────────────────────
+var float[] liqPrice = array.new<float>()
+var int[]   liqBar   = array.new<int>()
+var int[]   liqSide  = array.new<int>()   // 1 = BSL · -1 = SSL
+var int[]   liqState = array.new<int>()   // 0 = ACTIVE · 1 = SWEPT · 2 = BROKEN
+var int     sweepCount = 0
+var string  lastSweep  = "—"
+
+addLiq(float p, int b, int side) =>
+    bool dup = false
+    if array.size(liqPrice) > 0
+        for i = 0 to array.size(liqPrice) - 1
+            if array.get(liqSide, i) == side and array.get(liqPrice, i) == p
+                dup := true
+    if not dup
+        array.push(liqPrice, p)
+        array.push(liqBar, b)
+        array.push(liqSide, side)
+        array.push(liqState, 0)
+        while array.size(liqPrice) > ictMaxLiq * 2
+            array.shift(liqPrice)
+            array.shift(liqBar)
+            array.shift(liqSide)
+            array.shift(liqState)
+
+if ictLiquidity and barstate.isconfirmed
+    int n2 = array.size(sType)
+    if n2 > 0
+        int fromL = math.max(0, n2 - ictMaxLiq * 2)
+        for i = fromL to n2 - 1
+            addLiq(array.get(sPrice, i), array.get(sBar, i), array.get(sType, i))
+    // sweeps: mecha rompe el nivel y el cierre vuelve al lado previo
+    if array.size(liqPrice) > 0
+        for i = 0 to array.size(liqPrice) - 1
+            if array.get(liqState, i) == 0 and array.get(liqBar, i) < bar_index
+                float lp = array.get(liqPrice, i)
+                int sd = array.get(liqSide, i)
+                if sd == 1 and high > lp
+                    if close < lp
+                        array.set(liqState, i, 1)
+                        sweepCount += 1
+                        lastSweep := "BSL sweep @ " + str.tostring(lp, format.mintick)
+                        pushLbl(label.new(bar_index, high, "×", xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_down, color=color.new(color.black, 100), textcolor=color.new(#ef5350, 0), size=size.tiny), ictMaxLiq * 3)
+                    else
+                        array.set(liqState, i, 2)
+                if sd == -1 and low < lp
+                    if close > lp
+                        array.set(liqState, i, 1)
+                        sweepCount += 1
+                        lastSweep := "SSL sweep @ " + str.tostring(lp, format.mintick)
+                        pushLbl(label.new(bar_index, low, "×", xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up, color=color.new(color.black, 100), textcolor=color.new(#26a69a, 0), size=size.tiny), ictMaxLiq * 3)
+                    else
+                        array.set(liqState, i, 2)
+
+// líneas de liquidez activas (solo en la última barra, se redibujan)
+var line[] LIQ_LN = array.new<line>()
+if barstate.islast
+    if array.size(LIQ_LN) > 0
+        for i = 0 to array.size(LIQ_LN) - 1
+            line.delete(array.get(LIQ_LN, i))
+        array.clear(LIQ_LN)
+    if ictLiquidity and array.size(liqPrice) > 0
+        int drawn = 0
+        for i = array.size(liqPrice) - 1 to 0
+            if drawn < ictMaxLiq and array.get(liqState, i) == 0
+                array.push(LIQ_LN, line.new(array.get(liqBar, i), array.get(liqPrice, i), bar_index + 5, array.get(liqPrice, i), xloc=xloc.bar_index, color=colLiqC, width=1, style=line.style_dashed))
+                drawn += 1
+
+// ── 3) FVG ──────────────────────────────────────────────────────────
+var float[] fvgTop = array.new<float>()
+var float[] fvgBot = array.new<float>()
+var int[]   fvgDir = array.new<int>()
+var int[]   fvgMit = array.new<int>()
+
+if ictFvg and barstate.isconfirmed and bar_index > 3
+    bool bullFvg = low > high[2]
+    bool bearFvg = high < low[2]
+    if bullFvg or bearFvg
+        float top = bullFvg ? low : low[2]
+        float bot = bullFvg ? high[2] : high
+        array.push(fvgTop, top)
+        array.push(fvgBot, bot)
+        array.push(fvgDir, bullFvg ? 1 : -1)
+        array.push(fvgMit, 0)
+        pushBox(box.new(bar_index - 2, top, bar_index + 3, bot, xloc=xloc.bar_index, border_color=color.new(color.gray, 70), bgcolor=bullFvg ? colBull : colBear), ictMaxFvg)
+        while array.size(fvgTop) > ictMaxFvg
+            array.shift(fvgTop)
+            array.shift(fvgBot)
+            array.shift(fvgDir)
+            array.shift(fvgMit)
+    // mitigación simple: el precio toca el midpoint (fvg.ts)
+    if array.size(fvgTop) > 0
+        for i = 0 to array.size(fvgTop) - 1
+            if array.get(fvgMit, i) == 0
+                float mid = (array.get(fvgTop, i) + array.get(fvgBot, i)) / 2
+                if low <= mid and high >= mid
+                    array.set(fvgMit, i, 1)
+
+fvgActive() =>
+    int c = 0
+    if array.size(fvgMit) > 0
+        for i = 0 to array.size(fvgMit) - 1
+            if array.get(fvgMit, i) == 0
+                c += 1
+    c
+
+// ── 4) Order Blocks ─────────────────────────────────────────────────
+// detectOrderBlocks(): última vela de color OPUESTO antes de un movimiento
+// impulsivo. En Pine no existe el futuro: el OB se detecta solo cuando las
+// `obLookahead` velas posteriores YA cerraron, y el box se dibuja hacia atrás
+// sobre la vela origen (retraso de confirmación = obLookahead barras).
+var float[] obTop = array.new<float>()
+var float[] obBot = array.new<float>()
+var int[]   obDir = array.new<int>()
+var int[]   obMit = array.new<int>()
+
+if ictOb and barstate.isconfirmed and bar_index > obLookahead + 2
+    int k = obLookahead
+    float oOpen  = open[k]
+    float oClose = close[k]
+    float oHigh  = high[k]
+    float oLow   = low[k]
+    float move   = close - oClose
+    float rng    = math.abs(oHigh - oLow)
+    if rng > 0
+        float impulse = math.abs(move) / rng
+        bool isBear = oClose < oOpen
+        bool isBull = oClose > oOpen
+        if impulse >= obImpulse and ((isBear and move > 0) or (isBull and move < 0))
+            int dir = isBear ? 1 : -1
+            array.push(obTop, oHigh)
+            array.push(obBot, oLow)
+            array.push(obDir, dir)
+            array.push(obMit, 0)
+            pushBox(box.new(bar_index - k, oHigh, bar_index + 3, oLow, xloc=xloc.bar_index, border_color=dir == 1 ? color.new(#26a69a, 40) : color.new(#ef5350, 40), bgcolor=dir == 1 ? colBull : colBear), ictMaxOb + ictMaxFvg)
+            while array.size(obTop) > ictMaxOb
+                array.shift(obTop)
+                array.shift(obBot)
+                array.shift(obDir)
+                array.shift(obMit)
+    if array.size(obTop) > 0
+        for i = 0 to array.size(obTop) - 1
+            if array.get(obMit, i) == 0
+                if low <= array.get(obTop, i) and high >= array.get(obBot, i)
+                    array.set(obMit, i, 1)
+
+obActive() =>
+    int c = 0
+    if array.size(obMit) > 0
+        for i = 0 to array.size(obMit) - 1
+            if array.get(obMit, i) == 0
+                c += 1
+    c
+
+// =====================================================================
+// SONIC-likeness · PRE_RAID_APPROACH_V1  (DIAGNÓSTICO — NO probabilidad)
+// ---------------------------------------------------------------------
+// Portado de src/lib/ml/smc/pre-raid.ts con las MISMAS 5 features
+// congeladas, las MISMAS medianas TRAIN y los MISMOS signos.
+//   pass = (value - median) * sign > 0        setupScore = pass / 5
+// NO participa en Elliott ni ICT. NO genera BUY/SELL. NO es win rate.
+//
+// Todo se calcula en contexto M1 (`request.security(..., "1", ...,
+// lookahead_off)`), sobre velas M1 CERRADAS. En un chart de 1m la serie es
+// nativa; en timeframes superiores es el último M1 cerrado del bar (proxy).
+// =====================================================================
+var float[] SON_MED  = array.from(1.911168, 0.0, 1.0, 0.393471, 0.021757)
+var int[]   SON_SIGN = array.from(-1, -1, -1, 1, 1)
+
+sgn(float x) => x > 0 ? 1.0 : x < 0 ? -1.0 : 0.0
+
+sonicM1() =>
+    // ── ATR M5 Wilder(14) construido desde buckets M1 cerrados ──
+    var float atrM5 = na
+    var float atrSum = 0.0
+    var int   atrCnt = 0
+    var float prevBktClose = na
+    var float bH = na
+    var float bL = na
+    var float bC = na
+    var int   bStart = na
+    int bkt = math.floor(time / 300000) * 300
+    if na(bStart)
+        bStart := bkt
+        bH := high
+        bL := low
+        bC := close
+    else if bkt != bStart
+        if not na(prevBktClose)
+            float tr = math.max(bH - bL, math.max(math.abs(bH - prevBktClose), math.abs(bL - prevBktClose)))
+            if atrCnt < 14
+                atrSum += tr
+                atrCnt += 1
+                if atrCnt == 14
+                    atrM5 := atrSum / 14
+            else
+                atrM5 := (atrM5 * 13 + tr) / 14
+        prevBktClose := bC
+        bStart := bkt
+        bH := high
+        bL := low
+        bC := close
+    else
+        bH := math.max(bH, high)
+        bL := math.min(bL, low)
+        bC := close
+
+    // ── 1) liquidez local relevante intacta: [cand-60m, cand-10m) ──
+    // offsets 10..59 respecto del último M1 cerrado (= barra actual M1)
+    float relLow  = ta.lowest(low, 50)[10]
+    float relHigh = ta.highest(high, 50)[10]
+    bool  okAtr   = not na(atrM5) and atrM5 > 0
+    float distL = okAtr and not na(relLow)  ? (close - relLow) / atrM5  : na
+    float distS = okAtr and not na(relHigh) ? (relHigh - close) / atrM5 : na
+
+    // ── 2) micro HH/HL score sobre las últimas 5 M1 (4 comparaciones) ──
+    float hhhl = 0.0
+    for k = 0 to 3
+        hhhl += sgn(high[k] - high[k + 1]) + sgn(low[k] - low[k + 1])
+    float microL = hhhl / 8.0
+
+    // ── 3) minutos desde el raid del nivel relevante (lookback 30) ──
+    int idxL = -1
+    int idxS = -1
+    for k = 0 to 29
+        if idxL < 0 and not na(relLow) and low[k] < relLow
+            idxL := k
+        if idxS < 0 and not na(relHigh) and high[k] > relHigh
+            idxS := k
+    float raidL = idxL < 0 ? 1.0 : math.min(1.0, idxL / 30.0)
+    float raidS = idxS < 0 ? 1.0 : math.min(1.0, idxS / 30.0)
+
+    // ── 4) posición en el rango asiático 00:00–06:00 Europe/London ──
+    bool inAsia = not na(time(timeframe.period, "0000-0600:23456", "Europe/London"))
+    var float asiaH = na
+    var float asiaL = na
+    var int   asiaN = 0
+    var bool  wasAsia = false
+    if inAsia
+        if not wasAsia
+            asiaH := high
+            asiaL := low
+            asiaN := 1
+        else
+            asiaH := math.max(asiaH, high)
+            asiaL := math.min(asiaL, low)
+            asiaN += 1
+    wasAsia := inAsia
+
+    float asiaW = na(asiaH) or na(asiaL) ? na : asiaH - asiaL
+    float rawPos = not na(asiaW) and asiaW > 0 ? (close - asiaL) / asiaW : na
+    float posL = na(rawPos) ? na : 1.0 - rawPos
+
+    // ── 5) velocidad de aproximación (3 M1, mismo nivel relevante) ──
+    float velL = okAtr and not na(relLow)  ? (((close[3] - relLow) / atrM5) - distL) / 3.0  : na
+    float velS = okAtr and not na(relHigh) ? (((relHigh - close[3]) / atrM5) - distS) / 3.0 : na
+
+    bool win = not na(time(timeframe.period, "0600-0800:23456", "Europe/London"))
+    [distL, distS, microL, raidL, raidS, posL, velL, velS, atrM5, win ? 1 : 0, asiaN, idxL, idxS]
+
+[snDistL, snDistS, snMicroL, snRaidL, snRaidS, snPosL, snVelL, snVelS, snAtr5, snWin, snAsiaN, snRaidIdxL, snRaidIdxS] = request.security(syminfo.tickerid, "1", sonicM1(), lookahead=barmerge.lookahead_off)
+
+snMicroS = na(snMicroL) ? na : -snMicroL
+snPosS   = na(snPosL)   ? na : 1.0 - snPosL
+
+passOf(float v, int i) =>
+    na(v) ? false : (v - array.get(SON_MED, i)) * array.get(SON_SIGN, i) > 0
+
+sonicCount(float d, float m, float r, float p, float v) =>
+    int c = 0
+    c += passOf(d, 0) ? 1 : 0
+    c += passOf(m, 1) ? 1 : 0
+    c += passOf(r, 2) ? 1 : 0
+    c += passOf(p, 3) ? 1 : 0
+    c += passOf(v, 4) ? 1 : 0
+    c
+
+sonicOk = not na(snDistL) and not na(snAtr5) and not na(snPosL) and snAsiaN >= 30
+cntLong  = sonicOk ? sonicCount(snDistL, snMicroL, snRaidL, snPosL, snVelL) : 0
+cntShort = sonicOk ? sonicCount(snDistS, snMicroS, snRaidS, snPosS, snVelS) : 0
+sonicWindow = snWin == 1
+
+raidStateTxt(float norm, int idx) =>
+    idx < 0 ? "NO_RAID_YET" : idx == 0 ? "RAID_ACTIVE_0M" : idx <= 5 ? "RAID_RECENT_LE_5M" : idx <= 15 ? "RAID_MID_LE_15M" : norm >= 1 ? "NO_RAID_YET" : "RAID_OLD_GT_15M"
+
+plotshape(sonicMark and sonicWindow and sonicOk and cntLong == 5 and barstate.isconfirmed, title="SONIC 5/5 long-likeness", style=shape.triangleup, location=location.belowbar, color=color.new(#26a69a, 20), size=size.tiny)
+plotshape(sonicMark and sonicWindow and sonicOk and cntShort == 5 and barstate.isconfirmed, title="SONIC 5/5 short-likeness", style=shape.triangledown, location=location.abovebar, color=color.new(#ef5350, 20), size=size.tiny)
+
+// ─────────────────────────────────────────────────────────────────────
+// PANELES
+// ─────────────────────────────────────────────────────────────────────
+var table TBL  = table.new(position.top_right, 2, 12, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
+var table TICT = table.new(position.middle_right, 2, 6, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
+var table TSON = table.new(position.bottom_right, 2, 12, border_width=1, frame_width=1, frame_color=color.new(color.gray, 60))
+
+cell(table t, int r, string k, string v, color vc) =>
+    table.cell(t, 0, r, k, text_color=color.new(color.gray, 0), text_size=size.tiny, text_halign=text.align_left, bgcolor=color.new(color.black, 80))
+    table.cell(t, 1, r, v, text_color=vc, text_size=size.tiny, text_halign=text.align_left, bgcolor=color.new(color.black, 80))
+
+// ─────────────────────────────────────────────────────────────────────
+// MOTOR ELLIOTT + DIBUJO (solo última barra)
+// ─────────────────────────────────────────────────────────────────────
+if barstate.islast
+    clearDraw()
+
+    int n = array.size(sType)
+    float atrNow = na(atrV) ? 0.0 : atrV
+    float offEll = atrNow * spacingMul * 0.6
+    float offDbg = atrNow * spacingMul * 1.6
+
+    int maxEndLag = 2
+    float bestS = -1.0
+    int   bestI = -1
+    int   bestL = 0
+    int   bestP = -1
+    int   bestD = 0
+    int   bestLag = -1
+    float altS  = -1.0
+    int   altI  = -1
+    int   altL  = 0
+    int   altP  = -1
+    string worstReason = ""
+    int worstLen = -1
+
+    if showElliott and n >= 3
+        int from = math.max(0, n - 8)
+        for st = from to n - 3
+            int maxLen = math.min(6, n - st)
+            for q = 0 to maxLen - 3
+                int ln = maxLen - q
+                int endLag = n - st - ln
+                if endLag <= maxEndLag
+                    [sc, pt, rs, dr] = evalImpulse(st, ln)
+                    if pt >= 0
+                        if sc > bestS
+                            altS := bestS
+                            altI := bestI
+                            altL := bestL
+                            altP := bestP
+                            bestS := sc
+                            bestI := st
+                            bestL := ln
+                            bestP := pt
+                            bestD := dr
+                            bestLag := endLag
+                        else if sc > altS and st != bestI
+                            altS := sc
+                            altI := st
+                            altL := ln
+                            altP := pt
+                    else if ln > worstLen
+                        worstLen := ln
+                        worstReason := rs
+            int abcLen = math.min(4, n - st)
+            int abcLag = n - st - abcLen
+            if abcLen >= 3 and abcLag <= maxEndLag
+                [sc2, pt2, rs2, dr2] = evalAbc(st, abcLen)
+                if pt2 >= 0
+                    if sc2 > bestS
+                        altS := bestS
+                        altI := bestI
+                        altL := bestL
+                        altP := bestP
+                        bestS := sc2
+                        bestI := st
+                        bestL := abcLen
+                        bestP := pt2
+                        bestD := dr2
+                        bestLag := abcLag
+                    else if sc2 > altS and st != bestI
+                        altS := sc2
+                        altI := st
+                        altL := abcLen
+                        altP := pt2
+                else if worstLen < 0
+                    worstLen := abcLen
+                    worstReason := rs2
+
+    bool hasCount = bestI >= 0 and bestS >= minConf
+    bool isAbcBest = bestP == 2
+    bool isInvalid = bestI < 0 and worstLen >= 3 and worstReason != ""
+
+    int fromD = math.max(0, n - maxDbgPiv)
+
+    // ── conteo alternativo: discreto, gris, offset mayor para no tapar ─
+    if showElliott and showAlt and altI >= 0 and hasCount
+        bool altAbc = altP == 2
+        for k = 0 to altL - 2
+            addLine(array.get(sBar, altI + k), array.get(sPrice, altI + k), array.get(sBar, altI + k + 1), array.get(sPrice, altI + k + 1), colAltC, 1, line.style_dashed)
+        addLbl(array.get(sBar, altI + altL - 1), array.get(sPrice, altI + altL - 1), "alt " + waveName(altL - 1, altAbc), colAltC, array.get(sType, altI + altL - 1) == 1, offEll * 2.4)
+
+    // ── conteo primario ───────────────────────────────────────────────
+    if showElliott and hasCount
+        for k = 0 to bestL - 2
+            addLine(array.get(sBar, bestI + k), array.get(sPrice, bestI + k), array.get(sBar, bestI + k + 1), array.get(sPrice, bestI + k + 1), colPrim, 2, line.style_solid)
+        for k = 0 to bestL - 1
+            int idx = bestI + k
+            int b = array.get(sBar, idx)
+            float p = array.get(sPrice, idx)
+            bool up = array.get(sType, idx) == 1
+            // COMBINED: una sola etiqueta ("3 · P12 H") en lugar de dos
+            // superpuestas. HIDE/SEPARATE se resuelven en el bloque debug.
+            string txt = waveName(k, isAbcBest)
+            if dbgMode == "Combined" and showDebugPivots
+                txt := txt + " · P" + str.tostring(idx - fromD) + (up ? " H" : " L")
+            addLbl(b, p, txt, colPrim, up, offEll)
+
+        if showProvisional
+            int lastB = array.get(sBar, bestI + bestL - 1)
+            float lastP = array.get(sPrice, bestI + bestL - 1)
+            float livePx = close
+            addLine(lastB, lastP, bar_index, livePx, color.new(colPrim, 55), 1, line.style_dotted)
+            addLbl(bar_index, livePx, waveName(math.min(bestL, isAbcBest ? 3 : 5), isAbcBest) + "?", color.new(colPrim, 20), livePx >= lastP, offEll)
+
+        if showInval
+            int invK = bestL >= 6 ? 4 : bestL >= 3 ? 2 : 0
+            invK := math.min(invK, bestL - 1)
+            float invP = array.get(sPrice, bestI + invK)
+            addHLine(array.get(sBar, bestI + invK), bar_index + 10, invP, colInvC, line.style_dashed)
+            addLbl(bar_index + 10, invP, "INVAL " + str.tostring(invP, format.mintick), colInvC, false, 0.0)
+
+        if showFib and not isAbcBest and bestL >= 3
+            float f0 = array.get(sPrice, bestI)
+            float f1 = array.get(sPrice, bestI + 1)
+            float w1 = f1 - f0
+            addHLine(array.get(sBar, bestI + 1), bar_index + 6, f1 - w1 * 0.382, color.new(colPrim, 60), line.style_dotted)
+            addHLine(array.get(sBar, bestI + 1), bar_index + 6, f1 - w1 * 0.5,   color.new(colPrim, 60), line.style_dotted)
+            addHLine(array.get(sBar, bestI + 1), bar_index + 6, f1 - w1 * 0.618, color.new(colPrim, 60), line.style_dotted)
+            float f2 = array.get(sPrice, bestI + 2)
+            addHLine(array.get(sBar, bestI + 2), bar_index + 6, f2 + w1 * 1.618, color.new(#42a5f5, 55), line.style_dotted)
+            if bestL >= 5
+                float f4 = array.get(sPrice, bestI + 4)
+                addHLine(array.get(sBar, bestI + 4), bar_index + 6, f4 + w1 * 1.0, color.new(#ab47bc, 55), line.style_dotted)
+
+    // ── debug pivots (respetando el modo anti-colisión) ───────────────
+    if showDebugPivots and n > 0
+        for i = fromD to n - 1
+            bool inCount = showElliott and hasCount and i >= bestI and i <= bestI + bestL - 1
+            bool draw = not inCount or dbgMode == "Separate"
+            if draw
+                bool up2 = array.get(sType, i) == 1
+                string tag = "P" + str.tostring(i - fromD) + (up2 ? " H" : " L")
+                addLbl(array.get(sBar, i), array.get(sPrice, i), tag, inCount ? color.new(colDbgC, 0) : color.new(colDbgC, 45), up2, inCount ? offDbg : offEll)
+
+    if showRawPivots and array.size(rBar) > 0
+        int fromR = math.max(0, array.size(rBar) - maxDbgPiv)
+        for i = fromR to array.size(rBar) - 1
+            addLbl(array.get(rBar, i), array.get(rPrice, i), array.get(rType, i) == 1 ? "·h" : "·l", color.new(color.gray, 20), array.get(rType, i) == 1, offDbg * 1.4)
+
+    // ── panel Elliott ────────────────────────────────────────────────
+    if showTable
+        string stState = isInvalid ? "INVALID" : bestI < 0 ? "NO_COUNT" : not hasCount ? "NO_COUNT" : bestP == 2 ? (bestL >= 4 ? "VALID" : "DEVELOPING") : bestL >= 6 ? "VALID" : "DEVELOPING"
+        string stPat   = bestI < 0 or not hasCount ? "—" : bestP == 2 ? "ABC" : bestP == 1 ? "DIAGONAL" : "IMPULSE"
+        string stDir   = bestI < 0 or not hasCount ? "—" : bestD == 1 ? "BULLISH" : "BEARISH"
+        string stWave  = hasCount ? waveName(bestL - 1, isAbcBest) : "—"
+        string stConf  = bestI < 0 ? "—" : str.tostring(math.round(bestS)) + " / 100 (min " + str.tostring(minConf) + ")"
+        string stLag   = bestI < 0 ? "—" : str.tostring(bestLag) + " pivots (max " + str.tostring(maxEndLag) + ")"
+        string stInval = "—"
+        if hasCount
+            int invK2 = math.min(bestL >= 6 ? 4 : bestL >= 3 ? 2 : 0, bestL - 1)
+            stInval := str.tostring(array.get(sPrice, bestI + invK2), format.mintick)
+        string stWhy = ""
+        if isInvalid
+            stWhy := "Regla dura rota → " + worstReason
+        else if bestI < 0
+            stWhy := worstReason == "" ? "Pivots insuficientes para un candidato reciente" : worstReason
+        else if not hasCount
+            stWhy := "Geometría válida, pero por debajo de Minimum confidence"
+        else
+            stWhy := "Reglas duras OK"
+            if bestP == 1
+                stWhy := "Solapamiento W1/W4 → DIAGONAL (no invalida)"
+            if bestP == 0 and bestL >= 6
+                float pp3 = array.get(sPrice, bestI + 3)
+                float pp5 = array.get(sPrice, bestI + 5)
+                bool trunc = bestD == 1 ? pp5 < pp3 : pp5 > pp3
+                if trunc
+                    stWhy := "Posible W5 truncada (unconfirmed)"
+
+        color stCol = stState == "VALID" ? color.new(#26a69a, 0) : stState == "DEVELOPING" ? color.new(#ffb74d, 0) : color.new(#ef5350, 0)
+
+        cell(TBL, 0,  "Estado",       stState, stCol)
+        cell(TBL, 1,  "Pattern",      stPat, color.new(color.white, 0))
+        cell(TBL, 2,  "Direction",    stDir, color.new(color.white, 0))
+        cell(TBL, 3,  "Degree",       degree + (degIn == "Auto" ? " (auto)" : ""), color.new(color.white, 0))
+        cell(TBL, 4,  "Confidence",   stConf, stCol)
+        cell(TBL, 5,  "Pivots raw",   str.tostring(rawTotal) + " fractales", color.new(color.white, 0))
+        cell(TBL, 6,  "Pivots estr.", str.tostring(n) + " (usados " + (hasCount ? str.tostring(bestL) : "0") + ")", color.new(color.white, 0))
+        cell(TBL, 7,  "Current wave", stWave, color.new(color.white, 0))
+        cell(TBL, 8,  "Invalidation", stInval, colInvC)
+        cell(TBL, 9,  "Confirmación", "rightBars = " + str.tostring(rightB) + " barras", color.new(color.gray, 0))
+        cell(TBL, 10, "Motivo",       stWhy, color.new(color.white, 0))
+        cell(TBL, 11, "End lag",      stLag, color.new(color.white, 0))
+
+    // ── panel ICT ────────────────────────────────────────────────────
+    if ictPanel
+        string biasTxt = ictBias == 1 ? "BULLISH" : ictBias == -1 ? "BEARISH" : "NEUTRAL"
+        color  biasCol = ictBias == 1 ? color.new(#26a69a, 0) : ictBias == -1 ? color.new(#ef5350, 0) : color.new(color.gray, 0)
+        cell(TICT, 0, "ICT bias",   biasTxt, biasCol)
+        cell(TICT, 1, "Último BOS", ictStructure ? lastBos : "off", color.new(color.white, 0))
+        cell(TICT, 2, "Último CHoCH", ictStructure ? lastChoch : "off", color.new(color.white, 0))
+        cell(TICT, 3, "FVG activas", ictFvg ? str.tostring(fvgActive()) : "off", color.new(color.white, 0))
+        cell(TICT, 4, "OB activos",  ictOb ? str.tostring(obActive()) + " (delay " + str.tostring(obLookahead) + "b)" : "off", color.new(color.white, 0))
+        cell(TICT, 5, "Liquidity",   ictLiquidity ? lastSweep + " · " + str.tostring(sweepCount) + " sweeps" : "off", colLiqC)
+
+    // ── panel SONIC ──────────────────────────────────────────────────
+    if sonicPanel
+        string wTxt = sonicWindow ? "ACTIVE (06:00–07:59 London)" : "FUERA DE VENTANA"
+        color  wCol = sonicWindow ? color.new(#26a69a, 0) : color.new(color.gray, 0)
+        string mode = timeframe.period == "1" ? "M1 native" : "M1 proxy / last closed M1"
+        string lTxt = not sonicOk ? "—" : str.tostring(cntLong) + "/5 · " + str.tostring(math.round(cntLong * 20)) + "% likeness"
+        string sTxt = not sonicOk ? "—" : str.tostring(cntShort) + "/5 · " + str.tostring(math.round(cntShort * 20)) + "% likeness"
+        cell(TSON, 0,  "SONIC-likeness", "PRE_RAID_APPROACH_V1", color.new(#42a5f5, 0))
+        cell(TSON, 1,  "Window", wTxt, wCol)
+        cell(TSON, 2,  "LONG",  lTxt, color.new(#26a69a, 0))
+        cell(TSON, 3,  "SHORT", sTxt, color.new(#ef5350, 0))
+        cell(TSON, 4,  "dist_liquidity", sonicOk ? "L " + str.tostring(snDistL, "#.###") + " · S " + str.tostring(snDistS, "#.###") : "—", color.new(color.white, 0))
+        cell(TSON, 5,  "micro_pullback", sonicOk ? "L " + str.tostring(snMicroL, "#.###") + " · S " + str.tostring(snMicroS, "#.###") : "—", color.new(color.white, 0))
+        cell(TSON, 6,  "raid_state", sonicOk ? raidStateTxt(snRaidL, int(snRaidIdxL)) + " / " + raidStateTxt(snRaidS, int(snRaidIdxS)) : "—", color.new(color.white, 0))
+        cell(TSON, 7,  "asia_position", sonicOk ? "L " + str.tostring(snPosL, "#.###") + " · S " + str.tostring(snPosS, "#.###") : "—", color.new(color.white, 0))
+        cell(TSON, 8,  "approach_velocity", sonicOk ? "L " + str.tostring(snVelL, "#.####") + " · S " + str.tostring(snVelS, "#.####") : "—", color.new(color.white, 0))
+        cell(TSON, 9,  "ATR M5", na(snAtr5) ? "—" : str.tostring(snAtr5, format.mintick), color.new(color.white, 0))
+        cell(TSON, 10, "Data mode", mode + (snAsiaN < 30 ? " · Asia range insuficiente" : ""), color.new(color.gray, 0))
+        cell(TSON, 11, "Aviso", "likeness ≠ win probability", color.new(#ffb74d, 0))
