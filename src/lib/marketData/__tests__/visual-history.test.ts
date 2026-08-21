@@ -56,7 +56,8 @@ describe("fetchTwelveDataHistory (visual-only paging)", () => {
     vi.stubEnv("TWELVEDATA_API_KEY", "test-key");
     const base = Math.floor(Date.UTC(2026, 0, 1) / 1000);
     const fetchMock = vi.fn(
-      async () => ({ headers: new Headers(), json: async () => page(base, 50) }) as unknown as Response,
+      async () =>
+        ({ headers: new Headers(), json: async () => page(base, 50) }) as unknown as Response,
     );
     vi.stubGlobal("fetch", fetchMock);
 
