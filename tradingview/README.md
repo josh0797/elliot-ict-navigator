@@ -1,17 +1,153 @@
-# TradingView — Elliott Debugger v1
+# TradingView — Elliott × ICT × SONIC
 
-**Versión: v1.0.1**
+| Script | Versión | Alcance |
+|---|---|---|
+| [`Elliott_ICT_SONIC_v2.pine`](./Elliott_ICT_SONIC_v2.pine) | **v2.0.0** (actual) | Elliott + ICT nativo + panel SONIC-likeness |
+| [`Elliott_Debugger_v1.pine`](./Elliott_Debugger_v1.pine) | v1.0.1 (referencia estable) | Elliott-only |
 
-> **Primera prueba obligatoria en TradingView Pine Editor.** Antes de usarlo, pega el
-> script en el Pine Editor y compílalo (**Save** / **Add to chart**). Si el editor
-> devuelve **cualquier** error de compilación, envíanos una **captura de pantalla + el
-> número de línea** del error para corregirlo inmediatamente.
+> **Primera prueba obligatoria en TradingView Pine Editor.** Pega el script en el Pine
+> Editor y compílalo (**Save** / **Add to chart**). Si el editor devuelve **cualquier**
+> error de compilación, envíanos **captura de pantalla + número de línea** para corregirlo
+> inmediatamente.
 
-Indicador **independiente** (Pine Script v6) para depurar y validar el motor Elliott
-sobre las velas nativas de TradingView. Es el **primer paso** de la nueva arquitectura:
-esta versión es **Elliott-only**. No incluye ICT, no incluye SONIC y no ejecuta nada en MT5.
+**MT5 / ejecución de órdenes: PENDIENTE — siguiente iteración.** La v2 no implementa
+`strategy()`, ni órdenes, ni broker bridge, ni automatización.
+
+---
+
+## v2 — Instalación
+
+1. Pine Editor → **Open** → **New indicator**.
+2. Borra el contenido y pega **todo** `Elliott_ICT_SONIC_v2.pine`.
+3. **Save** (p. ej. `Elliott x ICT x SONIC v2`) → **Add to chart**.
+4. Si tenías la v1 en el chart, **quítala** (el panel Elliott es el mismo y se solaparían
+   las tablas). La v1 se conserva en el repo como referencia y puede seguir usándose sola.
+
+### Defaults recomendados — primera prueba XAUUSD 4H
+
+| Grupo | Input | Valor |
+|---|---|---|
+| Elliott | Elliott ON | ✔ |
+| Elliott | leftBars / rightBars | 4 / 4 |
+| Elliott | minAtrDistance | 0.9 |
+| Elliott | Minimum confidence | 60 |
+| Elliott | Vista provisional / tail | OFF |
+| Debug | Debug labels on active count | `Combined` |
+| Debug | Show debug pivots | ON |
+| Debug | Show raw pivots | OFF |
+| ICT | Structure (BOS/CHoCH) | ON |
+| ICT | Liquidity + sweeps | ON |
+| ICT | FVG | OFF |
+| ICT | Order Blocks | OFF |
+| SONIC | Panel | ON |
+| SONIC | Marcar 5/5 en chart | OFF |
+| Visual | Label spacing | `Normal` |
+
+---
+
+## v2 — Corrección del overlap Elliott vs debug pivots
+
+Antes, la etiqueta de onda (`A`, `B`, `C`, `3`…) y la etiqueta de pivot (`P35 H`) se
+dibujaban en el **mismo punto** (bar_index + precio del pivot) y quedaban una encima de
+la otra.
+
+Ahora:
+
+- Las **líneas** Elliott siguen ancladas al `bar_index` y al **precio real** del pivot.
+  No se ha movido ningún endpoint del algoritmo.
+- Solo la **posición Y de la etiqueta** se desplaza, en múltiplos de ATR.
+- Input **`Debug labels on active count`**:
+  - `Combined` (default) → una sola etiqueta: `3 · P12 H`.
+  - `Hide` → los pivots del conteo activo no muestran su `Pxx`.
+  - `Separate` → dos etiquetas con offsets ATR distintos: Elliott **cerca** del swing,
+    debug **más lejos**.
+- Input **`Label spacing`**: `Compact` (0.35 ATR) · `Normal` (0.70) · `Wide` (1.20).
+- El **conteo alternativo** usa una única etiqueta discreta (`alt …`) con offset mayor,
+  de modo que nunca cae sobre las del primario.
+- **ICT** usa símbolos pequeños (`BOS↑`, `CHoCH↓`, `×` para sweeps) anclados a
+  `high`/`low` de la barra del evento, y boxes para FVG/OB: no compiten con las etiquetas
+  de onda.
+
+---
+
+## v2 — Capa ICT (grupo `3 · ICT`, toggles independientes)
+
+Portado conceptualmente de `src/lib/detection/ict.ts` y `src/lib/detection/ict/*`.
+Todo se evalúa **solo en barras cerradas** (`barstate.isconfirmed`), sin lookahead.
+
+| Toggle | Qué hace |
+|---|---|
+| **Structure** | BOS↑/↓ y CHoCH↑/↓ sobre el último high/low **estructural confirmado**: se requiere **cierre** más allá del nivel. Si el bias previo era contrario → CHoCH; si coincidía → BOS. |
+| **Liquidity** | BSL sobre highs estructurales recientes y SSL sobre lows. Estado `ACTIVE` → `SWEPT` (mecha rompe y **cierre vuelve**) o `BROKEN` (cierre al otro lado = breakout, no barrido). Solo se dibujan los **N niveles activos** más recientes. |
+| **FVG** | Bullish `low > high[2]`, bearish `high < low[2]`. Box desde la vela central; **mitigación** cuando el precio toca el midpoint (igual que `fvg.ts`). No repinta. |
+| **Order Blocks** | Igual que `detectOrderBlocks`: última vela de color **opuesto** antes de un movimiento impulsivo; impulso mínimo configurable (default **1.5× el rango de la vela**) medido tras **3 velas** (configurable). **En Pine no hay futuro**: el OB se detecta cuando esas 3 velas **ya cerraron** y el box se dibuja hacia atrás sobre la vela origen → **retraso de confirmación = `OB velas de confirmación` barras**. El panel lo indica (`delay 3b`). |
+
+Panel ICT: bias estructural (BULLISH/BEARISH/NEUTRAL), último BOS, último CHoCH, FVG
+activas, OB activos, último sweep + contador.
+
+Por defecto solo están encendidos **Structure** y **Liquidity**; FVG y OB están OFF para
+mantener el chart limpio.
+
+---
+
+## v2 — SONIC-likeness · `PRE_RAID_APPROACH_V1`
+
+Portado de `src/lib/ml/smc/pre-raid.ts`. **Semántica obligatoria:**
+
+- Es un detector **determinista y congelado**, no un modelo entrenado.
+- `setupScore = componentes que pasan / 5`. Es **likeness de setup**, *no* probabilidad
+  de ganar. El panel lo dice explícitamente: **`likeness ≠ win probability`**.
+- **No** participa en el gating Elliott/ICT, **no** altera la confidence Elliott, **no**
+  genera BUY/SELL ni órdenes, y no emite alertas.
+- Ventana validada: **Europe/London, lunes–viernes, 06:00–07:59 local**. Fuera de ella el
+  panel muestra `FUERA DE VENTANA` y no hay señal.
+
+Features congeladas (mediana TRAIN · signo), `pass = (valor − mediana) × signo > 0`:
+
+| Feature | Mediana | Signo |
+|---|---|---|
+| `dist_relevant_local_liq_atr` | 1.911168 | −1 |
+| `micro_hhhl_score_5` | 0.0 | −1 |
+| `minutes_since_relevant_raid_norm` | 1.0 | −1 |
+| `position_in_asia_range_dir` | 0.393471 | +1 |
+| `approach_velocity_liq_3m_atr` | 0.021757 | +1 |
+
+Cálculo (idéntico en semántica al TS): ATR **M5 Wilder(14)** construido desde buckets M1
+cerrados; liquidez local relevante en la ventana **[cand−60m, cand−10m)** (LONG usa el
+mínimo, SHORT el máximo); distancia normalizada por ATR M5; micro HH/HL sobre las
+**últimas 5 M1** (4 comparaciones, invertido por dirección); raid lookback **30 M1** con
+`minutes_since_relevant_raid_norm` capado a 1; rango asiático **00:00–06:00 Europe/London**
+(LONG `1 − rawPos`, SHORT `rawPos`); velocidad de aproximación sobre **3 minutos** contra
+el mismo nivel relevante.
+
+### M1 nativo vs proxy
+
+El detector se calcula en contexto **M1** vía
+`request.security(syminfo.tickerid, "1", …, lookahead=barmerge.lookahead_off)`.
+
+- Chart en 1m → panel muestra **`M1 native`** (paridad de referencia).
+- Chart en timeframe superior → **`M1 proxy / last closed M1`**: los valores corresponden
+  al último M1 **cerrado** dentro de la barra en curso. Es correcto y no repinta, pero **no
+  es un barrido minuto a minuto** del bloque.
+
+### Limitaciones frente al servidor (inevitables)
+
+- Pine **no puede** consultar Supabase ni el histórico de **SONIC Audit**: no hay HTTP ni
+  base de datos. El detector se recalcula localmente con datos de TradingView; no se
+  duplica ni se sincroniza la DB.
+- El servidor evalúa **cada minuto candidato** de la ventana y persiste la observación;
+  la v2 evalúa el **minuto actual** del chart.
+- Los `skip reasons` del servidor (`M1_GAP_AT_CANDIDATE`, `ASIA_RANGE_UNAVAILABLE`, …) se
+  resumen en el panel como `—` / `Asia range insuficiente`.
+- El feed M1 de TradingView puede diferir del proveedor de la app web (Twelve Data /
+  Polygon), por lo que los valores no serán bit-idénticos.
+
+---
+
+## v1 — referencia estable (Elliott-only)
 
 Archivo: [`Elliott_Debugger_v1.pine`](./Elliott_Debugger_v1.pine)
+
 
 ### Cambios en v1.0.1
 
