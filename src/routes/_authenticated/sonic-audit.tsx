@@ -127,12 +127,15 @@ function toCsv(rows: Row[], featureNames: readonly string[]): string {
 
 function SonicAuditPage() {
   const fetchAudit = useServerFn(getPreRaidAudit);
+  const exportCsv = useServerFn(exportPreRaidAuditCsv);
   const [days, setDays] = useState<number>(30);
   const [direction, setDirection] = useState<"all" | "long" | "short">("all");
   const [data, setData] = useState<PreRaidAuditResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -167,6 +170,33 @@ function SonicAuditPage() {
     },
     [data, rows, days],
   );
+
+  /**
+   * FULL export — every row matching the active filters, paginated server-side,
+   * with all audit columns (JSON blobs included) RFC4180-escaped.
+   */
+  const downloadFull = useCallback(async () => {
+    setExporting(true);
+    setExportNote(null);
+    try {
+      const res = await exportCsv({ data: { symbol: "XAU/USD", days, direction } });
+      const blob = new Blob(["\uFEFF", res.csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportNote(
+        `${res.rowCount} filas exportadas${res.truncated ? " (recortado por límite de seguridad)" : ""}`,
+      );
+    } catch (e) {
+      setExportNote(`Error al exportar: ${(e as Error).message}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [exportCsv, days, direction]);
+
 
   return (
     <div className="p-4 md:p-6 space-y-4">
