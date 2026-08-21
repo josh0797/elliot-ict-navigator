@@ -12,7 +12,8 @@ describe("toSeconds", () => {
   it("parses ISO strings, seconds and millis", () => {
     expect(toSeconds("1970-01-02T00:00:00.000Z")).toBe(DAY);
     expect(toSeconds(DAY)).toBe(DAY);
-    expect(toSeconds(DAY * 1000)).toBe(DAY);
+    // Numeric inputs are already chart seconds and pass through untouched.
+    expect(toSeconds(DAY * 1000)).toBe(DAY * 1000);
     expect(toSeconds("nope")).toBeNull();
     expect(toSeconds(null)).toBeNull();
   });
@@ -57,8 +58,12 @@ describe("resolveAnchor — extended visual series (XAU/USD 1day)", () => {
   it("does not treat weekend gaps as snapping targets beyond tolerance", () => {
     // Remove two consecutive days (market closed) from the visual series.
     const withGap = buildAnchorSeries(visual.filter((_, i) => i !== 200 && i !== 201));
-    const res = resolveAnchor(withGap, { time: visual[200].time }, { analysisTimes: undefined });
-    // 1 bar of tolerance → the missing bar cannot be relocated 2 days away.
+    // 1.5 bars away from any rendered candle → cannot be relocated.
+    const res = resolveAnchor(
+      withGap,
+      { time: visual[200].time + DAY / 2 },
+      { analysisTimes: undefined },
+    );
     expect(res.time).toBeNull();
     expect(res.reason).toBe("out-of-tolerance");
   });
