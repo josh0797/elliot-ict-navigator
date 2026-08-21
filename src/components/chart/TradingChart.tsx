@@ -15,6 +15,13 @@ import {
   type SeriesMarker,
 } from "lightweight-charts";
 import type { Candle } from "@/lib/twelvedata.functions";
+import {
+  buildAnchorSeries,
+  resolveAnchor,
+  type AnchorIssue,
+  type AnchorSeries,
+} from "@/lib/chart/anchor";
+
 import type { ElliottResultDTO, ElliottWaveDTO } from "@/lib/detection/elliott/types";
 import { degreeColor, displayWaveLabel, type DisplayDegree } from "@/lib/detection/elliott/display";
 import type { IctContext } from "@/lib/detection/ict/types";
