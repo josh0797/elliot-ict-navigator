@@ -429,6 +429,72 @@ function ChartPage(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decoded, interval, outputsize, degreePref, providerPref]);
 
+  /**
+   * VISUAL-ONLY deep history. Fetched separately, cached by (symbol, tf, depth,
+   * provider) and NEVER handed to Elliott/ICT/setups: the analysis snapshot
+   * stays exactly as produced by the cascade. It only extends what the chart
+   * draws behind the analysed window.
+   */
+  useEffect(() => {
+    const effectiveProvider = providerPref === "auto" ? provider : providerPref;
+    if (visualDepth === 0 || effectiveProvider !== "twelvedata") {
+      setVisualSeries(null);
+      setVisualNotice(
+        visualDepth !== 0 && effectiveProvider && effectiveProvider !== "twelvedata"
+          ? "Contexto extendido disponible solo con Twelve Data."
+          : null,
+      );
+      return;
+    }
+    let alive = true;
+    const key = chartKey(["visual", decoded, interval, visualDepth]);
+    setVisualLoading(true);
+    void cached(key, () =>
+      loadVisual({
+        data: {
+          symbol: decoded,
+          interval,
+          target: visualDepth,
+          providerPreference: providerPref,
+        },
+      }),
+    )
+      .then((res) => {
+        if (!alive) return;
+        if (!res.supported) {
+          setVisualSeries(null);
+          setVisualNotice(res.notice ?? "Contexto extendido no disponible para esta fuente.");
+          return;
+        }
+        setVisualSeries({ key, candles: res.candles, pages: res.pages });
+        setVisualNotice(res.error ?? null);
+      })
+      .catch((err) => {
+        if (alive) {
+          setVisualSeries(null);
+          setVisualNotice((err as Error).message);
+        }
+      })
+      .finally(() => {
+        if (alive) setVisualLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [decoded, interval, visualDepth, provider, providerPref, loadVisual]);
+
+  /**
+   * Chart series: extended visual history when it is deeper than the analysis
+   * window, truncated at the last CLOSED analysed candle so drawings, pivots
+   * and the analysis window always end on the same bar.
+   */
+  const chartCandles = useMemo<Candle[]>(() => {
+    if (!snapshot || !visualSeries?.candles.length) return candles;
+    const cut = snapshot.lastClosedCandleTime;
+    const deep = visualSeries.candles.filter((c) => c.time <= cut);
+    return deep.length > candles.length ? deep : candles;
+  }, [snapshot, visualSeries, candles]);
+
   const setup = useMemo<TradeSetup | null>(
     () =>
       snapshot && !snapshot.partial && !snapshot.freshness.stale
@@ -530,6 +596,29 @@ function ChartPage(){
               Cargando {pending?.tf}
             </Badge>
           )}
+          {chartCandles.length > candles.length && (
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-primary border-primary/50"
+              title={`Contexto visual extendido: ${chartCandles.length} velas dibujadas (Twelve Data, ${visualSeries?.pages ?? 0} páginas). El análisis Elliott/ICT sigue usando ${candles.length} velas.`}
+            >
+              Visual {chartCandles.length} · análisis {candles.length}
+            </Badge>
+          )}
+          {visualLoading && (
+            <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
+              Cargando contexto…
+            </Badge>
+          )}
+          {visualNotice && (
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-amber-400 border-amber-400/50"
+              title={visualNotice}
+            >
+              Contexto visual limitado
+            </Badge>
+          )}
           {elliott && elliott.status !== "NO_COUNT" && (
             <Badge
               variant="outline"
@@ -568,6 +657,21 @@ function ChartPage(){
                 className={`px-2.5 py-1.5 font-mono ${outputsize === h.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
               >
                 {h.value}
+              </button>
+            ))}
+          </div>
+          <div
+            className="flex rounded-md border border-border bg-card overflow-hidden text-xs"
+            title="Contexto histórico VISUAL (solo dibujo). El análisis sigue usando las velas seleccionadas arriba."
+          >
+            {VISUAL_DEPTHS.map((d) => (
+              <button
+                key={d.value}
+                onClick={() => setVisualDepth(d.value)}
+                title={d.hint}
+                className={`px-2 py-1.5 font-mono ${visualDepth === d.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {d.label}
               </button>
             ))}
           </div>
@@ -627,7 +731,7 @@ function ChartPage(){
               }
             >
               <TradingChart
-                candles={candles}
+                candles={chartCandles}
                 elliott={elliott}
                 internal={viewMode === "diagnostic" ? (elliott?.internal ?? null) : null}
                 ict={ict}
