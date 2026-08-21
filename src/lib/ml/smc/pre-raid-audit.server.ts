@@ -1,0 +1,229 @@
+/**
+ * SONIC AUDIT — read-only audit of what PRE_RAID_APPROACH_V1 is collecting.
+ *
+ * Runs as the signed-in user (RLS SELECT on `pre_raid_observations`). It never
+ * writes, never recomputes features and never influences the detector, the
+ * decision engine, alerts or scoring. Pure observability over the frozen
+ * research table.
+ */
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database, Json } from "@/integrations/supabase/types";
+import { PRE_RAID_DETECTOR_VERSION, PRE_RAID_FEATURE_NAMES } from "./pre-raid";
+import { PRE_RAID_HORIZONS } from "./pre-raid-outcomes";
+import { preRaidWindowStatus } from "./pre-raid.server";
+
+export interface PreRaidAuditRow {
+  id: string;
+  candidate_at: string;
+  direction: "long" | "short";
+  reference_price: number;
+  atr_m5: number;
+  setup_score: number;
+  component_count: number;
+  dist_liquidity: number | null;
+  approach_velocity: number | null;
+  micro_pullback: number | null;
+  asia_position: number | null;
+  raid_state: string | null;
+  minutes_since_relevant_raid_norm: number | null;
+  provider: string | null;
+  source_last_closed_at: string | null;
+  components: Json;
+  features: Json;
+  london_context: Json;
+  outcome_1m: Json;
+  outcome_3m: Json;
+  outcome_5m: Json;
+  outcome_15m: Json;
+  outcomes_updated_at: string | null;
+  created_at: string;
+}
+
+export interface HorizonStats {
+  horizon: number;
+  resolved: number;
+  displacement: number;
+  displacementRate: number | null;
+  avgMfeAtr: number | null;
+  avgMaeAtr: number | null;
+}
+
+export interface PreRaidAuditResult {
+  detectorVersion: string;
+  symbol: string;
+  days: number;
+  window: ReturnType<typeof preRaidWindowStatus>;
+  asOf: number;
+  /** Newest first, capped by `limit`. */
+  rows: PreRaidAuditRow[];
+  featureNames: readonly string[];
+  summary: {
+    total: number;
+    long: number;
+    short: number;
+    /** Rows with at least one resolved outcome horizon. */
+    withOutcomes: number;
+    pending: number;
+    /** Distribution of component_count (0..5). */
+    componentHistogram: number[];
+    avgSetupScore: number | null;
+    firstCandidateAt: string | null;
+    lastCandidateAt: string | null;
+    /** Distinct London capture days present in the window. */
+    captureDays: number;
+    providers: Record<string, number>;
+    raidStates: Record<string, number>;
+    /** Median of each frozen feature over the window (audit only). */
+    featureMedians: Record<string, number | null>;
+    horizons: HorizonStats[];
+  };
+}
+
+function num(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function outcomeOf(row: PreRaidAuditRow, horizon: number): Record<string, unknown> | null {
+  const raw =
+    horizon === 1
+      ? row.outcome_1m
+      : horizon === 3
+        ? row.outcome_3m
+        : horizon === 5
+          ? row.outcome_5m
+          : row.outcome_15m;
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : null;
+}
+
+const SELECT_COLUMNS =
+  "id,candidate_at,direction,reference_price,atr_m5,setup_score,component_count," +
+  "dist_liquidity,approach_velocity,micro_pullback,asia_position,raid_state," +
+  "minutes_since_relevant_raid_norm,provider,source_last_closed_at,components,features," +
+  "london_context,outcome_1m,outcome_3m,outcome_5m,outcome_15m,outcomes_updated_at,created_at";
+
+export async function readPreRaidAudit(
+  supabase: SupabaseClient<Database>,
+  input: { symbol: string; days: number; direction?: "long" | "short" | "all"; limit: number },
+): Promise<PreRaidAuditResult> {
+  const asOf = Math.floor(Date.now() / 1000);
+  const since = new Date((asOf - input.days * 86_400) * 1000).toISOString();
+
+  let query = supabase
+    .from("pre_raid_observations")
+    .select(SELECT_COLUMNS)
+    .eq("detector_version", PRE_RAID_DETECTOR_VERSION)
+    .eq("symbol", input.symbol)
+    .gte("candidate_at", since)
+    .order("candidate_at", { ascending: false })
+    .limit(Math.min(input.limit, 1000));
+
+  if (input.direction && input.direction !== "all") {
+    query = query.eq("direction", input.direction);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as unknown as PreRaidAuditRow[];
+
+  const componentHistogram = [0, 0, 0, 0, 0, 0];
+  const providers: Record<string, number> = {};
+  const raidStates: Record<string, number> = {};
+  const days = new Set<string>();
+  const featureValues: Record<string, number[]> = {};
+  for (const name of PRE_RAID_FEATURE_NAMES) featureValues[name] = [];
+
+  let long = 0;
+  let short = 0;
+  let withOutcomes = 0;
+  let scoreSum = 0;
+  let scoreCount = 0;
+
+  for (const row of rows) {
+    if (row.direction === "long") long++;
+    else short++;
+    const bucket = Math.max(0, Math.min(5, Math.round(row.component_count)));
+    componentHistogram[bucket]++;
+    if (row.provider) providers[row.provider] = (providers[row.provider] ?? 0) + 1;
+    if (row.raid_state) raidStates[row.raid_state] = (raidStates[row.raid_state] ?? 0) + 1;
+    days.add(row.candidate_at.slice(0, 10));
+    const score = num(row.setup_score);
+    if (score !== null) {
+      scoreSum += score;
+      scoreCount++;
+    }
+    if (PRE_RAID_HORIZONS.some((h) => outcomeOf(row, h) !== null)) withOutcomes++;
+
+    const features =
+      row.features && typeof row.features === "object" && !Array.isArray(row.features)
+        ? (row.features as Record<string, unknown>)
+        : {};
+    for (const name of PRE_RAID_FEATURE_NAMES) {
+      const v = num(features[name]);
+      if (v !== null) featureValues[name].push(v);
+    }
+  }
+
+  const horizons: HorizonStats[] = PRE_RAID_HORIZONS.map((horizon) => {
+    let resolved = 0;
+    let displacement = 0;
+    const mfe: number[] = [];
+    const mae: number[] = [];
+    for (const row of rows) {
+      const o = outcomeOf(row, horizon);
+      if (!o) continue;
+      resolved++;
+      if (o["displacement_1atr"] === true) displacement++;
+      const m = num(o["mfe_atr"]);
+      const a = num(o["mae_atr"]);
+      if (m !== null) mfe.push(m);
+      if (a !== null) mae.push(a);
+    }
+    const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+    return {
+      horizon,
+      resolved,
+      displacement,
+      displacementRate: resolved ? displacement / resolved : null,
+      avgMfeAtr: avg(mfe),
+      avgMaeAtr: avg(mae),
+    };
+  });
+
+  const featureMedians: Record<string, number | null> = {};
+  for (const name of PRE_RAID_FEATURE_NAMES) featureMedians[name] = median(featureValues[name]);
+
+  return {
+    detectorVersion: PRE_RAID_DETECTOR_VERSION,
+    symbol: input.symbol,
+    days: input.days,
+    window: preRaidWindowStatus(asOf),
+    asOf,
+    rows,
+    featureNames: PRE_RAID_FEATURE_NAMES,
+    summary: {
+      total: rows.length,
+      long,
+      short,
+      withOutcomes,
+      pending: rows.length - withOutcomes,
+      componentHistogram,
+      avgSetupScore: scoreCount ? scoreSum / scoreCount : null,
+      firstCandidateAt: rows.length ? rows[rows.length - 1].candidate_at : null,
+      lastCandidateAt: rows.length ? rows[0].candidate_at : null,
+      captureDays: days.size,
+      providers,
+      raidStates,
+      featureMedians,
+      horizons,
+    },
+  };
+}

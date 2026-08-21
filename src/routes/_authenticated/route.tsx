@@ -9,7 +9,15 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { Activity, LayoutDashboard, BellRing, Settings, LogOut, Brain } from "lucide-react";
+import {
+  Activity,
+  LayoutDashboard,
+  BellRing,
+  Settings,
+  LogOut,
+  Brain,
+  Radar,
+} from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { checkAdmin } from "@/lib/training.functions";
 import { cn } from "@/lib/utils";
@@ -47,6 +55,7 @@ function AuthenticatedShell() {
   const nav = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/alerts", label: "Alerts", icon: BellRing },
+    { to: "/sonic-audit", label: "SONIC Audit", icon: Radar },
     ...(isAdmin ? [{ to: "/training" as const, label: "Training", icon: Brain }] : []),
     { to: "/settings", label: "Settings", icon: Settings },
   ];

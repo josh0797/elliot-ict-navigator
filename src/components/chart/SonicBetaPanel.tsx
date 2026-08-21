@@ -7,6 +7,7 @@
  * score/feature/outcome definitions.
  */
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { getLatestPreRaid, type PreRaidLatestResult } from "@/lib/preRaid.functions";
 import {
@@ -162,8 +163,16 @@ export function SonicBetaPanel({ symbol }: { symbol: string }) {
         </div>
       )}
 
-      <div className="text-[10px] text-muted-foreground">
-        Solo observación: no genera órdenes ni alertas y no altera COMPRAR/VENDER/ESPERAR.
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[10px] text-muted-foreground">
+          Solo observación: no genera órdenes ni alertas y no altera COMPRAR/VENDER/ESPERAR.
+        </div>
+        <Link
+          to="/sonic-audit"
+          className="shrink-0 text-[10px] font-mono text-primary underline underline-offset-2 hover:opacity-80"
+        >
+          Ver auditoría →
+        </Link>
       </div>
     </div>
   );

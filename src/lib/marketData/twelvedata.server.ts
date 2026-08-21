@@ -25,6 +25,8 @@ export async function fetchTwelveDataCandles(input: {
   symbol: string;
   interval: string;
   outputsize: number;
+  /** Optional upper bound (`YYYY-MM-DD HH:MM:SS`, UTC) used for paging. */
+  endDate?: string;
 }): Promise<{ candles: Candle[]; error?: string }> {
   const apiKey = process.env["TWELVEDATA_API_KEY"];
   if (!apiKey) return { candles: [], error: "TWELVEDATA_API_KEY missing" };
@@ -35,6 +37,7 @@ export async function fetchTwelveDataCandles(input: {
   url.searchParams.set("interval", interval);
   url.searchParams.set("outputsize", String(input.outputsize));
   url.searchParams.set("format", "JSON");
+  if (input.endDate) url.searchParams.set("end_date", input.endDate);
   url.searchParams.set("apikey", apiKey);
 
   try {
@@ -88,4 +91,59 @@ export async function fetchTwelveDataPrice(
   } catch (err) {
     return { price: null, error: (err as Error).message };
   }
+}
+
+/** Per-request hard cap of the Twelve Data `time_series` endpoint. */
+export const TWELVEDATA_MAX_OUTPUTSIZE = 5000;
+
+function toEndDateParam(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toISOString().slice(0, 19).replace("T", " ");
+}
+
+/**
+ * Paged history for the VISUAL chart only (never for analysis).
+ *
+ * Twelve Data caps one request at 5000 bars, so deeper context is assembled by
+ * walking backwards with `end_date`. Bars are merged, deduped by timestamp and
+ * returned oldest-first. Paging stops as soon as a page adds nothing new, so a
+ * symbol without deeper history costs exactly one extra request.
+ */
+export async function fetchTwelveDataHistory(input: {
+  symbol: string;
+  interval: string;
+  target: number;
+  maxPages?: number;
+}): Promise<{ candles: Candle[]; pages: number; error?: string }> {
+  const maxPages = Math.max(1, Math.min(input.maxPages ?? 4, 6));
+  const byTime = new Map<number, Candle>();
+  let endDate: string | undefined;
+  let pages = 0;
+  let error: string | undefined;
+
+  for (let page = 0; page < maxPages; page++) {
+    const remaining = input.target - byTime.size;
+    if (remaining <= 0) break;
+    const res = await fetchTwelveDataCandles({
+      symbol: input.symbol,
+      interval: input.interval,
+      outputsize: Math.min(TWELVEDATA_MAX_OUTPUTSIZE, Math.max(50, remaining)),
+      endDate,
+    });
+    pages++;
+    if (res.error && byTime.size === 0) return { candles: [], pages, error: res.error };
+    if (res.error) {
+      error = res.error;
+      break;
+    }
+    if (!res.candles.length) break;
+    const before = byTime.size;
+    for (const c of res.candles) byTime.set(c.time, c);
+    if (byTime.size === before) break; // page added nothing new → history exhausted
+    const oldest = res.candles[0]?.time;
+    if (!Number.isFinite(oldest)) break;
+    endDate = toEndDateParam((oldest as number) - 1);
+  }
+
+  const candles = [...byTime.values()].sort((a, b) => a.time - b.time);
+  return { candles: candles.slice(-input.target), pages, error };
 }

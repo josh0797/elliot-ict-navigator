@@ -24,3 +24,11 @@ export const TwelveDataInput = z.object({
   interval: z.string().default("1h"),
   outputsize: z.number().int().min(50).max(2000).default(500),
 });
+
+/** Visual-only extended history request (chart context, never analysis). */
+export const VisualHistoryInput = z.object({
+  symbol: z.string().min(3),
+  interval: z.string().default("1h"),
+  target: z.number().int().min(500).max(20000).default(5000),
+  providerPreference: z.enum(PROVIDER_PREFERENCES).default("auto"),
+});

@@ -885,3 +885,90 @@ export async function loadOhlcv(data: {
       : errors.join(" | ") || "no data from any provider",
   };
 }
+
+// ── Visual-only extended history (Twelve Data) ──────────────────────────────
+
+export interface VisualHistoryResponse {
+  candles: Candle[];
+  provider: MarketProvider;
+  /** Upstream pages consumed (each page = one Twelve Data request). */
+  pages: number;
+  /** False when the resolved OHLC source cannot serve extended history. */
+  supported: boolean;
+  /** User-facing Spanish explanation when `supported` is false. */
+  notice?: string;
+  asOf: number;
+  error?: string;
+}
+
+/**
+ * Deeper history for the CHART ONLY.
+ *
+ * Analysis (Elliott / ICT / setups) keeps using the snapshot produced by
+ * `loadOhlcv`; this series is purely visual context and is never fed into any
+ * engine. Only Twelve Data is paged, because it is the source with true OHLC
+ * depth; every other provider returns `supported: false` with an explanation.
+ */
+export async function loadVisualHistory(data: {
+  symbol: string;
+  interval: string;
+  target: number;
+  providerPreference?: ProviderPreference;
+}): Promise<VisualHistoryResponse> {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const preference = data.providerPreference ?? "auto";
+  const plan = resolveProviderPlan(data.symbol, data.interval, preference);
+  const leader = plan.cascade[0];
+
+  if (leader !== "twelvedata") {
+    return {
+      candles: [],
+      provider: leader ?? "none",
+      pages: 0,
+      supported: false,
+      notice:
+        plan.error ??
+        "El contexto histórico extendido solo está disponible cuando la fuente OHLC es Twelve Data.",
+      asOf: nowSeconds,
+    };
+  }
+
+  const interval = toTwelveDataInterval(canonInterval(data.interval) ?? data.interval);
+  const target = Math.max(500, Math.min(20_000, Math.round(data.target)));
+  const key = `visual:${ohlcvKey({
+    provider: "twelvedata",
+    symbol: data.symbol,
+    timeframe: interval,
+    limit: target,
+  })}`;
+
+  const guard = guards.get("twelvedata");
+  const { value } = await ohlcvCache.resolve(
+    key,
+    Math.max(ttlForTimeframe(canonInterval(data.interval) ?? data.interval), 120_000),
+    async () => {
+      const acq = guard.tryAcquire();
+      if (!acq.ok) {
+        return {
+          candles: [] as Candle[],
+          pages: 0,
+          error: `twelvedata: ${acq.reason} (retry in ${acq.retryAfterMs}ms)`,
+        };
+      }
+      const { fetchTwelveDataHistory } = await import("./twelvedata.server");
+      const res = await fetchTwelveDataHistory({ symbol: data.symbol, interval, target });
+      if (res.candles.length) guard.onSuccess();
+      else if (res.error) guard.onFailure("error");
+      return res;
+    },
+  );
+
+  return {
+    candles: sanitizeAscending(value.candles),
+    provider: "twelvedata",
+    pages: value.pages,
+    supported: true,
+    asOf: nowSeconds,
+    error: value.error,
+  };
+}
