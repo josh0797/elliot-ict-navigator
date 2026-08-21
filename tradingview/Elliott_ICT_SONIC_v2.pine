@@ -681,8 +681,9 @@ sonicM1() =>
     var float asiaH = na
     var float asiaL = na
     var int   asiaN = 0
+    var bool  wasAsia = false
     if inAsia
-        if not inAsia[1]
+        if not wasAsia
             asiaH := high
             asiaL := low
             asiaN := 1
@@ -690,6 +691,8 @@ sonicM1() =>
             asiaH := math.max(asiaH, high)
             asiaL := math.min(asiaL, low)
             asiaN += 1
+    wasAsia := inAsia
+
     float asiaW = na(asiaH) or na(asiaL) ? na : asiaH - asiaL
     float rawPos = not na(asiaW) and asiaW > 0 ? (close - asiaL) / asiaW : na
     float posL = na(rawPos) ? na : 1.0 - rawPos
