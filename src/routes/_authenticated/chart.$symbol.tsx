@@ -6,6 +6,8 @@ import { analyzeSymbol } from "@/lib/elliott.functions";
 import { detectSetupsMTF } from "@/lib/setups.functions";
 import { fetchOhlcv, fetchVisualHistory } from "@/lib/marketData.functions";
 import type { Candle } from "@/lib/twelvedata.functions";
+import type { AnchorIssue } from "@/lib/chart/anchor";
+
 import { detectSetup } from "@/lib/detection/engine";
 import type { TradeSetup } from "@/lib/detection/types";
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
