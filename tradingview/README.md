@@ -1,12 +1,33 @@
 # TradingView — Elliott Debugger v1
 
+**Versión: v1.0.1**
+
+> **Primera prueba obligatoria en TradingView Pine Editor.** Antes de usarlo, pega el
+> script en el Pine Editor y compílalo (**Save** / **Add to chart**). Si el editor
+> devuelve **cualquier** error de compilación, envíanos una **captura de pantalla + el
+> número de línea** del error para corregirlo inmediatamente.
+
 Indicador **independiente** (Pine Script v6) para depurar y validar el motor Elliott
 sobre las velas nativas de TradingView. Es el **primer paso** de la nueva arquitectura:
 esta versión es **Elliott-only**. No incluye ICT, no incluye SONIC y no ejecuta nada en MT5.
 
 Archivo: [`Elliott_Debugger_v1.pine`](./Elliott_Debugger_v1.pine)
 
+### Cambios en v1.0.1
+
+- El filtro ATR usa el ATR de la **barra real del swing** (`atrV[rightBars]`), no el de la barra de confirmación.
+- Al sustituir un pivot por otro más extremo del mismo tipo se **recalcula `sDist`** (claridad).
+- **Outside bars**: si high y low se confirman en la misma barra, se conserva **un solo** pivot
+  estructural — el compatible con la alternancia respecto del último pivot; si no hay pivot previo,
+  se conserva el **HIGH** (criterio explícito). Nunca hay dos endpoints en el mismo `bar_index`.
+- **Recencia**: los candidatos deben terminar en uno de los **últimos 3 pivots** (`End lag <= 2`).
+  El panel muestra `End lag`.
+- Estado **`INVALID`** en el panel cuando el candidato reciente más completo rompe una regla dura
+  y no hay geometría válida reciente. `NO_COUNT` cuando hay geometría válida pero por debajo de
+  *Minimum confidence*. Nunca se fuerza un conteo.
+
 ---
+
 
 ## 1. Instalación (pasos exactos)
 
