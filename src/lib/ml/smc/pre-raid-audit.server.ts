@@ -8,7 +8,12 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { PRE_RAID_DETECTOR_VERSION, PRE_RAID_FEATURE_NAMES } from "./pre-raid";
+import {
+  PRE_RAID_DETECTOR_VERSION,
+  PRE_RAID_FEATURE_NAMES,
+  PRE_RAID_TRAIN_MEDIANS,
+  PRE_RAID_TRAIN_SIGNS,
+} from "./pre-raid";
 import { PRE_RAID_HORIZONS } from "./pre-raid-outcomes";
 import { preRaidWindowStatus } from "./pre-raid.server";
 
@@ -388,6 +393,12 @@ export async function readPreRaidAudit(
     };
   });
 
+  const dataset = await readDatasetContext(supabase, {
+    symbol: input.symbol,
+    since,
+    direction: input.direction,
+  });
+
   const featureMedians: Record<string, number | null> = {};
   for (const name of PRE_RAID_FEATURE_NAMES) featureMedians[name] = median(featureValues[name]);
 
@@ -415,5 +426,6 @@ export async function readPreRaidAudit(
       featureMedians,
       horizons,
     },
+    dataset,
   };
 }
