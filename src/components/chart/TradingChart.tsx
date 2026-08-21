@@ -510,28 +510,23 @@ export function TradingChart({
       }
     }
 
-    // ICT Sweep markers on the candle that raided the liquidity.
+    // ICT Sweep markers on the candle that raided the liquidity (timestamp-anchored).
     if (isDiag && ict && layers.sweeps && ict.sweeps.length > 0) {
-      ict.sweeps
-        .filter(
-          (s) =>
-            s.index >= 0 &&
-            s.index < candles.length &&
-            isFiniteNumber(s.price) &&
-            isValidChartTime(candles[s.index].time),
-        )
-        .forEach((s) => {
-          const t = candles[s.index].time;
-          pushMarker({
-            id: `sweep-${s.id}-${t}`,
-            time: candles[s.index].time as unknown as UTCTimestamp,
-            position: s.type === "buy_side" ? "aboveBar" : "belowBar",
-            color: s.type === "buy_side" ? "#ef4444" : "#22c55e",
-            shape: s.type === "buy_side" ? "arrowDown" : "arrowUp",
-            text: `${s.type === "buy_side" ? "BSL" : "SSL"}·Q${s.quality}`,
-          });
+      for (const s of ict.sweeps) {
+        if (!isFiniteNumber(s.price)) continue;
+        const t = anchorTime("ict:sweep", s.id, { time: s.time, index: s.index });
+        if (t === null) continue;
+        pushMarker({
+          id: `sweep-${s.id}-${t}`,
+          time: t as unknown as UTCTimestamp,
+          position: s.type === "buy_side" ? "aboveBar" : "belowBar",
+          color: s.type === "buy_side" ? "#ef4444" : "#22c55e",
+          shape: s.type === "buy_side" ? "arrowDown" : "arrowUp",
+          text: `${s.type === "buy_side" ? "BSL" : "SSL"}·Q${s.quality}`,
         });
+      }
     }
+
 
     // Only refit when the dataset itself changed — layer toggles and view-mode
     // switches must not reset the user's zoom/pan.
