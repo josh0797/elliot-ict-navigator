@@ -299,8 +299,9 @@ export function TradingChart({
         for (let i = 1; i < waves.length; i++) {
           const a = waves[i - 1];
           const b = waves[i];
-          const ta = snapTime(waveTime(a, candles));
-          const tb = snapTime(waveTime(b, candles));
+          const ta = anchorTime(`elliott:${role}`, a.label, { time: a.time, index: a.index });
+          const tb = anchorTime(`elliott:${role}`, b.label, { time: b.time, index: b.index });
+
           if (
             ta === null ||
             tb === null ||
