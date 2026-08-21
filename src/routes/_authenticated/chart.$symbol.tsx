@@ -214,6 +214,9 @@ function ChartPage() {
     pages: number;
   } | null>(null);
   const [visualNotice, setVisualNotice] = useState<string | null>(null);
+  /** Diagnostic: overlay anchors that did not match a rendered candle. */
+  const [anchorIssues, setAnchorIssues] = useState<AnchorIssue[]>([]);
+
   const [visualLoading, setVisualLoading] = useState(false);
   const loadVisual = useServerFn(fetchVisualHistory);
 
