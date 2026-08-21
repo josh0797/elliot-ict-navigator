@@ -7,6 +7,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { PreRaidLatestResult } from "./ml/smc/pre-raid-read.server";
 import type { PreRaidAuditResult } from "./ml/smc/pre-raid-audit.server";
+import type { PreRaidExportResult } from "./ml/smc/pre-raid-export.server";
+
 
 export type { PreRaidLatestResult, PreRaidLatestRow } from "./ml/smc/pre-raid-read.server";
 export type {
