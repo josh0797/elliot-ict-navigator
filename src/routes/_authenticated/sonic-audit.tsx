@@ -9,7 +9,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { getPreRaidAudit, type PreRaidAuditResult } from "@/lib/preRaid.functions";
+import {
+  getPreRaidAudit,
+  exportPreRaidAuditCsv,
+  type PreRaidAuditResult,
+} from "@/lib/preRaid.functions";
+
 import { SONIC_COMPONENT_LABELS_ES, SONIC_BETA_DISCLAIMER } from "@/lib/ml/smc/beta-display";
 import type { PreRaidFeatureName } from "@/lib/ml/smc/pre-raid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
