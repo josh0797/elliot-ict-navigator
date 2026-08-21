@@ -15,6 +15,13 @@ import {
   type SeriesMarker,
 } from "lightweight-charts";
 import type { Candle } from "@/lib/twelvedata.functions";
+import {
+  buildAnchorSeries,
+  resolveAnchor,
+  type AnchorIssue,
+  type AnchorSeries,
+} from "@/lib/chart/anchor";
+
 import type { ElliottResultDTO, ElliottWaveDTO } from "@/lib/detection/elliott/types";
 import { degreeColor, displayWaveLabel, type DisplayDegree } from "@/lib/detection/elliott/display";
 import type { IctContext } from "@/lib/detection/ict/types";
@@ -55,15 +62,11 @@ function isFiniteNumber(v: unknown): v is number {
 function isValidChartTime(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v) && v > 0;
 }
-function waveTime(w: ElliottWaveDTO, candles: Candle[]): number | null {
-  if (w.index >= 0 && w.index < candles.length) {
-    const t = candles[w.index].time;
-    return isValidChartTime(t) ? t : null;
-  }
-  const ms = new Date(w.time).getTime();
-  if (!Number.isFinite(ms)) return null;
-  return Math.floor(ms / 1000);
-}
+/**
+ * Overlay anchoring is TIMESTAMP-FIRST (see `@/lib/chart/anchor`). `w.index` is
+ * relative to the ANALYSIS snapshot, so it must never be applied directly to
+ * the (possibly deeper) visual series.
+ */
 
 function priceOf(label: string, waves: ElliottWaveDTO[]): number | undefined {
   return waves.find((w) => w.label === label)?.price;
@@ -79,6 +82,8 @@ export function TradingChart({
   onPivotHover,
   viewMode = "diagnostic",
   livePrice,
+  analysisCandles,
+  onAnchorIssues,
 }: {
   candles: Candle[];
   elliott: ElliottResultDTO | null;
@@ -94,6 +99,14 @@ export function TradingChart({
    * pushed into `candles` and never reaches Elliott/ICT/setups/ATR/decisions.
    */
   livePrice?: number | null;
+  /**
+   * The exact series Elliott/ICT indices were computed against. When the chart
+   * renders a deeper visual history this is REQUIRED so overlay indices can be
+   * translated into real timestamps instead of being applied to the wrong bars.
+   */
+  analysisCandles?: Candle[];
+  /** Diagnostic sink for anchors that could not be resolved to a real candle. */
+  onAnchorIssues?: (issues: AnchorIssue[]) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -223,25 +236,38 @@ export function TradingChart({
     }
 
     const validTimes = new Set(chartCandles.map((c) => c.time));
-    const sortedTimes = chartCandles.map((c) => c.time);
     /**
-     * Snap an arbitrary timestamp (e.g. an HTF pivot time) to the closest
-     * rendered candle time. Without this, wave anchors whose exact time is not
-     * a candle open silently disappear and nothing is drawn.
+     * Timestamp identity is the source of truth for every overlay anchor.
+     * `analysisTimes` translates engine indices (relative to the analysis
+     * snapshot) into real timestamps; snapping is allowed only within one bar
+     * of the rendered series, and anything else is reported, never relocated.
      */
-    const snapTime = (t: number | null): number | null => {
-      if (t === null || sortedTimes.length === 0) return null;
-      if (validTimes.has(t)) return t;
-      if (t < sortedTimes[0] || t > sortedTimes[sortedTimes.length - 1]) return null;
-      let lo = 0;
-      let hi = sortedTimes.length - 1;
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if (sortedTimes[mid] <= t) lo = mid;
-        else hi = mid;
+    const anchors: AnchorSeries = buildAnchorSeries(chartCandles);
+    const analysisTimes =
+      analysisCandles && analysisCandles.length > 0
+        ? analysisCandles.map((c) => c.time)
+        : chartCandles.map((c) => c.time);
+    const anchorIssues: AnchorIssue[] = [];
+    const anchorTime = (
+      kind: string,
+      label: string,
+      input: { time?: string | number | null; index?: number | null },
+    ): number | null => {
+      const res = resolveAnchor(anchors, input, { analysisTimes });
+      if (res.time === null) {
+        anchorIssues.push({
+          kind,
+          label,
+          requestedTime: input.time ?? null,
+          index: input.index ?? null,
+          reason: res.reason ?? "unresolved",
+          drift: res.drift,
+        });
+        return null;
       }
-      return t - sortedTimes[lo] <= sortedTimes[hi] - t ? sortedTimes[lo] : sortedTimes[hi];
+      return res.time;
     };
+
     const chartMarkers: SeriesMarker<Time>[] = [];
     const pushMarker = (marker: SeriesMarker<Time>) => {
       const t = Number(marker.time);
@@ -271,8 +297,9 @@ export function TradingChart({
         for (let i = 1; i < waves.length; i++) {
           const a = waves[i - 1];
           const b = waves[i];
-          const ta = snapTime(waveTime(a, candles));
-          const tb = snapTime(waveTime(b, candles));
+          const ta = anchorTime(`elliott:${role}`, a.label, { time: a.time, index: a.index });
+          const tb = anchorTime(`elliott:${role}`, b.label, { time: b.time, index: b.index });
+
           if (
             ta === null ||
             tb === null ||
@@ -297,7 +324,11 @@ export function TradingChart({
       }
       if (showLabels) {
         const wavePoints = waves
-          .map((w) => ({ t: snapTime(waveTime(w, candles)), w }))
+          .map((w) => ({
+            t: anchorTime(`elliott:${role}`, w.label, { time: w.time, index: w.index }),
+            w,
+          }))
+
           .filter(
             (p): p is { t: number; w: ElliottWaveDTO } => p.t !== null && isFiniteNumber(p.w.price),
           );
@@ -477,27 +508,21 @@ export function TradingChart({
       }
     }
 
-    // ICT Sweep markers on the candle that raided the liquidity.
+    // ICT Sweep markers on the candle that raided the liquidity (timestamp-anchored).
     if (isDiag && ict && layers.sweeps && ict.sweeps.length > 0) {
-      ict.sweeps
-        .filter(
-          (s) =>
-            s.index >= 0 &&
-            s.index < candles.length &&
-            isFiniteNumber(s.price) &&
-            isValidChartTime(candles[s.index].time),
-        )
-        .forEach((s) => {
-          const t = candles[s.index].time;
-          pushMarker({
-            id: `sweep-${s.id}-${t}`,
-            time: candles[s.index].time as unknown as UTCTimestamp,
-            position: s.type === "buy_side" ? "aboveBar" : "belowBar",
-            color: s.type === "buy_side" ? "#ef4444" : "#22c55e",
-            shape: s.type === "buy_side" ? "arrowDown" : "arrowUp",
-            text: `${s.type === "buy_side" ? "BSL" : "SSL"}·Q${s.quality}`,
-          });
+      for (const s of ict.sweeps) {
+        if (!isFiniteNumber(s.price)) continue;
+        const t = anchorTime("ict:sweep", s.id, { time: s.time, index: s.index });
+        if (t === null) continue;
+        pushMarker({
+          id: `sweep-${s.id}-${t}`,
+          time: t as unknown as UTCTimestamp,
+          position: s.type === "buy_side" ? "aboveBar" : "belowBar",
+          color: s.type === "buy_side" ? "#ef4444" : "#22c55e",
+          shape: s.type === "buy_side" ? "arrowDown" : "arrowUp",
+          text: `${s.type === "buy_side" ? "BSL" : "SSL"}·Q${s.quality}`,
         });
+      }
     }
 
     // Only refit when the dataset itself changed — layer toggles and view-mode
@@ -610,24 +635,21 @@ export function TradingChart({
       }
       void drawn;
 
-      // Originating sweep marker.
+      // Originating sweep marker (timestamp-anchored).
       if (ict && ict.sweeps.length > 0) {
         const sw = ict.sweeps[ict.sweeps.length - 1];
-        if (
-          sw &&
-          sw.index >= 0 &&
-          sw.index < candles.length &&
-          isFiniteNumber(sw.price) &&
-          isValidChartTime(candles[sw.index].time)
-        ) {
-          pushMarker({
-            id: `active-sweep-${sw.id}-${candles[sw.index].time}`,
-            time: candles[sw.index].time as unknown as UTCTimestamp,
-            position: sw.type === "buy_side" ? "aboveBar" : "belowBar",
-            color: sw.type === "buy_side" ? "#ef4444" : "#22c55e",
-            shape: sw.type === "buy_side" ? "arrowDown" : "arrowUp",
-            text: `SWEEP ${sw.type === "buy_side" ? "BSL" : "SSL"}`,
-          });
+        if (sw && isFiniteNumber(sw.price)) {
+          const t = anchorTime("ict:active-sweep", sw.id, { time: sw.time, index: sw.index });
+          if (t !== null) {
+            pushMarker({
+              id: `active-sweep-${sw.id}-${t}`,
+              time: t as unknown as UTCTimestamp,
+              position: sw.type === "buy_side" ? "aboveBar" : "belowBar",
+              color: sw.type === "buy_side" ? "#ef4444" : "#22c55e",
+              shape: sw.type === "buy_side" ? "arrowDown" : "arrowUp",
+              text: `SWEEP ${sw.type === "buy_side" ? "BSL" : "SSL"}`,
+            });
+          }
         }
       }
     }
@@ -637,32 +659,36 @@ export function TradingChart({
       markersRef.current = createSeriesMarkers(series, chartMarkers);
     }
 
-    // Crosshair tooltip — track nearest pivot.
+    // Report anchors that could not be tied to a real candle instead of
+    // silently drawing them on a neighbouring bar.
+    onAnchorIssues?.(anchorIssues);
+
+    // Crosshair tooltip — track nearest pivot (also timestamp-anchored).
     if (!onPivotHover) return;
     const waves = elliott?.waves ?? [];
+    const waveAnchors = waves
+      .map((w) => ({
+        w,
+        t: resolveAnchor(anchors, { time: w.time, index: w.index }, { analysisTimes }).time,
+      }))
+      .filter((p): p is { w: ElliottWaveDTO; t: number } => p.t !== null);
     const handler = (param: MouseEventParams<Time>) => {
-      if (!param.point || param.time === undefined || waves.length === 0) {
+      if (!param.point || param.time === undefined || waveAnchors.length === 0) {
         onPivotHover(null);
         return;
       }
       const t = Number(param.time);
-      const w = waves.reduce<ElliottWaveDTO | null>((best, w) => {
-        const wt =
-          w.index < candles.length
-            ? candles[w.index].time
-            : Math.floor(new Date(w.time).getTime() / 1000);
-        if (Math.abs(wt - t) > 60 * 60 * 6) return best;
-        if (!best) return w;
-        const bt =
-          best.index < candles.length
-            ? candles[best.index].time
-            : Math.floor(new Date(best.time).getTime() / 1000);
-        return Math.abs(wt - t) < Math.abs(bt - t) ? w : best;
-      }, null);
-      if (!w) {
+      const tolerance = Math.max(anchors.spacing * 3, 60 * 60 * 6);
+      let best: { w: ElliottWaveDTO; t: number } | null = null;
+      for (const p of waveAnchors) {
+        if (Math.abs(p.t - t) > tolerance) continue;
+        if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+      }
+      if (!best) {
         onPivotHover(null);
         return;
       }
+      const w = best.w;
       onPivotHover({
         x: param.point.x,
         y: param.point.y,
@@ -677,7 +703,7 @@ export function TradingChart({
     return () => chart.unsubscribeCrosshairMove(handler);
     // ICT overlays are intentionally minimal: the legend panel surfaces them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, elliott, internal, ict, layers, signal, viewMode, livePrice]);
+  }, [candles, analysisCandles, elliott, internal, ict, layers, signal, viewMode, livePrice]);
 
   return <div ref={containerRef} className="h-[520px] w-full" />;
 }

@@ -9,7 +9,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { getPreRaidAudit, type PreRaidAuditResult } from "@/lib/preRaid.functions";
+import {
+  getPreRaidAudit,
+  exportPreRaidAuditCsv,
+  type PreRaidAuditResult,
+} from "@/lib/preRaid.functions";
+
 import { SONIC_COMPONENT_LABELS_ES, SONIC_BETA_DISCLAIMER } from "@/lib/ml/smc/beta-display";
 import type { PreRaidFeatureName } from "@/lib/ml/smc/pre-raid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,12 +132,15 @@ function toCsv(rows: Row[], featureNames: readonly string[]): string {
 
 function SonicAuditPage() {
   const fetchAudit = useServerFn(getPreRaidAudit);
+  const exportCsv = useServerFn(exportPreRaidAuditCsv);
   const [days, setDays] = useState<number>(30);
   const [direction, setDirection] = useState<"all" | "long" | "short">("all");
   const [data, setData] = useState<PreRaidAuditResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -167,6 +175,32 @@ function SonicAuditPage() {
     },
     [data, rows, days],
   );
+
+  /**
+   * FULL export — every row matching the active filters, paginated server-side,
+   * with all audit columns (JSON blobs included) RFC4180-escaped.
+   */
+  const downloadFull = useCallback(async () => {
+    setExporting(true);
+    setExportNote(null);
+    try {
+      const res = await exportCsv({ data: { symbol: "XAU/USD", days, direction } });
+      const blob = new Blob(["\uFEFF", res.csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportNote(
+        `${res.rowCount} filas exportadas${res.truncated ? " (recortado por límite de seguridad)" : ""}`,
+      );
+    } catch (e) {
+      setExportNote(`Error al exportar: ${(e as Error).message}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [exportCsv, days, direction]);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -219,9 +253,29 @@ function SonicAuditPage() {
               </button>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={download} disabled={!rows.length}>
-            <Download className="h-3.5 w-3.5 mr-1" /> CSV
+          <Button
+            size="sm"
+            onClick={() => void downloadFull()}
+            disabled={exporting}
+            title="Exporta todas las observaciones que cumplen los filtros activos, con todas las columnas de auditoría y los JSON completos."
+          >
+            <Download className={`h-3.5 w-3.5 mr-1 ${exporting ? "animate-pulse" : ""}`} />
+            {exporting ? "Preparando…" : "Descargar CSV completo"}
           </Button>
+          <span className="text-[10px] font-mono text-muted-foreground">
+            {rows.length}
+            {rows.length >= 500 ? "+" : ""} filas
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={download}
+            disabled={!rows.length}
+            title="Descarga rápida de las filas visibles"
+          >
+            <Download className="h-3.5 w-3.5 mr-1" /> CSV rápido
+          </Button>
+
           <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
@@ -229,6 +283,8 @@ function SonicAuditPage() {
       </div>
 
       <p className="text-xs text-muted-foreground max-w-3xl">{SONIC_BETA_DISCLAIMER}</p>
+
+      {exportNote && <p className="text-[11px] font-mono text-muted-foreground">{exportNote}</p>}
 
       {error && (
         <div className="rounded border border-destructive/60 bg-destructive/10 p-3 text-xs font-mono text-destructive">

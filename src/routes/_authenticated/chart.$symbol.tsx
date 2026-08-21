@@ -6,6 +6,8 @@ import { analyzeSymbol } from "@/lib/elliott.functions";
 import { detectSetupsMTF } from "@/lib/setups.functions";
 import { fetchOhlcv, fetchVisualHistory } from "@/lib/marketData.functions";
 import type { Candle } from "@/lib/twelvedata.functions";
+import type { AnchorIssue } from "@/lib/chart/anchor";
+
 import { detectSetup } from "@/lib/detection/engine";
 import type { TradeSetup } from "@/lib/detection/types";
 import type { ElliottResultDTO } from "@/lib/detection/elliott/types";
@@ -214,6 +216,9 @@ function ChartPage() {
     pages: number;
   } | null>(null);
   const [visualNotice, setVisualNotice] = useState<string | null>(null);
+  /** Diagnostic: overlay anchors that did not match a rendered candle. */
+  const [anchorIssues, setAnchorIssues] = useState<AnchorIssue[]>([]);
+
   const [visualLoading, setVisualLoading] = useState(false);
   const loadVisual = useServerFn(fetchVisualHistory);
 
@@ -619,6 +624,22 @@ function ChartPage() {
               Contexto visual limitado
             </Badge>
           )}
+          {viewMode === "diagnostic" && anchorIssues.length > 0 && (
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-amber-400 border-amber-400/50"
+              title={anchorIssues
+                .slice(0, 8)
+                .map(
+                  (i) =>
+                    `${i.kind} ${i.label}: ${i.reason} (idx ${i.index ?? "—"}, drift ${i.drift}s)`,
+                )
+                .join("\n")}
+            >
+              {anchorIssues.length} anclajes sin vela
+            </Badge>
+          )}
+
           {elliott && elliott.status !== "NO_COUNT" && (
             <Badge
               variant="outline"
@@ -732,6 +753,8 @@ function ChartPage() {
             >
               <TradingChart
                 candles={chartCandles}
+                analysisCandles={candles}
+                onAnchorIssues={setAnchorIssues}
                 elliott={elliott}
                 internal={viewMode === "diagnostic" ? (elliott?.internal ?? null) : null}
                 ict={ict}
