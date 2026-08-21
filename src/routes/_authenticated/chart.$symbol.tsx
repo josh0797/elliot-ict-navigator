@@ -179,7 +179,7 @@ function loadVisualDepth(): number {
   return VISUAL_DEPTHS.some((d) => d.value === raw) ? raw : 0;
 }
 
-function ChartPage(){
+function ChartPage() {
   const { symbol } = Route.useParams();
   const { tf, bars } = Route.useSearch();
   const decoded = decodeSymbolParam(symbol);

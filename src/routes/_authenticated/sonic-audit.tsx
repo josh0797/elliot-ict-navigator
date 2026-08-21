@@ -293,8 +293,8 @@ function SonicAuditPage() {
               <div key={h.horizon} className="flex justify-between gap-2">
                 <span className="text-muted-foreground">{h.horizon}m</span>
                 <span>
-                  {h.displacement}/{h.resolved} · {pct(h.displacementRate)} · MFE{" "}
-                  {fmt(h.avgMfeAtr)} · MAE {fmt(h.avgMaeAtr)}
+                  {h.displacement}/{h.resolved} · {pct(h.displacementRate)} · MFE {fmt(h.avgMfeAtr)}{" "}
+                  · MAE {fmt(h.avgMaeAtr)}
                 </span>
               </div>
             ))}
