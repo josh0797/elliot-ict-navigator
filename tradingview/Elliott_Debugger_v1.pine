@@ -33,22 +33,22 @@ indicator("Elliott Debugger v1", shorttitle="ELL DBG v1", overlay=true, max_labe
 // ─────────────────────────────────────────────────────────────────────
 // INPUTS
 // ─────────────────────────────────────────────────────────────────────
-var string GP = "1 · Pivots"
+const string GP = "1 · Pivots"
 inLeft   = input.int(3,    "leftBars",                    minval=1, maxval=50, group=GP)
 inRight  = input.int(3,    "rightBars (confirmación)",    minval=1, maxval=50, group=GP)
 atrLen   = input.int(14,   "ATR length",                  minval=2, maxval=200, group=GP)
 minAtrIn = input.float(0.75,"minAtrDistance (x ATR)",     minval=0.0, step=0.05, group=GP)
 
-var string GD = "2 · Degree"
+const string GD = "2 · Degree"
 degIn = input.string("Auto", "Degree", options=["Auto", "Major", "Intermediate", "Minor"], group=GD)
 
-var string GB = "3 · Debug"
+const string GB = "3 · Debug"
 showDebugPivots = input.bool(true,  "Show debug pivots (los que usa Elliott)", group=GB)
 showRawPivots   = input.bool(false, "Show raw pivots (antes del filtro ATR)",  group=GB)
 showProvisional = input.bool(false, "Vista provisional / tail (puede repintar)", group=GB)
 showTable       = input.bool(true,  "Panel diagnóstico",                       group=GB)
 
-var string GV = "4 · Conteo y visuales"
+const string GV = "4 · Conteo y visuales"
 minConf    = input.int(60, "Minimum confidence (0-100)", minval=0, maxval=100, group=GV)
 showAlt    = input.bool(true,  "Mostrar conteo alternativo", group=GV)
 showFib    = input.bool(false, "Fibonacci (W2 / W3 / W5)",   group=GV)
@@ -139,7 +139,7 @@ cap(float[] pa, int[] ba, int[] ta_, float[] da, int maxN) =>
         array.shift(pa)
         array.shift(ba)
         array.shift(ta_)
-        if not na(da) and array.size(da) > 0
+        if array.size(da) > 0
             array.shift(da)
 
 // Añade respetando alternancia; devuelve true si se insertó una entrada nueva
