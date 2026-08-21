@@ -7,7 +7,7 @@
  * alerts, Elliott/ICT or scoring.
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { getPreRaidAudit, type PreRaidAuditResult } from "@/lib/preRaid.functions";
 import { SONIC_COMPONENT_LABELS_ES, SONIC_BETA_DISCLAIMER } from "@/lib/ml/smc/beta-display";
@@ -369,8 +369,8 @@ function SonicAuditPage() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <>
-                    <tr key={r.id} className="border-b border-border/40 hover:bg-muted/30">
+                  <Fragment key={r.id}>
+                    <tr className="border-b border-border/40 hover:bg-muted/30">
                       <td className="px-2 py-1.5">{iso(r.candidate_at)}</td>
                       <td
                         className={`px-2 py-1.5 ${r.direction === "long" ? "text-success" : "text-destructive"}`}
@@ -398,7 +398,7 @@ function SonicAuditPage() {
                       </td>
                     </tr>
                     {openId === r.id && (
-                      <tr key={`${r.id}-detail`} className="bg-muted/20">
+                      <tr className="bg-muted/20">
                         <td colSpan={11} className="px-3 py-2">
                           <div className="grid gap-3 md:grid-cols-2">
                             <pre className="overflow-x-auto text-[10px] leading-relaxed">
@@ -430,7 +430,7 @@ function SonicAuditPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
