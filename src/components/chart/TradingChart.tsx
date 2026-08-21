@@ -238,25 +238,38 @@ export function TradingChart({
     }
 
     const validTimes = new Set(chartCandles.map((c) => c.time));
-    const sortedTimes = chartCandles.map((c) => c.time);
     /**
-     * Snap an arbitrary timestamp (e.g. an HTF pivot time) to the closest
-     * rendered candle time. Without this, wave anchors whose exact time is not
-     * a candle open silently disappear and nothing is drawn.
+     * Timestamp identity is the source of truth for every overlay anchor.
+     * `analysisTimes` translates engine indices (relative to the analysis
+     * snapshot) into real timestamps; snapping is allowed only within one bar
+     * of the rendered series, and anything else is reported, never relocated.
      */
-    const snapTime = (t: number | null): number | null => {
-      if (t === null || sortedTimes.length === 0) return null;
-      if (validTimes.has(t)) return t;
-      if (t < sortedTimes[0] || t > sortedTimes[sortedTimes.length - 1]) return null;
-      let lo = 0;
-      let hi = sortedTimes.length - 1;
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if (sortedTimes[mid] <= t) lo = mid;
-        else hi = mid;
+    const anchors: AnchorSeries = buildAnchorSeries(chartCandles);
+    const analysisTimes =
+      analysisCandles && analysisCandles.length > 0
+        ? analysisCandles.map((c) => c.time)
+        : chartCandles.map((c) => c.time);
+    const anchorIssues: AnchorIssue[] = [];
+    const anchorTime = (
+      kind: string,
+      label: string,
+      input: { time?: string | number | null; index?: number | null },
+    ): number | null => {
+      const res = resolveAnchor(anchors, input, { analysisTimes });
+      if (res.time === null) {
+        anchorIssues.push({
+          kind,
+          label,
+          requestedTime: input.time ?? null,
+          index: input.index ?? null,
+          reason: res.reason ?? "unresolved",
+          drift: res.drift,
+        });
+        return null;
       }
-      return t - sortedTimes[lo] <= sortedTimes[hi] - t ? sortedTimes[lo] : sortedTimes[hi];
+      return res.time;
     };
+
     const chartMarkers: SeriesMarker<Time>[] = [];
     const pushMarker = (marker: SeriesMarker<Time>) => {
       const t = Number(marker.time);
