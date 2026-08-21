@@ -753,6 +753,8 @@ function ChartPage() {
             >
               <TradingChart
                 candles={chartCandles}
+                analysisCandles={candles}
+                onAnchorIssues={setAnchorIssues}
                 elliott={elliott}
                 internal={viewMode === "diagnostic" ? (elliott?.internal ?? null) : null}
                 ict={ict}
@@ -761,6 +763,7 @@ function ChartPage() {
                 onPivotHover={setTooltip}
                 viewMode={viewMode}
                 livePrice={snapshot?.livePrice ?? null}
+
               />
             </div>
             {tooltip && (
