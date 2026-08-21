@@ -55,15 +55,12 @@ function isFiniteNumber(v: unknown): v is number {
 function isValidChartTime(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v) && v > 0;
 }
-function waveTime(w: ElliottWaveDTO, candles: Candle[]): number | null {
-  if (w.index >= 0 && w.index < candles.length) {
-    const t = candles[w.index].time;
-    return isValidChartTime(t) ? t : null;
-  }
-  const ms = new Date(w.time).getTime();
-  if (!Number.isFinite(ms)) return null;
-  return Math.floor(ms / 1000);
-}
+/**
+ * Overlay anchoring is TIMESTAMP-FIRST (see `@/lib/chart/anchor`). `w.index` is
+ * relative to the ANALYSIS snapshot, so it must never be applied directly to
+ * the (possibly deeper) visual series.
+ */
+
 
 function priceOf(label: string, waves: ElliottWaveDTO[]): number | undefined {
   return waves.find((w) => w.label === label)?.price;
