@@ -619,6 +619,22 @@ function ChartPage() {
               Contexto visual limitado
             </Badge>
           )}
+          {viewMode === "diagnostic" && anchorIssues.length > 0 && (
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-amber-400 border-amber-400/50"
+              title={anchorIssues
+                .slice(0, 8)
+                .map(
+                  (i) =>
+                    `${i.kind} ${i.label}: ${i.reason} (idx ${i.index ?? "—"}, drift ${i.drift}s)`,
+                )
+                .join("\n")}
+            >
+              {anchorIssues.length} anclajes sin vela
+            </Badge>
+          )}
+
           {elliott && elliott.status !== "NO_COUNT" && (
             <Badge
               variant="outline"
