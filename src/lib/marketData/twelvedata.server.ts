@@ -25,6 +25,8 @@ export async function fetchTwelveDataCandles(input: {
   symbol: string;
   interval: string;
   outputsize: number;
+  /** Optional upper bound (`YYYY-MM-DD HH:MM:SS`, UTC) used for paging. */
+  endDate?: string;
 }): Promise<{ candles: Candle[]; error?: string }> {
   const apiKey = process.env["TWELVEDATA_API_KEY"];
   if (!apiKey) return { candles: [], error: "TWELVEDATA_API_KEY missing" };
@@ -35,7 +37,9 @@ export async function fetchTwelveDataCandles(input: {
   url.searchParams.set("interval", interval);
   url.searchParams.set("outputsize", String(input.outputsize));
   url.searchParams.set("format", "JSON");
+  if (input.endDate) url.searchParams.set("end_date", input.endDate);
   url.searchParams.set("apikey", apiKey);
+
 
   try {
     const res = await fetch(url.toString(), { method: "GET" });
