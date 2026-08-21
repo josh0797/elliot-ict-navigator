@@ -176,14 +176,13 @@ pushStruct(float p, int b, int t, float atrNow) =>
                 d2 := math.abs(p - array.get(sPrice, n - 2)) / atrNow
             if array.size(sDist) == n
                 array.set(sDist, n - 1, d2)
-    else if n > 0 and array.get(sBar, n - 1) == b
+    else
         // Nunca dos pivots estructurales distintos en la misma vela: un
         // candidato Elliott no puede tener dos endpoints en el mismo bar_index.
-        na
-    else
-        bool accept = true
+        bool sameBar = n > 0 and array.get(sBar, n - 1) == b
+        bool accept = not sameBar
         float dist = 0.0
-        if n > 0
+        if accept and n > 0
             float prev = array.get(sPrice, n - 1)
             // ATR sin calentar (na / <= 0) → se acepta el pivot pero jamás
             // se infla la distancia con un epsilon.
@@ -195,6 +194,7 @@ pushStruct(float p, int b, int t, float atrNow) =>
             array.push(sBar, b)
             array.push(sType, t)
             array.push(sDist, dist)
+
 
 ph = ta.pivothigh(high, leftB, rightB)
 pl = ta.pivotlow(low, leftB, rightB)
