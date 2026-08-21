@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTrainingRouteImport } from './routes/_authenticated/training'
+import { Route as AuthenticatedSonicAuditRouteImport } from './routes/_authenticated/sonic-audit'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
@@ -49,6 +50,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthenticatedTrainingRoute = AuthenticatedTrainingRouteImport.update({
   id: '/training',
   path: '/training',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSonicAuditRoute = AuthenticatedSonicAuditRouteImport.update({
+  id: '/sonic-audit',
+  path: '/sonic-audit',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof AuthenticatedAlertsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/sonic-audit': typeof AuthenticatedSonicAuditRoute
   '/training': typeof AuthenticatedTrainingRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -145,6 +152,7 @@ export interface FileRoutesByTo {
   '/alerts': typeof AuthenticatedAlertsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/sonic-audit': typeof AuthenticatedSonicAuditRoute
   '/training': typeof AuthenticatedTrainingRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -165,6 +173,7 @@ export interface FileRoutesById {
   '/_authenticated/alerts': typeof AuthenticatedAlertsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/sonic-audit': typeof AuthenticatedSonicAuditRoute
   '/_authenticated/training': typeof AuthenticatedTrainingRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -185,6 +194,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/dashboard'
     | '/settings'
+    | '/sonic-audit'
     | '/training'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/dashboard'
     | '/settings'
+    | '/sonic-audit'
     | '/training'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/_authenticated/alerts'
     | '/_authenticated/dashboard'
     | '/_authenticated/settings'
+    | '/_authenticated/sonic-audit'
     | '/_authenticated/training'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -282,6 +294,13 @@ declare module '@tanstack/react-router' {
       path: '/training'
       fullPath: '/training'
       preLoaderRoute: typeof AuthenticatedTrainingRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/sonic-audit': {
+      id: '/_authenticated/sonic-audit'
+      path: '/sonic-audit'
+      fullPath: '/sonic-audit'
+      preLoaderRoute: typeof AuthenticatedSonicAuditRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
@@ -375,6 +394,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSonicAuditRoute: typeof AuthenticatedSonicAuditRoute
   AuthenticatedTrainingRoute: typeof AuthenticatedTrainingRoute
   AuthenticatedChartSymbolRoute: typeof AuthenticatedChartSymbolRoute
 }
@@ -383,6 +403,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAlertsRoute: AuthenticatedAlertsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSonicAuditRoute: AuthenticatedSonicAuditRoute,
   AuthenticatedTrainingRoute: AuthenticatedTrainingRoute,
   AuthenticatedChartSymbolRoute: AuthenticatedChartSymbolRoute,
 }
