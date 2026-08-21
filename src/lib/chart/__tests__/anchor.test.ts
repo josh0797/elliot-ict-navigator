@@ -96,7 +96,9 @@ describe("resolveAnchor — visualDepth=Auto (same series)", () => {
 
   it("rejects timestamps outside the rendered range", () => {
     expect(resolveAnchor(anchors, { time: base - 10 * HOUR }, { analysisTimes }).time).toBeNull();
-    expect(resolveAnchor(anchors, { time: base + 9_999 * HOUR }, { analysisTimes }).time).toBeNull();
+    expect(
+      resolveAnchor(anchors, { time: base + 9_999 * HOUR }, { analysisTimes }).time,
+    ).toBeNull();
   });
 
   it("reports anchors with no usable timestamp", () => {

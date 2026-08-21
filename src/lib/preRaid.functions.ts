@@ -9,7 +9,6 @@ import type { PreRaidLatestResult } from "./ml/smc/pre-raid-read.server";
 import type { PreRaidAuditResult } from "./ml/smc/pre-raid-audit.server";
 import type { PreRaidExportResult } from "./ml/smc/pre-raid-export.server";
 
-
 export type { PreRaidLatestResult, PreRaidLatestRow } from "./ml/smc/pre-raid-read.server";
 export type {
   PreRaidAuditResult,
@@ -57,4 +56,3 @@ export const exportPreRaidAuditCsv = createServerFn({ method: "POST" })
     const { exportPreRaidCsv } = await import("./ml/smc/pre-raid-export.server");
     return exportPreRaidCsv(context.supabase, data);
   });
-

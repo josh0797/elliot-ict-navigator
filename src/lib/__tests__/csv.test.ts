@@ -25,7 +25,13 @@ describe("csvCell", () => {
 
 describe("buildCsv", () => {
   it("emits an RFC4180 document that round-trips", () => {
-    const csv = buildCsv(["id", "note"], [["1", 'a,b"c'], ["2", "multi\nline"]]);
+    const csv = buildCsv(
+      ["id", "note"],
+      [
+        ["1", 'a,b"c'],
+        ["2", "multi\nline"],
+      ],
+    );
     expect(csv.endsWith("\r\n")).toBe(true);
     const rows = parseCsv(csv);
     expect(rows).toHaveLength(2);

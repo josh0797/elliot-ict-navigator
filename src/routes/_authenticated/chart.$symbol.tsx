@@ -763,7 +763,6 @@ function ChartPage() {
                 onPivotHover={setTooltip}
                 viewMode={viewMode}
                 livePrice={snapshot?.livePrice ?? null}
-
               />
             </div>
             {tooltip && (

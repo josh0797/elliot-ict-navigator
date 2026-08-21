@@ -202,7 +202,6 @@ function SonicAuditPage() {
     }
   }, [exportCsv, days, direction]);
 
-
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -285,10 +284,7 @@ function SonicAuditPage() {
 
       <p className="text-xs text-muted-foreground max-w-3xl">{SONIC_BETA_DISCLAIMER}</p>
 
-      {exportNote && (
-        <p className="text-[11px] font-mono text-muted-foreground">{exportNote}</p>
-      )}
-
+      {exportNote && <p className="text-[11px] font-mono text-muted-foreground">{exportNote}</p>}
 
       {error && (
         <div className="rounded border border-destructive/60 bg-destructive/10 p-3 text-xs font-mono text-destructive">

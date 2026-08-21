@@ -69,7 +69,13 @@ export function parseCsv(text: string): Record<string, string>[] {
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const raw =
-    typeof value === "object" ? JSON.stringify(value) : typeof value === "number" ? (Number.isFinite(value) ? String(value) : "") : String(value);
+    typeof value === "object"
+      ? JSON.stringify(value)
+      : typeof value === "number"
+        ? Number.isFinite(value)
+          ? String(value)
+          : ""
+        : String(value);
   return /[",\r\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
 }
 

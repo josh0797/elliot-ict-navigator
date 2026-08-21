@@ -68,7 +68,6 @@ function isValidChartTime(v: unknown): v is number {
  * the (possibly deeper) visual series.
  */
 
-
 function priceOf(label: string, waves: ElliottWaveDTO[]): number | undefined {
   return waves.find((w) => w.label === label)?.price;
 }
@@ -109,7 +108,6 @@ export function TradingChart({
   /** Diagnostic sink for anchors that could not be resolved to a real candle. */
   onAnchorIssues?: (issues: AnchorIssue[]) => void;
 }) {
-
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -527,7 +525,6 @@ export function TradingChart({
       }
     }
 
-
     // Only refit when the dataset itself changed — layer toggles and view-mode
     // switches must not reset the user's zoom/pan.
     const fitKey = `${candleData.length}:${candleData[0]?.time}:${candleData[candleData.length - 1]?.time}`;
@@ -707,7 +704,6 @@ export function TradingChart({
     // ICT overlays are intentionally minimal: the legend panel surfaces them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles, analysisCandles, elliott, internal, ict, layers, signal, viewMode, livePrice]);
-
 
   return <div ref={containerRef} className="h-[520px] w-full" />;
 }
