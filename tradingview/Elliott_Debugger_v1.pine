@@ -159,7 +159,9 @@ pushAlt(float[] pa, int[] ba, int[] ta_, float p, int b, int t) =>
         inserted := true
     inserted
 
-// Igual que pushAlt pero con gate de distancia ATR (solo entre tipos distintos)
+// Igual que pushAlt pero con gate de distancia ATR (solo entre tipos distintos).
+// `atrNow` DEBE ser el ATR de la barra real del swing (atrV[rightB]), no el de
+// la barra de confirmación.
 pushStruct(float p, int b, int t, float atrNow) =>
     int n = array.size(sType)
     if n > 0 and array.get(sType, n - 1) == t
@@ -168,6 +170,16 @@ pushStruct(float p, int b, int t, float atrNow) =>
         if keepNew
             array.set(sPrice, n - 1, p)
             array.set(sBar, n - 1, b)
+            // La claridad (sDist) debe describir el pivot REALMENTE almacenado.
+            float d2 = 0.0
+            if n > 1 and not na(atrNow) and atrNow > 0
+                d2 := math.abs(p - array.get(sPrice, n - 2)) / atrNow
+            if array.size(sDist) == n
+                array.set(sDist, n - 1, d2)
+    else if n > 0 and array.get(sBar, n - 1) == b
+        // Nunca dos pivots estructurales distintos en la misma vela: un
+        // candidato Elliott no puede tener dos endpoints en el mismo bar_index.
+        na
     else
         bool accept = true
         float dist = 0.0
@@ -188,16 +200,35 @@ ph = ta.pivothigh(high, leftB, rightB)
 pl = ta.pivotlow(low, leftB, rightB)
 
 // El fractal se confirma AHORA, pero el swing ocurrió `rightB` barras atrás.
+// El ATR relevante es por tanto el de esa barra histórica.
+atrSwing = atrV[rightB]
 if not na(ph)
-    int b = bar_index - rightB
     rawTotal += 1
-    pushAlt(rPrice, rBar, rType, ph, b, 1)
-    pushStruct(ph, b, 1, atrV)
+    pushAlt(rPrice, rBar, rType, ph, bar_index - rightB, 1)
 if not na(pl)
-    int b = bar_index - rightB
     rawTotal += 1
-    pushAlt(rPrice, rBar, rType, pl, b, -1)
-    pushStruct(pl, b, -1, atrV)
+    pushAlt(rPrice, rBar, rType, pl, bar_index - rightB, -1)
+
+// Outside bar: high y low confirmados en la MISMA barra. Se elige un único
+// pivot estructural de forma determinista: el compatible con la alternancia
+// respecto del último pivot estructural. Sin pivot previo, se conserva el HIGH
+// (criterio explícito y estable, documentado en el README).
+if not na(ph) or not na(pl)
+    int bSwing = bar_index - rightB
+    bool takeH = not na(ph)
+    bool takeL = not na(pl)
+    if takeH and takeL
+        int lastT = array.size(sType) > 0 ? array.get(sType, array.size(sType) - 1) : 0
+        if lastT == 1
+            takeH := false
+        else if lastT == -1
+            takeL := false
+        else
+            takeL := false
+    if takeH
+        pushStruct(ph, bSwing, 1, atrSwing)
+    if takeL
+        pushStruct(pl, bSwing, -1, atrSwing)
 
 // Arrays acotados (límites de Pine + coste de memoria)
 if barstate.isconfirmed
@@ -206,6 +237,7 @@ if barstate.isconfirmed
         array.shift(rPrice)
         array.shift(rBar)
         array.shift(rType)
+
 
 // ─────────────────────────────────────────────────────────────────────
 // EVALUACIÓN DE CANDIDATOS
