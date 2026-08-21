@@ -419,11 +419,16 @@ if barstate.islast
     int n = array.size(sType)
 
     // ── selección de mejor / segundo mejor candidato ──────────────────
+    // RECENCIA: solo se consideran candidatos que TERMINAN en uno de los
+    // últimos 3 pivots estructurales (endLag <= 2). No queremos el mejor
+    // patrón histórico, queremos el conteo activo.
+    int maxEndLag = 2
     float bestS = -1.0
     int   bestI = -1
     int   bestL = 0
     int   bestP = -1
     int   bestD = 0
+    int   bestLag = -1
     float altS  = -1.0
     int   altI  = -1
     int   altL  = 0
@@ -436,30 +441,35 @@ if barstate.islast
         for st = from to n - 3
             int maxLen = math.min(6, n - st)
             // impulso: se prueban las lecturas más completas primero
-            for ln = maxLen to 3
-                [sc, pt, rs, dr] = evalImpulse(st, ln)
-                if pt >= 0
-                    if sc > bestS
-                        altS := bestS
-                        altI := bestI
-                        altL := bestL
-                        altP := bestP
-                        bestS := sc
-                        bestI := st
-                        bestL := ln
-                        bestP := pt
-                        bestD := dr
-                    else if sc > altS and st != bestI
-                        altS := sc
-                        altI := st
-                        altL := ln
-                        altP := pt
-                else if ln > worstLen
-                    worstLen := ln
-                    worstReason := rs
+            for q = 0 to maxLen - 3
+                int ln = maxLen - q
+                int endLag = n - st - ln
+                if endLag <= maxEndLag
+                    [sc, pt, rs, dr] = evalImpulse(st, ln)
+                    if pt >= 0
+                        if sc > bestS
+                            altS := bestS
+                            altI := bestI
+                            altL := bestL
+                            altP := bestP
+                            bestS := sc
+                            bestI := st
+                            bestL := ln
+                            bestP := pt
+                            bestD := dr
+                            bestLag := endLag
+                        else if sc > altS and st != bestI
+                            altS := sc
+                            altI := st
+                            altL := ln
+                            altP := pt
+                    else if ln > worstLen
+                        worstLen := ln
+                        worstReason := rs
             // ABC
             int abcLen = math.min(4, n - st)
-            if abcLen >= 3
+            int abcLag = n - st - abcLen
+            if abcLen >= 3 and abcLag <= maxEndLag
                 [sc2, pt2, rs2, dr2] = evalAbc(st, abcLen)
                 if pt2 >= 0
                     if sc2 > bestS
@@ -472,6 +482,7 @@ if barstate.islast
                         bestL := abcLen
                         bestP := pt2
                         bestD := dr2
+                        bestLag := abcLag
                     else if sc2 > altS and st != bestI
                         altS := sc2
                         altI := st
@@ -483,6 +494,11 @@ if barstate.islast
 
     bool hasCount = bestI >= 0 and bestS >= minConf
     bool isAbcBest = bestP == 2
+    // INVALID: existe un candidato reciente completo que rompe una regla dura
+    // y NO existe geometría válida reciente. NO_COUNT: hay geometría válida
+    // pero por debajo de Minimum confidence, o no hay candidatos.
+    bool isInvalid = bestI < 0 and worstLen >= 3 and worstReason != ""
+
 
     // ── conteo alternativo (sobrio, gris, sin etiquetas ruidosas) ─────
     if showAlt and altI >= 0 and hasCount
