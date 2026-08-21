@@ -83,6 +83,8 @@ export function TradingChart({
   onPivotHover,
   viewMode = "diagnostic",
   livePrice,
+  analysisCandles,
+  onAnchorIssues,
 }: {
   candles: Candle[];
   elliott: ElliottResultDTO | null;
@@ -98,7 +100,16 @@ export function TradingChart({
    * pushed into `candles` and never reaches Elliott/ICT/setups/ATR/decisions.
    */
   livePrice?: number | null;
+  /**
+   * The exact series Elliott/ICT indices were computed against. When the chart
+   * renders a deeper visual history this is REQUIRED so overlay indices can be
+   * translated into real timestamps instead of being applied to the wrong bars.
+   */
+  analysisCandles?: Candle[];
+  /** Diagnostic sink for anchors that could not be resolved to a real candle. */
+  onAnchorIssues?: (issues: AnchorIssue[]) => void;
 }) {
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
